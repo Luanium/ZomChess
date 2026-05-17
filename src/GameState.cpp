@@ -5,38 +5,26 @@
 #include <iostream>
 
 GameState::GameState() : rng(std::random_device{}()) {
-    // Khởi tạo kích thước mặc định cho custom map
     active_config.custom_grid.assign(active_config.map_width, std::vector<Terrain>(active_config.map_height, Terrain::Dirt));
 }
 
-// Tính số lượng ô trống có thể sinh Zombie trên map hiện tại
 int GameState::calculate_available_spawn_cells() {
     int w = active_config.map_width;
     int h = active_config.map_height;
     int total_allowed = 0;
 
-    // Vị trí Human giả định để tính toán vùng shield
     Position h_pos = active_config.custom_map_mode ? active_config.custom_human_pos : Position{w/2, h/2};
 
     for (int x = 0; x < w; ++x) {
         for (int y = 0; y < h; ++y) {
-            // Loại bỏ tường biên
             if (x == 0 || x == w - 1 || y == 0 || y == h - 1) continue;
-            
-            // Nếu là Custom map, check xem ô đó có vật cản không
             if (active_config.custom_map_mode) {
                 Terrain t = active_config.custom_grid[x][y];
                 if (t == Terrain::Wall || t == Terrain::Obstacle) continue;
             }
-
-            // Trừ ô Human đang đứng
             if (x == h_pos.x && y == h_pos.y) continue;
-
-            // Áp dụng bảo hiểm 7x7 (Bán kính khoảng cách Chebyshev <= 3 ô bao quanh)
             if (active_config.spawn_shield) {
-                if (std::abs(x - h_pos.x) <= 3 && std::abs(y - h_pos.y) <= 3) {
-                    continue; // Thuộc vùng bảo vệ, không được sinh Zombie vào đây
-                }
+                if (std::abs(x - h_pos.x) <= 3 && std::abs(y - h_pos.y) <= 3) continue;
             }
             total_allowed++;
         }
@@ -50,35 +38,37 @@ bool GameState::is_zombie_count_valid() {
     return total_requested_zombies <= calculate_available_spawn_cells();
 }
 
-// Cài đặt nhanh cấu hình theo 3 mức độ khó mặc định (Quick Play)
 void GameState::apply_quick_difficulty(int level) {
-    active_config.custom_map_mode = false; // Chuyển về map ngẫu nhiên chuẩn
+    active_config.custom_map_mode = false; 
     active_config.spawn_shield = true;
     active_config.map_width = 15;
     active_config.map_height = 15;
     active_config.turn_limit = 50;
 
-    if (level == 0) { // Binh nhì (Easy)
+    if (level == 0) { 
         active_config.human_hp = 8;
         active_config.initial_stamina = 7;
         active_config.pistol_ammo = 20; active_config.shotgun_ammo = 10;
         active_config.grenades = 5;     active_config.mines = 4;
+        active_config.molotovs = 4;
         active_config.count_normal = 3; active_config.count_fast = 1;
         active_config.count_exploding = 1; active_config.count_vampire = 0;
     } 
-    else if (level == 1) { // Trung tá (Medium)
+    else if (level == 1) { 
         active_config.human_hp = 5;
         active_config.initial_stamina = 6;
         active_config.pistol_ammo = 12; active_config.shotgun_ammo = 6;
         active_config.grenades = 3;     active_config.mines = 2;
+        active_config.molotovs = 3;
         active_config.count_normal = 4; active_config.count_fast = 3;
         active_config.count_exploding = 2; active_config.count_vampire = 1;
     } 
-    else { // Ác mộng (Hard)
+    else { 
         active_config.human_hp = 3;
         active_config.initial_stamina = 5;
         active_config.pistol_ammo = 6;  active_config.shotgun_ammo = 3;
         active_config.grenades = 1;     active_config.mines = 1;
+        active_config.molotovs = 1;
         active_config.count_normal = 6; active_config.count_fast = 5;
         active_config.count_exploding = 4; active_config.count_vampire = 2;
     }
@@ -96,6 +86,7 @@ bool GameState::export_challenge_file(const std::string& path) {
     outFile << "SHOTGUN_AMMO "    << active_config.shotgun_ammo << "\n";
     outFile << "GRENADES "        << active_config.grenades << "\n";
     outFile << "MINES "           << active_config.mines << "\n";
+    outFile << "MOLOTOVS "        << active_config.molotovs << "\n";
     outFile << "TURN_LIMIT "      << active_config.turn_limit << "\n";
     outFile << "ZOM_NORMAL "     << active_config.count_normal << "\n";
     outFile << "ZOM_FAST "       << active_config.count_fast << "\n";
@@ -147,6 +138,7 @@ bool GameState::import_challenge_file(const std::string& path) {
         else if (key == "SHOTGUN_AMMO") active_config.shotgun_ammo = val;
         else if (key == "GRENADES")     active_config.grenades = val;
         else if (key == "MINES")        active_config.mines = val;
+        else if (key == "MOLOTOVS")     active_config.molotovs = val;
         else if (key == "TURN_LIMIT")   active_config.turn_limit = val;
         else if (key == "ZOM_NORMAL")   active_config.count_normal = val;
         else if (key == "ZOM_FAST")     active_config.count_fast = val;
@@ -164,13 +156,13 @@ bool GameState::import_challenge_file(const std::string& path) {
 void GameState::init_game() {
     zombies.clear(); 
     logs.clear();
+    fire_cells.clear();
     game_over = false; 
     game_won = false;
     current_turn = 1; 
     phase = TurnPhase::HumanTurn; 
     input_mode = InputMode::MoveMode;
 
-    // 1. ĐỒNG BỘ KÍCH THƯỚC RUNTIME ĐỐI CHIẾU TỪ CONFIG
     width = active_config.map_width;
     height = active_config.map_height;
 
@@ -181,13 +173,12 @@ void GameState::init_game() {
     human.shotgun_ammo = active_config.shotgun_ammo;
     human.grenades = active_config.grenades;
     human.mines = active_config.mines;
+    human.molotovs = active_config.molotovs;
+    human.is_burning = false;
 
-    // Cấp phát lại mảng mìn chuẩn kích thước hiện tại để tránh out of bounds
     mine_grid.assign(width, std::vector<bool>(height, false));
 
-    // 2. KHỞI TẠO ĐỊA HÌNH AN TOÀN
     if (active_config.custom_map_mode) {
-        // Đảm bảo mảng custom_grid của config khớp kích thước trước khi gán
         if (active_config.custom_grid.size() != static_cast<size_t>(width) || 
             active_config.custom_grid[0].size() != static_cast<size_t>(height)) {
             active_config.custom_grid.assign(width, std::vector<Terrain>(height, Terrain::Dirt));
@@ -197,7 +188,6 @@ void GameState::init_game() {
         human.pos = active_config.custom_human_pos;
     } 
     else {
-        // Sinh map ngẫu nhiên chuẩn chỉ theo kích thước động mới
         grid.assign(width, std::vector<Terrain>(height, Terrain::Dirt));
         for (int x = 0; x < width; ++x) { grid[x][0] = Terrain::Wall; grid[x][height - 1] = Terrain::Wall; }
         for (int y = 0; y < height; ++y) { grid[0][y] = Terrain::Wall; grid[width - 1][y] = Terrain::Wall; }
@@ -215,7 +205,6 @@ void GameState::init_game() {
         }
     }
 
-    // 3. THUẬT TOÁN SPAWN ZOMBIE AN TOÀN TRÁNH TRÀN BIÊN
     std::uniform_int_distribution<int> dist_x(1, width - 2);
     std::uniform_int_distribution<int> dist_y(1, height - 2);
 
@@ -223,31 +212,16 @@ void GameState::init_game() {
         for (int i = 0; i < count; ++i) {
             Position z_pos = {dist_x(rng), dist_y(rng)};
             int attempts = 0;
-            
             while (true) {
                 bool invalid_pos = false;
-                // Kiểm tra va chạm biên địa hình
-                if (z_pos.x <= 0 || z_pos.x >= width - 1 || z_pos.y <= 0 || z_pos.y >= height - 1) {
-                    invalid_pos = true;
-                } else if (z_pos == human.pos || grid[z_pos.x][z_pos.y] == Terrain::Wall || grid[z_pos.x][z_pos.y] == Terrain::Obstacle) {
-                    invalid_pos = true;
-                }
-                
-                // Vùng chắn bảo hiểm 7x7 quanh Human
-                if (active_config.spawn_shield && std::abs(z_pos.x - human.pos.x) <= 3 && std::abs(z_pos.y - human.pos.y) <= 3) {
-                    invalid_pos = true;
-                }
-
-                // Tránh trùng vị trí zombie khác
-                for (const auto& z : zombies) {
-                    if (z->pos == z_pos) { invalid_pos = true; break; }
-                }
-
+                if (z_pos.x <= 0 || z_pos.x >= width - 1 || z_pos.y <= 0 || z_pos.y >= height - 1) invalid_pos = true;
+                else if (z_pos == human.pos || grid[z_pos.x][z_pos.y] == Terrain::Wall || grid[z_pos.x][z_pos.y] == Terrain::Obstacle) invalid_pos = true;
+                if (active_config.spawn_shield && std::abs(z_pos.x - human.pos.x) <= 3 && std::abs(z_pos.y - human.pos.y) <= 3) invalid_pos = true;
+                for (const auto& z : zombies) { if (z->pos == z_pos) { invalid_pos = true; break; } }
                 if (!invalid_pos || attempts > 200) break;
                 z_pos = {dist_x(rng), dist_y(rng)};
                 attempts++;
             }
-
             if (z_type == ZombieType::Normal) zombies.push_back(std::make_unique<NormalZombie>(z_pos, max_hp, name, z_type));
             else if (z_type == ZombieType::Fast) zombies.push_back(std::make_unique<FastZombie>(z_pos, max_hp, name, z_type));
             else if (z_type == ZombieType::Exploding) zombies.push_back(std::make_unique<ExplodingZombie>(z_pos, max_hp, name, z_type));
@@ -281,6 +255,41 @@ std::pair<int, int> GameState::get_8_direction(int dx, int dy) {
 
 sf::Vector2f GameState::getCellCenter(int x, int y, float cellSize, float offset) { 
     return sf::Vector2f(x * cellSize + offset + cellSize / 2.0f, y * cellSize + offset + cellSize / 2.0f); 
+}
+
+// Xử lý kiểm tra và dính/lây lan lửa
+void GameState::check_fire_interactions() {
+    // 1. Dẫm lên lửa địa hình
+    if (grid[human.pos.x][human.pos.y] == Terrain::Fire && !human.is_burning) {
+        human.is_burning = true;
+        add_log("[FIRE] Human stepped into a blazing fire!", ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
+    }
+    for (auto& z : zombies) {
+        if (z->hp > 0 && !z->is_burning && grid[z->pos.x][z->pos.y] == Terrain::Fire) {
+            z->is_burning = true;
+            add_log("[FIRE] " + z->name + " stepped into a blazing fire!", ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
+        }
+    }
+
+    // 2. Lây lan lửa khi tiếp xúc kề cạnh
+    std::vector<Position> fire_sources;
+    if (human.is_burning) fire_sources.push_back(human.pos);
+    for (const auto& z : zombies) {
+        if (z->hp > 0 && z->is_burning) fire_sources.push_back(z->pos);
+    }
+
+    for (const auto& p : fire_sources) {
+        if (!human.is_burning && distance(human.pos, p) <= 1) {
+            human.is_burning = true;
+            add_log("[FIRE] Human caught fire from close proximity!", ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
+        }
+        for (auto& z : zombies) {
+            if (z->hp > 0 && !z->is_burning && distance(z->pos, p) <= 1) {
+                z->is_burning = true;
+                add_log("[FIRE] " + z->name + " caught fire from close proximity!", ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
+            }
+        }
+    }
 }
 
 void GameState::trigger_explosion(int cx, int cy) { 
@@ -377,6 +386,9 @@ void GameState::zombie_single_step(size_t idx) {
             trigger_explosion(zom->pos.x, zom->pos.y); 
         } 
     } 
+    
+    // Kiểm tra lây lan lửa ngay sau khi bước đi
+    check_fire_interactions();
 }
 
 void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardOffset) { 
@@ -521,13 +533,89 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
         } 
         grenade_box.active = true; 
         grenade_box.pos = {cx, cy}; 
-    } 
+    } else if (input_mode == InputMode::TargetMolotov) {
+        // CƠ CHẾ NÉM BOM XĂNG MỚI
+        if (human.molotovs <= 0) {
+            input_mode = InputMode::MoveMode;
+            return;
+        }
+        auto [vx, vy] = get_8_direction(tx - human.pos.x, ty - human.pos.y); 
+        if (vx == 0 && vy == 0) return; 
+        
+        human.molotovs -= 1; 
+        human.stamina -= 1;
+        
+        std::uniform_int_distribution<int> dist_steps(1, 6); 
+        int max_steps = dist_steps(rng); 
+        
+        Position hit_pos = human.pos;
+        bool hit_zombie = false;
+        
+        for (int step = 1; step <= max_steps; ++step) { 
+            int cx = human.pos.x + vx * step; 
+            int cy = human.pos.y + vy * step; 
+            if (cx < 0 || cx >= width || cy < 0 || cy >= height || grid[cx][cy] == Terrain::Wall || grid[cx][cy] == Terrain::Obstacle) {
+                break; // Dừng lại ngay trước vật cản
+            } 
+            hit_pos = {cx, cy}; 
+            
+            // Trúng Zombie trên đường bay?
+            for (size_t i = 0; i < zombies.size(); ++i) { 
+                if (zombies[i]->hp > 0 && zombies[i]->pos == hit_pos) { 
+                    hit_zombie = true; 
+                    zombies[i]->is_burning = true;
+                    add_log("-> Molotov hit " + zombies[i]->name + " directly! Target ignited.", ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
+                    break; 
+                } 
+            } 
+            if (hit_zombie) break;
+        }
+        
+        active_fx.type = FXType::Molotov; 
+        active_fx.timer = 0.35f; 
+        active_fx.max_duration = 0.35f; 
+        active_fx.start_p = hCenter; 
+        active_fx.end_p = getCellCenter(hit_pos.x, hit_pos.y, cellSize, boardOffset);
+        
+        if (grid[hit_pos.x][hit_pos.y] == Terrain::Water) {
+            add_log("-> Molotov landed in water. Fizzled out!", ImVec4(0.4f, 0.6f, 1.0f, 1.0f));
+        } else if (grid[hit_pos.x][hit_pos.y] == Terrain::Dirt) {
+            grid[hit_pos.x][hit_pos.y] = Terrain::Fire;
+            // Tồn tại đến cuối lượt tiếp theo của Human (khi Human kết thúc lượt đó)
+            fire_cells.push_back({hit_pos, 1}); 
+            add_log("-> Molotov created a fire zone!", ImVec4(1.0f, 0.3f, 0.0f, 1.0f));
+        }
+        check_fire_interactions();
+    }
     input_mode = InputMode::MoveMode; 
     check_victory_conditions(); 
 }
 
 void GameState::start_zombie_phase() { 
     if (game_over || game_won) return; 
+    
+    // --- KẾT THÚC LƯỢT HUMAN: XỬ LÝ LỬA ---
+    if (human.is_burning) {
+        human.hp = std::max(0, human.hp - 1);
+        human.is_burning = false;
+        add_log("[FIRE] Human suffered 1 Burn Damage!", ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
+    }
+    
+    // Xử lý dập lửa địa hình Fire Cells
+    for (auto it = fire_cells.begin(); it != fire_cells.end(); ) {
+        if (it->duration <= 0) {
+            if (grid[it->pos.x][it->pos.y] == Terrain::Fire) {
+                grid[it->pos.x][it->pos.y] = Terrain::Dirt; // Khôi phục lại đất
+            }
+            it = fire_cells.erase(it);
+        } else {
+            it->duration--;
+            ++it;
+        }
+    }
+    check_victory_conditions();
+    if (game_over || game_won) return;
+    
     phase = TurnPhase::ZombieAnimating; 
     active_zombie_idx = 0; 
     active_zombie_substep = 0; 
@@ -536,7 +624,20 @@ void GameState::start_zombie_phase() {
 
 void GameState::update_zombie_logic(float dt) { 
     if (phase != TurnPhase::ZombieAnimating || active_fx.type != FXType::None) return; 
+    
     if (active_zombie_idx >= zombies.size()) { 
+        // --- KẾT THÚC LƯỢT ZOMBIE: XỬ LÝ LỬA ---
+        for (auto& z : zombies) {
+            if (z->hp > 0 && z->is_burning) {
+                z->hp -= 1;
+                z->is_burning = false;
+                add_log("[FIRE] " + z->name + " suffered 1 Burn Damage!", ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
+                if (z->hp <= 0 && z->type == ZombieType::Exploding) {
+                    trigger_explosion(z->pos.x, z->pos.y);
+                }
+            }
+        }
+        
         if (grenade_box.active && !game_over) { 
             trigger_explosion(grenade_box.pos.x, grenade_box.pos.y); 
             grenade_box.active = false; 
@@ -545,6 +646,12 @@ void GameState::update_zombie_logic(float dt) {
             current_turn++; 
             std::uniform_int_distribution<int> dist_stam(2, 6); 
             human.stamina = dist_stam(rng); 
+            
+            // Nếu đầu lượt Human đứng trên lửa thì bén lửa ngay
+            if (grid[human.pos.x][human.pos.y] == Terrain::Fire && !human.is_burning) {
+                human.is_burning = true;
+                add_log("[FIRE] Human started turn standing in fire!", ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
+            }
         } 
         phase = TurnPhase::HumanTurn; 
         check_victory_conditions(); 

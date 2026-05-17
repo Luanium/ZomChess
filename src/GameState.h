@@ -15,13 +15,14 @@ public:
     char export_filename[64] = "my_custom_challenge.zom";
     char import_filename[64] = "my_custom_challenge.zom";
 
-    // Địa hình và thực thể runtime hiện tại của trận đấu
     int width = 15;
     int height = 15;
     std::vector<std::vector<Terrain>> grid;
     std::vector<std::vector<bool>> mine_grid;
     Human human;
     std::vector<std::unique_ptr<Zombie>> zombies;
+    std::vector<FireCell> fire_cells; // Quản lý thời gian cháy của địa hình
+
     int turn_limit = 50;
     int current_turn = 1;
     InputMode input_mode = InputMode::MoveMode;
@@ -39,15 +40,14 @@ public:
     VisualFX active_fx;
     std::mt19937 rng;
 
-    // Biến tạm phục vụ riêng cho Map Editor UI
     Terrain editor_selected_terrain = Terrain::Obstacle;
 
     GameState();
 
     void init_game();
-    void apply_quick_difficulty(int difficulty_level); // 0: Easy, 1: Medium, 2: Hard
-    int calculate_available_spawn_cells();           // Tính số ô trống có thể đặt Zombie
-    bool is_zombie_count_valid();                    // Kiểm tra xem số lượng zombie có bị quá tải không
+    void apply_quick_difficulty(int difficulty_level); 
+    int calculate_available_spawn_cells();           
+    bool is_zombie_count_valid();                    
 
     void add_log(const std::string& text, ImVec4 color = ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
     int distance(Position p1, Position p2);
@@ -59,6 +59,9 @@ public:
     void start_zombie_phase();
     void update_zombie_logic(float dt);
     void check_victory_conditions();
+    
+    // Hàm mới xử lý cơ chế dính lửa và lan truyền
+    void check_fire_interactions();
 
     bool export_challenge_file(const std::string& path);
     bool import_challenge_file(const std::string& path);
