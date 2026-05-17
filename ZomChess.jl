@@ -62,7 +62,7 @@ mutable struct GameState
 end
 
 # --- 4. Initialization ---
-function init_game(; width=15, height=15, num_zombies=6)
+function init_game(; width=15, height=15, num_zombies=8)
     grid = fill(Dirt, width, height)
     mine_grid = fill(false, width, height)
     grid[:, 1] .= Wall; grid[:, height] .= Wall
@@ -142,6 +142,7 @@ end
 
 # --- 6. AI & Explosion Logic ---
 function zombie_single_step!(state::GameState, idx::Int, zom::AbstractZombie, flash_cells_obs)
+    if state.game_over || state.game_won return end
     h_pos = state.human.pos
     lambda = 1.2 
     valid_moves = Position[]
@@ -156,14 +157,8 @@ function zombie_single_step!(state::GameState, idx::Int, zom::AbstractZombie, fl
             
             if 1 <= nx <= state.width && 1 <= ny <= state.height
                 target_pos = Position(nx, ny)
-                
-                if target_pos == h_pos
-                    continue
-                end
-                
-                if state.grid[nx, ny] == Wall || state.grid[nx, ny] == Obstacle
-                    continue
-                end
+                if target_pos == h_pos; continue; end
+                if state.grid[nx, ny] == Wall || state.grid[nx, ny] == Obstacle; continue; end
                 
                 has_conflict = false
                 for (other_idx, other_zom) in enumerate(state.zombies)
@@ -226,7 +221,7 @@ function trigger_explosion!(state::GameState, cx::Int, cy::Int, flash_cells_obs)
         end
     end
     flash_cells_obs[] = cells
-    sleep(0.2)
+    sleep(0.50) # Animation lâu hơn chút xíu
     flash_cells_obs[] = Point2f[]
 
     if max(abs(state.human.pos.x - cx), abs(state.human.pos.y - cy)) <= 1
@@ -274,7 +269,7 @@ function check_zombie_death!(state::GameState, idx::Int, zom::AbstractZombie, fl
 end
 
 # --- 7. Weapon Action Logic ---
-function handle_weapon_click!(state::GameState, tx::Int, ty::Int, flash_cells_obs, line_fx_obs, state_obs, rebuild_logs_fn)
+function handle_weapon_click!(state::GameState, tx::Int, ty::Int, flash_cells_obs, line_fx_obs, state_obs, rebuild_logs_fn, rebuild_z_fn)
     human = state.human
     mode = state.input_mode
     
@@ -294,7 +289,7 @@ function handle_weapon_click!(state::GameState, tx::Int, ty::Int, flash_cells_ob
                     add_game_log!(state, "[KNIFE] XOET! Dam trung Zombie #$idx. HP con: $(zom.hp)", :springgreen)
                     
                     flash_cells_obs[] = [Point2f(tx, ty)]
-                    sleep(0.1)
+                    sleep(0.40)
                     flash_cells_obs[] = Point2f[]
 
                     check_zombie_death!(state, idx, zom, flash_cells_obs)
@@ -318,7 +313,7 @@ function handle_weapon_click!(state::GameState, tx::Int, ty::Int, flash_cells_ob
         
         end_x, end_y = human.pos.x + vx * 5, human.pos.y + vy * 5
         line_fx_obs[] = [Point2f(human.pos.x, human.pos.y), Point2f(end_x, end_y)]
-        sleep(0.15)
+        sleep(0.45)
         line_fx_obs[] = Point2f[]
 
         hit_target = false
@@ -368,7 +363,7 @@ function handle_weapon_click!(state::GameState, tx::Int, ty::Int, flash_cells_ob
             end
         end
         flash_cells_obs[] = cone_cells
-        sleep(0.15)
+        sleep(0.45)
         flash_cells_obs[] = Point2f[]
 
         for step in 1:3
@@ -426,7 +421,7 @@ function handle_weapon_click!(state::GameState, tx::Int, ty::Int, flash_cells_ob
             state.grenade_box.pos = Position(cx, cy)
             rebuild_logs_fn(state)
             notify(state_obs)
-            sleep(0.15)
+            sleep(0.35)
         end
         
         state.grenade_box.active = true
@@ -448,7 +443,6 @@ function launch_game()
 
     fig = Figure(size = (1400, 850), backgroundcolor = :gray12)
     
-    # Clean split: 2 major columns
     left_layout = fig[1, 1] = GridLayout()
     right_layout = fig[1, 2] = GridLayout()
     
@@ -459,10 +453,15 @@ function launch_game()
     top_bar = left_layout[1, 1] = GridLayout()
     rowsize!(left_layout, 1, Fixed(65))
 
+    # 1. Khởi tạo các component trước để định hình cột 1 và cột 2 cho top_bar
     btn_end_turn = Button(top_bar[1, 1], label = "END TURN", fontsize = 16, width = 120, height = 40, buttoncolor = :tomato, labelcolor = :white, font = :bold)
     
     dyn_info = lift(s -> " [LUOT]: $(s.current_turn)/$(s.turn_limit)   |   [STAMINA]: $(s.human.stamina)   |   [MAU - HP]: $(s.human.hp)  " * (s.input_mode == MoveMode ? "[MODE: DI CHUYEN]" : "[MODE: CHON MUC TIEU VU KHI]"), state_obs)
-    Label(top_bar[1, 2], dyn_info, fontsize = 16, halign = :left, font = :bold, color = :whitesmoke)
+    Label(top_bar[1, 2], dyn_info, fontsize = 16, halign = :left, font = :bold, color = :whitesmoke, tellwidth = false)
+
+    # 2. Sau khi cột 1 đã tồn tại, khóa cứng kích thước của nó lại ở đây
+    colsize!(top_bar, 1, Fixed(130))
+    # Không cần dòng colsize!(top_bar, 2, Auto()) nữa vì cột 2 mặc định sẽ tự chiếm trọn phần còn lại
 
     # --- 8.2 WEAPON TOOLBAR ---
     weapon_bar = left_layout[2, 1] = GridLayout()
@@ -475,7 +474,6 @@ function launch_game()
     btn_mine = Button(weapon_bar[1, 5], label = lift(s -> "Dat Min ($(s.human.mines))", state_obs), fontsize = 13, height = 35, buttoncolor = :gold4, labelcolor = :white)
 
     # --- 8.3 MAIN TACTICAL BOARD ---
-    # CRITICAL FIX: tellheight=false, tellwidth=false guarantees the board NEVER collapses or shrinks to 0
     ax = Axis(left_layout[3, 1], aspect = DataAspect(), backgroundcolor = :black, tellheight = false, tellwidth = false)
     rowsize!(left_layout, 3, Auto())
     
@@ -530,26 +528,61 @@ function launch_game()
     lines!(ax, line_fx, color=:gold, linewidth=4, transparency=true)
     scatter!(ax, flash_cells, color=(:red, 0.6), markersize=42, marker=:rect)
 
-    # --- 8.4 SIDEBAR ENEMY LIST ---
+    # --- 8.4 SIDEBAR SCROLLABLE ENEMY LIST ---
     Box(right_layout[1, 1], color = :gray20, strokewidth = 1, strokecolor = :gray35, cornerradius = 4)
-    z_layout = right_layout[1, 1] = GridLayout(padding = (12, 12, 12, 12))
-    rowsize!(right_layout, 1, Fixed(250)) # Strictly bounded height to prevent visual overlap
+    z_container = right_layout[1, 1] = GridLayout()
+    rowsize!(right_layout, 1, Fixed(250)) 
 
-    Label(z_layout[1, 1:3], "=== DANH SACH KE DICH ===", fontsize = 15, font = :bold, color = :gold, halign = :center)
-    Label(z_layout[2, 1], "STT", font = :bold, color = :lightgray, halign = :left)
-    Label(z_layout[2, 2], "Chung loai", font = :bold, color = :lightgray, halign = :left)
-    Label(z_layout[2, 3], "Mau (HP)", font = :bold, color = :lightgray, halign = :center)
+    Label(z_container[1, 1:2], "=== DANH SACH KE DICH ===", fontsize = 15, font = :bold, color = :gold, halign = :center)
+    
+    z_sub_layout = z_container[2, 1] = GridLayout(padding = (10, 10, 10, 10), halign = :left, valign = :top)
+    Label(z_sub_layout[1, 1], "STT", font = :bold, color = :lightgray, halign = :left)
+    Label(z_sub_layout[1, 2], "Chung loai", font = :bold, color = :lightgray, halign = :left)
+    Label(z_sub_layout[1, 3], "Mau (HP)", font = :bold, color = :lightgray, halign = :center)
 
-    num_zom = length(state.zombies)
-    for i in 1:num_zom
-        Label(z_layout[2 + i, 1], " #$i", fontsize = 13, color = :whitesmoke, halign = :left)
-        Label(z_layout[2 + i, 2], lift(s -> s.zombies[i].name, state_obs), fontsize = 13, color = :whitesmoke, halign = :left)
-        z_hp_text = lift(s -> s.zombies[i].hp <= 0 ? "[X] DA CHET" : "$(s.zombies[i].hp) HP", state_obs)
-        z_hp_color = lift(s -> s.zombies[i].hp <= 0 ? :red : :springgreen, state_obs)
-        Label(z_layout[2 + i, 3], z_hp_text, fontsize = 13, halign = :center, color = z_hp_color, font = :bold)
+    max_z_display = 6
+    z_labels_stt = [Label(z_sub_layout[1 + r, 1], "", fontsize = 13, color = :whitesmoke, halign = :left) for r in 1:max_z_display]
+    z_labels_name = [Label(z_sub_layout[1 + r, 2], "", fontsize = 13, color = :whitesmoke, halign = :left) for r in 1:max_z_display]
+    z_labels_hp = [Label(z_sub_layout[1 + r, 3], "", fontsize = 13, halign = :center, font = :bold) for r in 1:max_z_display]
+    
+    for r in 1:(max_z_display + 1)
+        rowsize!(z_sub_layout, r, Fixed(24))
+    end
+    
+    z_slider = Slider(z_container[2, 2], range = 1:1, startvalue = 1, horizontal = false, tellwidth = true, width = 15)
+
+    function rebuild_zombie_list!(curr_state)
+        n_zoms = length(curr_state.zombies)
+        if n_zoms <= max_z_display
+            z_slider.range[] = 1:1
+            start_idx = 1
+        else
+            max_start = n_zoms - max_z_display + 1
+            z_slider.range[] = 1:max_start
+            start_idx = z_slider.value[]
+        end
+        
+        for r in 1:max_z_display
+            curr_idx = start_idx + r - 1
+            if curr_idx <= n_zoms
+                zom = curr_state.zombies[curr_idx]
+                z_labels_stt[r].text = " #$curr_idx"
+                z_labels_name[r].text = zom.name
+                z_labels_hp[r].text = zom.hp <= 0 ? "[X] DA CHET" : "$(zom.hp) HP"
+                z_labels_hp[r].color = zom.hp <= 0 ? :red : :springgreen
+            else
+                z_labels_stt[r].text = ""
+                z_labels_name[r].text = ""
+                z_labels_hp[r].text = ""
+            end
+        end
     end
 
-    # --- 8.5 BATTLE LOG WINDOW WITH STRICTLY ISOLATED ROWS ---
+    on(z_slider.value) do _
+        rebuild_zombie_list!(state_obs[])
+    end
+
+    # --- 8.5 BATTLE LOG WINDOW WITH SLIDER ---
     log_container = right_layout[2, 1] = GridLayout()
     rowsize!(right_layout, 2, Auto()) 
     Label(log_container[1, 1:2], "--- NHAT KY CHIEN TRUONG ---", fontsize = 13, font = :bold, color = :cyan, halign = :center)
@@ -557,10 +590,7 @@ function launch_game()
     Box(log_container[2, 1:2], color = :black, strokewidth = 2, strokecolor = :firebrick)
     log_sub_layout = log_container[2, 1] = GridLayout(padding = (12, 12, 12, 12), halign = :left, valign = :top)
     
-    # Create 15 structural placeholder labels
     log_labels = [Label(log_sub_layout[r, 1], "", fontsize = 13, halign = :left, padding = (1,1,1,1)) for r in 1:15]
-    
-    # CRITICAL FIX: Explicitly lock the height of each row cell to completely ban text overlapping
     for r in 1:15
         rowsize!(log_sub_layout, r, Fixed(24))
     end
@@ -577,15 +607,12 @@ function launch_game()
         else
             max_start = n_logs - max_display + 1
             log_slider.range[] = 1:max_start
-            
-            # Auto-scroll downward when new events arrive
             if log_slider.value[] < 1 || log_slider.value[] > max_start
                 set_close_to!(log_slider, max_start)
             end
             start_idx = log_slider.value[]
         end
         
-        # Inject textual data dynamically into fixed geometry layout
         for r in 1:max_display
             curr_idx = start_idx + r - 1
             if curr_idx <= n_logs
@@ -603,9 +630,30 @@ function launch_game()
         rebuild_scrollable_logs!(state_obs[])
     end
 
+    # Initial sidebars render
+    rebuild_zombie_list!(state)
     rebuild_scrollable_logs!(state)
 
-    # --- 8.6 OVERLAY SYSTEM ---
+    # --- 8.6 MOUSE WHEEL SCROLL EVENT LISTENER ---
+    # Intercept figure-wide scrolling and map to right-hand panels based on cursor positioning
+    on(events(fig).scroll) do (dx, dy)
+        mp = events(fig).mouseposition[]
+        if mp[1] >= 940 # Hovering over the sidebar column
+            if mp[2] < 450 # Lower window (Battle logs)
+                curr = log_slider.value[]
+                step_val = Int(sign(dy))
+                new_val = clamp(curr - step_val, minimum(log_slider.range[]), maximum(log_slider.range[]))
+                set_close_to!(log_slider, new_val)
+            else # Upper window (Enemy list)
+                curr = z_slider.value[]
+                step_val = Int(sign(dy))
+                new_val = clamp(curr - step_val, minimum(z_slider.range[]), maximum(z_slider.range[]))
+                set_close_to!(z_slider, new_val)
+            end
+        end
+    end
+
+    # --- 8.7 OVERLAY SYSTEM ---
     overlay_box = Box(fig[1, :], color = (:black, 0.85), visible = false)
     overlay_label = Label(fig[1, :], "GAME STATUS", fontsize = 36, font = :bold, color = :white, visible = false)
 
@@ -687,7 +735,8 @@ function launch_game()
                     end
                 else
                     @async begin
-                        handle_weapon_click!(current_state, target_x, target_y, flash_cells, line_fx, state_obs, rebuild_scrollable_logs!)
+                        handle_weapon_click!(current_state, target_x, target_y, flash_cells, line_fx, state_obs, rebuild_scrollable_logs!, rebuild_zombie_list!)
+                        rebuild_zombie_list!(current_state)
                         rebuild_scrollable_logs!(current_state)
                         update_game_status_visuals!(current_state)
                         notify(state_obs)
@@ -708,15 +757,17 @@ function launch_game()
             
             for (idx, zom) in enumerate(current_state.zombies)
                 if zom.hp <= 0; continue; end
+                if current_state.game_over; break; end # Đứt vòng lặp ngay khi người chơi chết
                 
                 moves_this_turn = zom isa FastZombie ? 2 : 1
                 step = 1
                 while step <= moves_this_turn
-                    if zom.hp <= 0 || current_state.game_over; break; end
+                    if zom.hp <= 0 || current_state.game_over; break; end # Khóa chết Zombie nhanh chạy quá bước
                     
                     zombie_single_step!(current_state, idx, zom, flash_cells)
+                    rebuild_zombie_list!(current_state)
                     notify(state_obs)
-                    sleep(0.2) 
+                    sleep(0.55) # Làm chậm bước đi của Zombie
                     
                     if zom.hp > 0 && distance(zom.pos, current_state.human.pos) <= 1
                         current_state.human.hp = max(0, current_state.human.hp - 1)
@@ -727,19 +778,25 @@ function launch_game()
                             add_game_log!(current_state, "   [HUT MAU] Vampire Zom duoc +1 HP!", :magenta)
                         end
                         
-                        if zom isa FastZombie && step == moves_this_turn
+                        if zom isa FastZombie && step == moves_this_turn && current_state.human.hp > 0
                             moves_this_turn += 1
                             add_game_log!(current_state, "   [KICH TOC] Fast Zom can trung, kich hoat di them o!", :yellowgreen)
                         end
                         
+                        check_victory_conditions!(current_state)
                         rebuild_scrollable_logs!(current_state)
+                        rebuild_zombie_list!(current_state)
+                        update_game_status_visuals!(current_state)
                         notify(state_obs)
-                        sleep(0.15)
+                        
+                        if current_state.game_over; break; end # Ngắt lập tức khi HP về 0
+                        sleep(0.40)
                     end
                     step += 1
                 end
             end
             
+            # Kích nổ lựu đạn nếu có
             if current_state.grenade_box.active && !current_state.game_over
                 gx = current_state.grenade_box.pos.x
                 gy = current_state.grenade_box.pos.y
@@ -748,6 +805,7 @@ function launch_game()
                 current_state.grenade_box.active = false
             end
 
+            # Sang lượt mới
             if !current_state.game_over
                 current_state.current_turn += 1
                 current_state.human.stamina = rand(2:6)
@@ -757,6 +815,7 @@ function launch_game()
 
             check_victory_conditions!(current_state)
             rebuild_scrollable_logs!(current_state)
+            rebuild_zombie_list!(current_state)
             update_game_status_visuals!(current_state)
             notify(state_obs)
         end
