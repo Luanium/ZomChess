@@ -11,6 +11,24 @@ enum class InputMode { MoveMode, TargetKnife, TargetPistol, TargetShotgun, Targe
 enum class ZombieType { Normal, Fast, Exploding, Vampire };
 enum class TurnPhase { HumanTurn, ZombieAnimating };
 enum class FXType { None, Knife, Pistol, Shotgun, Explosion };
+enum class GameScene { MainMenu, Playing }; // Scene tracker
+
+// Encapsulates configuration values for export/import
+struct GameConfig {
+    int human_hp = 5;
+    int initial_stamina = 6;
+    int pistol_ammo = 12;
+    int shotgun_ammo = 6;
+    int grenades = 3;
+    int mines = 2;
+    int turn_limit = 50;
+
+    // Hostile unit parameters
+    int count_normal = 3;
+    int count_fast = 2;
+    int count_exploding = 2;
+    int count_vampire = 1;
+};
 
 struct Position {
     int x;

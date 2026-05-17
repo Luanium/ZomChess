@@ -9,6 +9,13 @@
 
 class GameState {
 public:
+    GameScene current_scene = GameScene::MainMenu; // Starts on config panel
+    GameConfig active_config;                     // Tracks setup variables
+    
+    // File I/O tracking buffers
+    char export_filename[64] = "my_custom_challenge.zom";
+    char import_filename[64] = "my_custom_challenge.zom";
+
     int width = 15;
     int height = 15;
     std::vector<std::vector<Terrain>> grid;
@@ -45,6 +52,10 @@ public:
     void start_zombie_phase();
     void update_zombie_logic(float dt);
     void check_victory_conditions();
+
+    // Challenge Management File utilities
+    bool export_challenge_file(const std::string& path);
+    bool import_challenge_file(const std::string& path);
 };
 
 #endif // GAMESTATE_H
