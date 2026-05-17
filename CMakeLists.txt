@@ -1,76 +1,50 @@
 cmake_minimum_required(VERSION 3.14)
-project(ZomChess)
+project(ZomChess LANGUAGES CXX)
 
-# Yêu cầu chuẩn C++20 nghiêm ngặt
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# 1. Find system SFML package
+find_package(SFML 2.5 COMPONENTS graphics window system REQUIRED)
+
+# 2. Fetch the core Dear ImGui library first
 include(FetchContent)
-
-# =================================================================
-# 1. TẢI VÀ ÉP BIÊN DỊCH TĨNH SFML TỪ MÃ NGUỒN
-# =================================================================
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build SFML as static libraries" FORCE)
-set(SFML_BUILD_AUDIO ON CACHE BOOL "Enable audio component" FORCE)
-
-FetchContent_Declare(
-    sfml
-    GIT_REPOSITORY https://github.com/SFML/SFML.git
-    GIT_TAG        2.6.1
-)
-FetchContent_MakeAvailable(sfml)
-
-# =================================================================
-# 2. TẢI DEAR IMGUI
-# =================================================================
 FetchContent_Declare(
     imgui
     GIT_REPOSITORY https://github.com/ocornut/imgui.git
-    GIT_TAG        v1.90.4
+    GIT_TAG        v1.90.4 # Stable version compatible with ImGui-SFML v2.6
 )
-FetchContent_MakeAvailable(imgui)
+FetchContent_GetProperties(imgui)
+if(NOT imgui_POP_PROV)
+    FetchContent_Populate(imgui)
+endif()
 
-# =================================================================
-# 3. TẢI IMGUI-SFML (CHỈ TẢI SOURCE, KHÔNG KÍCH HOẠT FILE CMAKE LỖI)
-# =================================================================
+# 3. Configure ImGui-SFML variables to point to the fetched ImGui core
+# and bypass internal SFML static search issues.
+set(IMGUI_DIR ${imgui_SOURCE_DIR} CACHE PATH "Path to ImGui source code" FORCE)
+set(IMGUI_SFML_FIND_SFML OFF CACHE INTERNAL "Disable internal SFML search in ImGui-SFML")
+set(IMGUI_SFML_SHARED_LIBS ON CACHE INTERNAL "Force ImGui-SFML to link dynamically")
+
+# 4. Fetch ImGui-SFML wrapper
 FetchContent_Declare(
-    imguisfml
+    imgui-sfml
     GIT_REPOSITORY https://github.com/SFML/imgui-sfml.git
     GIT_TAG        v2.6
 )
-FetchContent_Populate(imguisfml) # Lệnh này chặn đứng việc imguisfml tự ý chạy find_package
+FetchContent_MakeAvailable(imgui-sfml)
 
-# =================================================================
-# 4. GOM TẤT CẢ FILE NGUỒN ĐỂ ĐÚC RA FILE THỰC THI DUY NHẤT
-# =================================================================
+# 5. Build executable target
 add_executable(ZomChess 
-    main.cpp
-    # Tự gom file .cpp của Dear ImGui để tự compile
-    ${imgui_SOURCE_DIR}/imgui.cpp
-    ${imgui_SOURCE_DIR}/imgui_draw.cpp
-    ${imgui_SOURCE_DIR}/imgui_tables.cpp
-    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
-    # Tự gom file .cpp của bộ kết nối
-    ${imguisfml_SOURCE_DIR}/imgui-SFML.cpp
+    src/main.cpp 
+    src/GameState.cpp
 )
 
-# Khai báo đường dẫn chứa file Header (.h)
-target_include_directories(ZomChess PRIVATE 
-    ${imgui_SOURCE_DIR} 
-    ${imguisfml_SOURCE_DIR}
-)
+target_include_directories(ZomChess PRIVATE src)
 
-# Liên kết với các target SFML tĩnh được sinh ra từ bước 1
+# 6. Explicitly link SFML and ImGui-SFML
 target_link_libraries(ZomChess PRIVATE 
     sfml-graphics 
     sfml-window 
-    sfml-system
-    sfml-audio
+    sfml-system 
+    ImGui-SFML::ImGui-SFML
 )
-
-# Vì build tĩnh SFML trên Linux, bắt buộc phải khai báo các thư viện nền của hệ thống để liên kết
-if(CMAKE_SYSTEM_NAME MATCHES "Linux")
-    target_link_libraries(ZomChess PRIVATE 
-        GL pthread X11 Xrandr Xrender X11-xcb xcb xcb-randr xcb-image udev OpenGL
-    )
-endif()
