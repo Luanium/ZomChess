@@ -57,6 +57,8 @@ mutable struct GameState
     input_mode::InputMode
     grenade_box::GrenadeTimer
     logs::Vector{LogLine} 
+    game_over::Bool
+    game_won::Bool
 end
 
 # --- 4. Initialization ---
@@ -102,7 +104,7 @@ function init_game(; width=15, height=15, num_zombies=6)
         LogLine("Su dung chuot click ban co de hanh dong.", :lightgray)
     ]
 
-    return GameState(width, height, grid, mine_grid, human, zombies, 50, 1, MoveMode, GrenadeTimer(false, Position(0,0)), init_logs)
+    return GameState(width, height, grid, mine_grid, human, zombies, 50, 1, MoveMode, GrenadeTimer(false, Position(0,0)), init_logs, false, false)
 end
 
 # --- 5. Helper Functions ---
@@ -123,13 +125,23 @@ end
 
 function add_game_log!(state::GameState, msg::String, color::Symbol=:lightgray)
     push!(state.logs, LogLine(msg, color))
-    if length(state.logs) > 100 
+    if length(state.logs) > 150 
         popfirst!(state.logs)
     end
 end
 
-# --- 6. AI Logic ---
-function zombie_single_step!(state::GameState, idx::Int, zom::AbstractZombie)
+function check_victory_conditions!(state::GameState)
+    if state.human.hp <= 0
+        state.game_over = true
+        add_game_log!(state, "=== BAN DA THUAN TRAN! HUMAN DA CHET ===", :red)
+    elseif all(z -> z.hp <= 0, state.zombies)
+        state.game_won = true
+        add_game_log!(state, "=== CHUC MUNG THANG LOI! DA DIET GIAI TOAN BO ZOMBIE ===", :gold)
+    end
+end
+
+# --- 6. AI & Explosion Logic ---
+function zombie_single_step!(state::GameState, idx::Int, zom::AbstractZombie, flash_cells_obs)
     h_pos = state.human.pos
     lambda = 1.2 
     valid_moves = Position[]
@@ -144,6 +156,11 @@ function zombie_single_step!(state::GameState, idx::Int, zom::AbstractZombie)
             
             if 1 <= nx <= state.width && 1 <= ny <= state.height
                 target_pos = Position(nx, ny)
+                
+                if target_pos == h_pos
+                    continue
+                end
+                
                 if state.grid[nx, ny] == Wall || state.grid[nx, ny] == Obstacle
                     continue
                 end
@@ -194,57 +211,37 @@ function zombie_single_step!(state::GameState, idx::Int, zom::AbstractZombie)
             zx, zy = Int(zom.pos.x), Int(zom.pos.y)
             add_game_log!(state, "[MIN NO] Zom #$idx ($(zom.name)) dap phai min o ($zx, $zy)!", :red)
             state.mine_grid[zx, zy] = false
-            trigger_explosion!(state, zx, zy)
+            trigger_explosion!(state, zx, zy, flash_cells_obs)
         end
     end
 end
 
-function zombie_turn!(state::GameState)
-    for (idx, zom) in enumerate(state.zombies)
-        if zom.hp <= 0; continue; end
-        
-        moves_this_turn = zom isa FastZombie ? 2 : 1
-        step = 1
-        while step <= moves_this_turn
-            if zom.hp <= 0; break; end
-            
-            zombie_single_step!(state, idx, zom)
-            
-            if zom.hp > 0 && distance(zom.pos, state.human.pos) <= 1
-                state.human.hp -= 1
-                add_game_log!(state, "[ATTACK] Zom #$idx ($(zom.name)) can ban! -1 HP.", :crimson)
-                
-                if zom isa VampireZombie
-                    zom.hp += 1
-                    add_game_log!(state, "   [HUT MAU] Vampire Zom duoc +1 HP!", :magenta)
-                end
-                
-                if zom isa FastZombie && step == moves_this_turn
-                    moves_this_turn += 1
-                    add_game_log!(state, "   [KICH TOC] Fast Zom can trung, kich hoat di them o!", :yellowgreen)
-                end
-            end
-            step += 1
-        end
-    end
-end
-
-function trigger_explosion!(state::GameState, cx::Int, cy::Int)
+function trigger_explosion!(state::GameState, cx::Int, cy::Int, flash_cells_obs)
     add_game_log!(state, "[EXPLOSION] Vu no lon bung phat tai tam ($cx, $cy)!", :orange)
     
+    cells = Point2f[]
+    for dx in -1:1, dy in -1:1
+        if 1 <= cx+dx <= state.width && 1 <= cy+dy <= state.height
+            push!(cells, Point2f(cx+dx, cy+dy))
+        end
+    end
+    flash_cells_obs[] = cells
+    sleep(0.2)
+    flash_cells_obs[] = Point2f[]
+
     if max(abs(state.human.pos.x - cx), abs(state.human.pos.y - cy)) <= 1
-        state.human.hp -= 1
+        state.human.hp = max(0, state.human.hp - 1)
         add_game_log!(state, "-> Human dinh sat thuong no lan (-1 HP)!", :crimson)
     end
     
     for (idx, zom) in enumerate(state.zombies)
         if zom.hp > 0 && max(abs(zom.pos.x - cx), abs(zom.pos.y - cy)) <= 1
             zom.hp -= 1
-            add_game_log!(state, "-> Zom #$idx ($(zom.name)) gánh sat thuong no (-1 HP).", :orange)
+            add_game_log!(state, "-> Zom #$idx ($(zom.name)) ganh sat thuong no (-1 HP).", :orange)
             
             if zom.hp <= 0 && zom isa ExplodingZombie
                 add_game_log!(state, "   [LIEN HOAN NO] Kich hoat phat no day chuyen!", :red)
-                trigger_explosion!(state, zom.pos.x, zom.pos.y)
+                trigger_explosion!(state, zom.pos.x, zom.pos.y, flash_cells_obs)
             end
             
             vx = sign(zom.pos.x - cx)
@@ -259,23 +256,25 @@ function trigger_explosion!(state::GameState, cx::Int, cy::Int)
                     zom.hp -= 1
                     add_game_log!(state, "   RAM! Zombie va vao tuong khi vang ra! -1 HP!", :red)
                     if zom.hp <= 0 && zom isa ExplodingZombie
-                        trigger_explosion!(state, zom.pos.x, zom.pos.y)
+                        trigger_explosion!(state, zom.pos.x, zom.pos.y, flash_cells_obs)
                     end
                 end
             end
         end
     end
+    check_victory_conditions!(state)
 end
 
-function check_zombie_death!(state::GameState, idx::Int, zom::AbstractZombie)
+function check_zombie_death!(state::GameState, idx::Int, zom::AbstractZombie, flash_cells_obs)
     if zom.hp <= 0 && zom isa ExplodingZombie
         add_game_log!(state, "[TU VI DAO] Zom No #$idx guc nga va phat no!", :red)
-        trigger_explosion!(state, zom.pos.x, zom.pos.y)
+        trigger_explosion!(state, zom.pos.x, zom.pos.y, flash_cells_obs)
     end
+    check_victory_conditions!(state)
 end
 
 # --- 7. Weapon Action Logic ---
-function handle_weapon_click!(state::GameState, tx::Int, ty::Int)
+function handle_weapon_click!(state::GameState, tx::Int, ty::Int, flash_cells_obs, line_fx_obs, state_obs, rebuild_logs_fn)
     human = state.human
     mode = state.input_mode
     
@@ -293,7 +292,12 @@ function handle_weapon_click!(state::GameState, tx::Int, ty::Int)
                     zom.hp -= 1
                     human.stamina -= 1
                     add_game_log!(state, "[KNIFE] XOET! Dam trung Zombie #$idx. HP con: $(zom.hp)", :springgreen)
-                    check_zombie_death!(state, idx, zom)
+                    
+                    flash_cells_obs[] = [Point2f(tx, ty)]
+                    sleep(0.1)
+                    flash_cells_obs[] = Point2f[]
+
+                    check_zombie_death!(state, idx, zom, flash_cells_obs)
                     state.input_mode = MoveMode
                     return
                 end
@@ -312,6 +316,11 @@ function handle_weapon_click!(state::GameState, tx::Int, ty::Int)
         human.stamina -= 1
         add_game_log!(state, "[PISTOL] DOANG! Khai hoa sung ngan huong ($vx, $vy)...", :lightgray)
         
+        end_x, end_y = human.pos.x + vx * 5, human.pos.y + vy * 5
+        line_fx_obs[] = [Point2f(human.pos.x, human.pos.y), Point2f(end_x, end_y)]
+        sleep(0.15)
+        line_fx_obs[] = Point2f[]
+
         hit_target = false
         for step in 1:5
             curr_x = human.pos.x + vx * step
@@ -325,7 +334,7 @@ function handle_weapon_click!(state::GameState, tx::Int, ty::Int)
                     if rand() <= hit_chance
                         zom.hp -= 1
                         add_game_log!(state, "-> Ban trung Zom #$idx o cu ly $step o. HP: $(zom.hp)", :springgreen)
-                        check_zombie_death!(state, idx, zom)
+                        check_zombie_death!(state, idx, zom, flash_cells_obs)
                     else
                         add_game_log!(state, "-> Dan bay chech muc tieu!", :yellow)
                     end
@@ -345,6 +354,23 @@ function handle_weapon_click!(state::GameState, tx::Int, ty::Int)
         human.stamina -= 1
         add_game_log!(state, "[SHOTGUN] DOANG! Khai hoa Shotgun huong ($vx, $vy)!", :lightgray)
         
+        cone_cells = Point2f[]
+        for step in 1:3
+            cx = human.pos.x + vx * step
+            cy = human.pos.y + vy * step
+            if 1 <= cx <= state.width && 1 <= cy <= state.height
+                push!(cone_cells, Point2f(cx, cy))
+                if vx != 0 && vy == 0
+                    push!(cone_cells, Point2f(cx, cy - 1), Point2f(cx, cy + 1))
+                elseif vy != 0 && vx == 0
+                    push!(cone_cells, Point2f(cx - 1, cy), Point2f(cx + 1, cy))
+                end
+            end
+        end
+        flash_cells_obs[] = cone_cells
+        sleep(0.15)
+        flash_cells_obs[] = Point2f[]
+
         for step in 1:3
             curr_x = human.pos.x + vx * step
             curr_y = human.pos.y + vy * step
@@ -361,11 +387,11 @@ function handle_weapon_click!(state::GameState, tx::Int, ty::Int)
                     if 1 <= px <= state.width && 1 <= py <= state.height && state.grid[px, py] != Wall && state.grid[px, py] != Obstacle
                         zom.pos.x = px
                         zom.pos.y = py
-                        check_zombie_death!(state, idx, zom)
+                        check_zombie_death!(state, idx, zom, flash_cells_obs)
                     else
                         zom.hp -= 1
                         add_game_log!(state, "   RAM! Zombie va vao tuong khi vang ra! Chiu them sat thuong!", :orange)
-                        check_zombie_death!(state, idx, zom)
+                        check_zombie_death!(state, idx, zom, flash_cells_obs)
                     end
                     found_zom = true
                     break
@@ -382,56 +408,34 @@ function handle_weapon_click!(state::GameState, tx::Int, ty::Int)
         human.grenades -= 1
         human.stamina -= 1
         
-        total_steps = rand(1:6)
+        total_steps = rand(2:5)
         cx, cy = human.pos.x, human.pos.y
-        add_game_log!(state, "[GRENADE] VUT... He thong xuc xac tam nem xa: $total_steps o", :lawngreen)
+        add_game_log!(state, "[GRENADE] VUT... Huong nem ($vx, $vy), tam bay du kien: $total_steps o", :lawngreen)
         
         for step in 1:total_steps
             next_x = cx + vx
             next_y = cy + vy
             
-            hit_x = false
-            hit_y = false
-            
-            if next_x < 1 || next_x > state.width || state.grid[next_x, cy] == Wall || state.grid[next_x, cy] == Obstacle
-                hit_x = true
+            if next_x < 1 || next_x > state.width || next_y < 1 || next_y > state.height || state.grid[next_x, next_y] == Wall || state.grid[next_x, next_y] == Obstacle
+                add_game_log!(state, "   [VAT CAN] Luu dan bi chan tai buoc $step o vi tri ($cx, $cy)!", :yellow)
+                break
             end
-            if next_y < 1 || next_y > state.height || state.grid[cx, next_y] == Wall || state.grid[cx, next_y] == Obstacle
-                hit_y = true
-            end
-            
-            if !hit_x && !hit_y
-                if state.grid[next_x, next_y] == Wall || state.grid[next_x, next_y] == Obstacle
-                    hit_x = true
-                    hit_y = true
-                end
-            end
-            
-            if hit_x || hit_y
-                if hit_x; vx = -vx; end
-                if hit_y; vy = -vy; end
-                add_game_log!(state, "   [NAY] Bat doi tai o buoc ($step)! Doi huong sang ($vx, $vy)", :yellow)
-                
-                next_x = cx + vx
-                next_y = cy + vy
-                
-                if next_x < 1 || next_x > state.width || next_y < 1 || next_y > state.height || state.grid[next_x, next_y] == Wall || state.grid[next_x, next_y] == Obstacle
-                    next_x, next_y = cx, cy
-                end
-            end
-            
             cx, cy = next_x, next_y
+            
+            state.grenade_box.active = true
+            state.grenade_box.pos = Position(cx, cy)
+            rebuild_logs_fn(state)
+            notify(state_obs)
+            sleep(0.15)
         end
-        
-        cx = clamp(cx, 1, state.width)
-        cy = clamp(cy, 1, state.height)
         
         state.grenade_box.active = true
         state.grenade_box.pos = Position(cx, cy)
-        add_game_log!(state, "[TIMER] Luu dan da yen vi tai o ($cx, $cy)...", :lawngreen)
+        add_game_log!(state, "[TIMER] Luu dan da nam im tai o ($cx, $cy)...", :lawngreen)
     end
 
     state.input_mode = MoveMode
+    check_victory_conditions!(state)
 end
 
 # --- 8. Interactive UI Layout ---
@@ -439,48 +443,54 @@ function launch_game()
     state = init_game()
     state_obs = Observable(state)
 
-    fig = Figure(size = (1500, 900), backgroundcolor = :gray15)
+    flash_cells = Observable(Point2f[])
+    line_fx = Observable(Point2f[])
+
+    fig = Figure(size = (1400, 850), backgroundcolor = :gray12)
     
+    # Clean split: 2 major columns
     left_layout = fig[1, 1] = GridLayout()
     right_layout = fig[1, 2] = GridLayout()
     
-    colsize!(fig.layout, 1, Relative(0.68))
-    colsize!(fig.layout, 2, Fixed(450)) 
+    colsize!(fig.layout, 1, Relative(0.65))
+    colsize!(fig.layout, 2, Fixed(460)) 
 
-    # --- 8.1 TOP CONTROL ---
+    # --- 8.1 TOP CONTROL BAR ---
     top_bar = left_layout[1, 1] = GridLayout()
-    rowsize!(left_layout, 1, Fixed(80))
+    rowsize!(left_layout, 1, Fixed(65))
 
-    btn_end_turn = Button(top_bar[1, 1], label = "END TURN", fontsize = 18, width = 130, height = 45, buttoncolor = :tomato, labelcolor = :white, font = :bold)
+    btn_end_turn = Button(top_bar[1, 1], label = "END TURN", fontsize = 16, width = 120, height = 40, buttoncolor = :tomato, labelcolor = :white, font = :bold)
     
-    dyn_info = lift(s -> " [LUOT]: $(s.current_turn)/$(s.turn_limit)   |   [STAMINA]: $(s.human.stamina)   |   [MAU - HP]: $(s.human.hp)", state_obs)
-    Label(top_bar[1, 2], dyn_info, fontsize = 18, halign = :left, font = :bold, color = :whitesmoke)
+    dyn_info = lift(s -> " [LUOT]: $(s.current_turn)/$(s.turn_limit)   |   [STAMINA]: $(s.human.stamina)   |   [MAU - HP]: $(s.human.hp)  " * (s.input_mode == MoveMode ? "[MODE: DI CHUYEN]" : "[MODE: CHON MUC TIEU VU KHI]"), state_obs)
+    Label(top_bar[1, 2], dyn_info, fontsize = 16, halign = :left, font = :bold, color = :whitesmoke)
 
-    # --- 8.2 TOOLBAR VŨ KHÍ ---
+    # --- 8.2 WEAPON TOOLBAR ---
     weapon_bar = left_layout[2, 1] = GridLayout()
     rowsize!(left_layout, 2, Fixed(50))
 
-    btn_knife = Button(weapon_bar[1, 1], label = "Dao (oo)", fontsize = 14, height = 35)
-    btn_pistol = Button(weapon_bar[1, 2], label = lift(s -> "Sung Ngan ($(s.human.pistol_ammo))", state_obs), fontsize = 14, height = 35)
-    btn_shotgun = Button(weapon_bar[1, 3], label = lift(s -> "Shotgun ($(s.human.shotgun_ammo))", state_obs), fontsize = 14, height = 35)
-    btn_grenade = Button(weapon_bar[1, 4], label = lift(s -> "Luu Dan ($(s.human.grenades))", state_obs), fontsize = 14, height = 35)
-    btn_mine = Button(weapon_bar[1, 5], label = lift(s -> "Dat Min ($(s.human.mines))", state_obs), fontsize = 14, height = 35, buttoncolor = :gold4, labelcolor = :white)
+    btn_knife = Button(weapon_bar[1, 1], label = "Dao (oo)", fontsize = 13, height = 35)
+    btn_pistol = Button(weapon_bar[1, 2], label = lift(s -> "Sung Ngan ($(s.human.pistol_ammo))", state_obs), fontsize = 13, height = 35)
+    btn_shotgun = Button(weapon_bar[1, 3], label = lift(s -> "Shotgun ($(s.human.shotgun_ammo))", state_obs), fontsize = 13, height = 35)
+    btn_grenade = Button(weapon_bar[1, 4], label = lift(s -> "Luu Dan ($(s.human.grenades))", state_obs), fontsize = 13, height = 35)
+    btn_mine = Button(weapon_bar[1, 5], label = lift(s -> "Dat Min ($(s.human.mines))", state_obs), fontsize = 13, height = 35, buttoncolor = :gold4, labelcolor = :white)
 
-    # --- 8.3 BÀN CỜ CHIẾN THUẬT ---
-    ax = Axis(left_layout[3, 1], aspect = DataAspect(), backgroundcolor = :black)
-    left_layout[3, 1] = ax
+    # --- 8.3 MAIN TACTICAL BOARD ---
+    # CRITICAL FIX: tellheight=false, tellwidth=false guarantees the board NEVER collapses or shrinks to 0
+    ax = Axis(left_layout[3, 1], aspect = DataAspect(), backgroundcolor = :black, tellheight = false, tellwidth = false)
+    rowsize!(left_layout, 3, Auto())
+    
     hidespines!(ax)
     hidedecorations!(ax)
     
-    xlims!(ax, 0.0, state.width + 0.5)
-    ylims!(ax, 0.0, state.height + 0.5)
+    xlims!(ax, 0.0, state.width + 1.0)
+    ylims!(ax, 0.0, state.height + 1.0)
 
     for x in 1:state.width
         for y in 1:state.height
-            color = state.grid[x, y] == Wall ? :gray35 : 
-                    state.grid[x, y] == Obstacle ? :gray20 : 
+            color = state.grid[x, y] == Wall ? :gray30 : 
+                    state.grid[x, y] == Obstacle ? :gray18 : 
                     state.grid[x, y] == Water ? :deepskyblue4 : :sienna
-            poly!(ax, Rect(x-0.5, y-0.5, 1, 1), color=color, strokewidth=1.5, strokecolor=:gray10)
+            poly!(ax, Rect(x-0.5, y-0.5, 1, 1), color=color, strokewidth=1.0, strokecolor=:gray15)
         end
     end
 
@@ -507,102 +517,120 @@ function launch_game()
 
     scatter!(ax, mine_positions, color=:red, markersize=14, marker=:circle)
     scatter!(ax, grenade_pos, color=:lawngreen, markersize=22, marker=:utriangle) 
-    
     scatter!(ax, zombie_dead_pos, color=:black, markersize=34, marker=:rect, strokewidth=1.0, strokecolor=:gray40)
     scatter!(ax, zombie_dead_pos, color=:red, markersize=16, marker=:x)
-
     scatter!(ax, zombie_alive_pos, color=zombie_alive_colors, markersize=34, marker=:rect)
     
     zombie_alive_labels = lift(s -> let lbs = ["#$i" for (i, z) in enumerate(s.zombies) if z.hp > 0]
         isempty(lbs) ? [""] : lbs
     end, state_obs)
-    text!(ax, zombie_alive_pos, text = zombie_alive_labels, color = :whitesmoke, fontsize = 14, font = :bold, align = (:center, :center))
-
+    text!(ax, zombie_alive_pos, text = zombie_alive_labels, color = :whitesmoke, fontsize = 13, font = :bold, align = (:center, :center))
     scatter!(ax, human_pos, color=:white, markersize=38, marker=:star5)
 
-    # --- 8.4 SIDEBAR HỆ THỐNG ---
-    Box(right_layout[1, 1], color = :gray25, strokewidth = 1, strokecolor = :gray40, cornerradius = 6)
-    z_layout = right_layout[1, 1] = GridLayout(padding = (15, 15, 15, 15))
-    
-    Label(z_layout[1, 1:3], "=== DANH SACH KE DICH ===", fontsize = 16, font = :bold, color = :gold, halign = :center)
+    lines!(ax, line_fx, color=:gold, linewidth=4, transparency=true)
+    scatter!(ax, flash_cells, color=(:red, 0.6), markersize=42, marker=:rect)
+
+    # --- 8.4 SIDEBAR ENEMY LIST ---
+    Box(right_layout[1, 1], color = :gray20, strokewidth = 1, strokecolor = :gray35, cornerradius = 4)
+    z_layout = right_layout[1, 1] = GridLayout(padding = (12, 12, 12, 12))
+    rowsize!(right_layout, 1, Fixed(250)) # Strictly bounded height to prevent visual overlap
+
+    Label(z_layout[1, 1:3], "=== DANH SACH KE DICH ===", fontsize = 15, font = :bold, color = :gold, halign = :center)
     Label(z_layout[2, 1], "STT", font = :bold, color = :lightgray, halign = :left)
     Label(z_layout[2, 2], "Chung loai", font = :bold, color = :lightgray, halign = :left)
     Label(z_layout[2, 3], "Mau (HP)", font = :bold, color = :lightgray, halign = :center)
 
     num_zom = length(state.zombies)
     for i in 1:num_zom
-        Label(z_layout[2 + i, 1], " #$i", fontsize = 14, color = :whitesmoke, halign = :left)
-        Label(z_layout[2 + i, 2], lift(s -> s.zombies[i].name, state_obs), fontsize = 14, color = :whitesmoke, halign = :left)
+        Label(z_layout[2 + i, 1], " #$i", fontsize = 13, color = :whitesmoke, halign = :left)
+        Label(z_layout[2 + i, 2], lift(s -> s.zombies[i].name, state_obs), fontsize = 13, color = :whitesmoke, halign = :left)
         z_hp_text = lift(s -> s.zombies[i].hp <= 0 ? "[X] DA CHET" : "$(s.zombies[i].hp) HP", state_obs)
         z_hp_color = lift(s -> s.zombies[i].hp <= 0 ? :red : :springgreen, state_obs)
-        Label(z_layout[2 + i, 3], z_hp_text, fontsize = 14, halign = :center, color = z_hp_color, font = :bold)
+        Label(z_layout[2 + i, 3], z_hp_text, fontsize = 13, halign = :center, color = z_hp_color, font = :bold)
     end
 
-    # --- 8.5 KHU VỰC NHẬT KÝ CHIẾN TRƯỜNG ---
+    # --- 8.5 BATTLE LOG WINDOW WITH STRICTLY ISOLATED ROWS ---
     log_container = right_layout[2, 1] = GridLayout()
-    Label(log_container[1, 1], "--- NHAT KY CHIEN TRUONG (LAN CHUOT KEO LEN/XUONG) ---", fontsize = 13, font = :bold, color = :cyan, halign = :center)
+    rowsize!(right_layout, 2, Auto()) 
+    Label(log_container[1, 1:2], "--- NHAT KY CHIEN TRUONG ---", fontsize = 13, font = :bold, color = :cyan, halign = :center)
     
-    ax_log = Axis(log_container[2, 1], 
-                  backgroundcolor = :black, 
-                  leftspinevisible=true, rightspinevisible=true, topspinevisible=true, bottomspinevisible=true,
-                  leftspinecolor=:firebrick, rightspinecolor=:firebrick, topspinecolor=:firebrick, bottomspinecolor=:firebrick,
-                  spinewidth=2)
-    hidedecorations!(ax_log) 
+    Box(log_container[2, 1:2], color = :black, strokewidth = 2, strokecolor = :firebrick)
+    log_sub_layout = log_container[2, 1] = GridLayout(padding = (12, 12, 12, 12), halign = :left, valign = :top)
     
-    ax_log.xzoomlock[] = true
-    ax_log.yzoomlock[] = true
-    ax_log.xpanlock[] = true
-    ax_log.ypanlock[] = false 
-
-    log_positions = Observable(Point2f[])
-    log_texts = Observable(String[])
-    log_colors = Observable(Symbol[])
+    # Create 15 structural placeholder labels
+    log_labels = [Label(log_sub_layout[r, 1], "", fontsize = 13, halign = :left, padding = (1,1,1,1)) for r in 1:15]
     
-    # SỬA LỖI: Chuyển đổi mảng quan sát từ Symbol sang String để tương thích hoàn toàn với Pipeline mới của Makie
-    log_fonts = Observable(String[])
-
-    text!(ax_log, log_positions, text = log_texts, color = log_colors, font = log_fonts, fontsize = 13, align = (:left, :center), space = :data)
+    # CRITICAL FIX: Explicitly lock the height of each row cell to completely ban text overlapping
+    for r in 1:15
+        rowsize!(log_sub_layout, r, Fixed(24))
+    end
+    
+    log_slider = Slider(log_container[2, 2], range = 1:1, startvalue = 1, horizontal = false, tellwidth = true, width = 15)
 
     function rebuild_scrollable_logs!(curr_state)
-        pts = Point2f[]
-        txts = String[]
-        clrs = Symbol[]
-        fnts = String[] # Chuyển đổi kiểu dữ liệu mảng cục bộ sang String
+        n_logs = length(curr_state.logs)
+        max_display = 15
         
-        y_offset = 0.0
-        for line in reverse(curr_state.logs)
-            push!(pts, Point2f(0.05, y_offset))
-            push!(txts, line.text)
-            push!(clrs, line.color)
+        if n_logs <= max_display
+            log_slider.range[] = 1:1
+            start_idx = 1
+        else
+            max_start = n_logs - max_display + 1
+            log_slider.range[] = 1:max_start
             
-            # Gán giá trị phông chữ dưới dạng chuỗi "bold" hoặc "regular" thay vì Symbol
-            is_bold = (line.color in [:cyan, :red, :crimson, :orange, :gold]) ? "bold" : "regular"
-            push!(fnts, is_bold)
-            
-            y_offset -= 1.5 
+            # Auto-scroll downward when new events arrive
+            if log_slider.value[] < 1 || log_slider.value[] > max_start
+                set_close_to!(log_slider, max_start)
+            end
+            start_idx = log_slider.value[]
         end
         
-        log_positions[] = pts
-        log_texts[] = txts
-        log_colors[] = clrs
-        log_fonts[] = fnts
-        
-        ylims!(ax_log, y_offset - 1.0, 2.0)
-        xlims!(ax_log, 0.0, 1.0)
+        # Inject textual data dynamically into fixed geometry layout
+        for r in 1:max_display
+            curr_idx = start_idx + r - 1
+            if curr_idx <= n_logs
+                line = curr_state.logs[curr_idx]
+                log_labels[r].text = " " * line.text
+                log_labels[r].color = line.color
+                log_labels[r].font = (line.color in [:cyan, :red, :crimson, :orange, :gold]) ? :bold : :regular
+            else
+                log_labels[r].text = "" 
+            end
+        end
+    end
+
+    on(log_slider.value) do _
+        rebuild_scrollable_logs!(state_obs[])
     end
 
     rebuild_scrollable_logs!(state)
 
-    rowsize!(right_layout, 1, Relative(0.35))
-    rowsize!(right_layout, 2, Relative(0.65))
+    # --- 8.6 OVERLAY SYSTEM ---
+    overlay_box = Box(fig[1, :], color = (:black, 0.85), visible = false)
+    overlay_label = Label(fig[1, :], "GAME STATUS", fontsize = 36, font = :bold, color = :white, visible = false)
+
+    function update_game_status_visuals!(curr_state)
+        if curr_state.game_over
+            overlay_label.text = "GAME OVER\nHuman da hy sinh!"
+            overlay_label.color = :crimson
+            overlay_box.visible = true
+            overlay_label.visible = true
+        elseif curr_state.game_won
+            overlay_label.text = "VICTORY!\nBan da quet sach lu doan Zombie!"
+            overlay_label.color = :gold
+            overlay_box.visible = true
+            overlay_label.visible = true
+        end
+    end
 
     # --- 9. INTERACTIVE LISTENERS ---
-    on(btn_knife.clicks) do _; state_obs[].input_mode = TargetKnife; notify(state_obs); end
-    on(btn_pistol.clicks) do _; state_obs[].input_mode = TargetPistol; notify(state_obs); end
-    on(btn_shotgun.clicks) do _; state_obs[].input_mode = TargetShotgun; notify(state_obs); end
-    on(btn_grenade.clicks) do _; state_obs[].input_mode = TargetGrenade; notify(state_obs); end
+    on(btn_knife.clicks) do _; if state.game_over || state.game_won return end; state_obs[].input_mode = TargetKnife; notify(state_obs); end
+    on(btn_pistol.clicks) do _; if state.game_over || state.game_won return end; state_obs[].input_mode = TargetPistol; notify(state_obs); end
+    on(btn_shotgun.clicks) do _; if state.game_over || state.game_won return end; state_obs[].input_mode = TargetShotgun; notify(state_obs); end
+    on(btn_grenade.clicks) do _; if state.game_over || state.game_won return end; state_obs[].input_mode = TargetGrenade; notify(state_obs); end
     
     on(btn_mine.clicks) do _
+        if state.game_over || state.game_won return end
         curr_state = state_obs[]
         if curr_state.human.stamina >= 1 && curr_state.human.mines > 0
             hx, hy = curr_state.human.pos.x, curr_state.human.pos.y
@@ -616,6 +644,7 @@ function launch_game()
     end
 
     on(events(fig).mousebutton) do event
+        if state.game_over || state.game_won return end  
         if event.button == Mouse.left && event.action == Mouse.press
             mouse_pos = mouseposition(ax.scene)
             target_x = round(Int, mouse_pos[1])
@@ -657,33 +686,80 @@ function launch_game()
                         end
                     end
                 else
-                    handle_weapon_click!(current_state, target_x, target_y)
-                    rebuild_scrollable_logs!(current_state)
-                    notify(state_obs)
+                    @async begin
+                        handle_weapon_click!(current_state, target_x, target_y, flash_cells, line_fx, state_obs, rebuild_scrollable_logs!)
+                        rebuild_scrollable_logs!(current_state)
+                        update_game_status_visuals!(current_state)
+                        notify(state_obs)
+                    end
                 end
             end
         end
     end
 
     on(btn_end_turn.clicks) do _
-        current_state = state_obs[]
-        zombie_turn!(current_state)
+        if state.game_over || state.game_won return end
         
-        current_state.current_turn += 1
-        current_state.human.stamina = rand(1:6)
-        current_state.input_mode = MoveMode
-        add_game_log!(current_state, "--- LUOT MOI: VONG $(current_state.current_turn) (The luc hoi phuc: +$(current_state.human.stamina)) ---", :cyan)
+        @async begin 
+            current_state = state_obs[]
+            
+            add_game_log!(current_state, "=== QUAN DICH BAT DAU DI CHUYEN LUOT ===", :yellow)
+            rebuild_scrollable_logs!(current_state)
+            
+            for (idx, zom) in enumerate(current_state.zombies)
+                if zom.hp <= 0; continue; end
+                
+                moves_this_turn = zom isa FastZombie ? 2 : 1
+                step = 1
+                while step <= moves_this_turn
+                    if zom.hp <= 0 || current_state.game_over; break; end
+                    
+                    zombie_single_step!(current_state, idx, zom, flash_cells)
+                    notify(state_obs)
+                    sleep(0.2) 
+                    
+                    if zom.hp > 0 && distance(zom.pos, current_state.human.pos) <= 1
+                        current_state.human.hp = max(0, current_state.human.hp - 1)
+                        add_game_log!(current_state, "[ATTACK] Zom #$idx ($(zom.name)) can ban! -1 HP.", :crimson)
+                        
+                        if zom isa VampireZombie
+                            zom.hp += 1
+                            add_game_log!(current_state, "   [HUT MAU] Vampire Zom duoc +1 HP!", :magenta)
+                        end
+                        
+                        if zom isa FastZombie && step == moves_this_turn
+                            moves_this_turn += 1
+                            add_game_log!(current_state, "   [KICH TOC] Fast Zom can trung, kich hoat di them o!", :yellowgreen)
+                        end
+                        
+                        rebuild_scrollable_logs!(current_state)
+                        notify(state_obs)
+                        sleep(0.15)
+                    end
+                    step += 1
+                end
+            end
+            
+            if current_state.grenade_box.active && !current_state.game_over
+                gx = current_state.grenade_box.pos.x
+                gy = current_state.grenade_box.pos.y
+                add_game_log!(current_state, "[!] Luu dan tai ($gx, $gy) TICK... TICK... NO TUNG!", :crimson)
+                trigger_explosion!(current_state, gx, gy, flash_cells)
+                current_state.grenade_box.active = false
+            end
 
-        if current_state.grenade_box.active
-            gx = current_state.grenade_box.pos.x
-            gy = current_state.grenade_box.pos.y
-            add_game_log!(current_state, "[!] Luu dan tai ($gx, $gy) NO TUNG!", :crimson)
-            trigger_explosion!(current_state, gx, gy)
-            current_state.grenade_box.active = false
+            if !current_state.game_over
+                current_state.current_turn += 1
+                current_state.human.stamina = rand(2:6)
+                current_state.input_mode = MoveMode
+                add_game_log!(current_state, "--- LUOT MOI: VONG $(current_state.current_turn) (The luc hoi phuc: +$(current_state.human.stamina)) ---", :cyan)
+            end
+
+            check_victory_conditions!(current_state)
+            rebuild_scrollable_logs!(current_state)
+            update_game_status_visuals!(current_state)
+            notify(state_obs)
         end
-
-        rebuild_scrollable_logs!(current_state)
-        notify(state_obs)
     end
 
     display(fig)
