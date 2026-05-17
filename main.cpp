@@ -10,21 +10,24 @@
 #include <cmath>
 #include <algorithm>
 
-// --- 1. Enumerations & Structs ---
+// --- 1. Toàn bộ Enumerations & Structs nền tảng ---
 enum class Terrain { Dirt, Water, Obstacle, Wall };
 enum class InputMode { MoveMode, TargetKnife, TargetPistol, TargetShotgun, TargetGrenade };
 enum class ZombieType { Normal, Fast, Exploding, Vampire };
+enum class TurnPhase { HumanTurn, ZombieAnimating };
+enum class FXType { None, Knife, Pistol, Shotgun, Explosion };
 
 struct Position {
     int x;
     int y;
-    bool operator==(const Position& other) const = default;
+    bool operator==(const Position& other) const {
+        return x == other.x && y == other.y;
+    }
 };
 
 struct LogLine {
     std::string text;
     ImVec4 color;
-    bool isBold;
 };
 
 struct GrenadeTimer {
@@ -32,7 +35,17 @@ struct GrenadeTimer {
     Position pos{0, 0};
 };
 
-// --- 2. Entity Classes ---
+// Cấu trúc quản lý hiệu ứng đồ họa kéo dài theo thời gian thực
+struct VisualFX {
+    FXType type = FXType::None;
+    float timer = 0.0f;
+    float max_duration = 0.35f;
+    sf::Vector2f start_p;
+    sf::Vector2f end_p;
+    std::vector<Position> blast_cells; // Dùng cho nổ lan hoặc vùng bắn súng săn
+};
+
+// --- 2. Các thực thể Nhân vật (Entities) ---
 struct Human {
     Position pos;
     int hp = 5;
@@ -40,7 +53,7 @@ struct Human {
     int pistol_ammo = 12;
     int shotgun_ammo = 6;
     int grenades = 3;
-    int 用mines = 2; // mìn cố định
+    int mines = 2;
 };
 
 class Zombie {
@@ -60,7 +73,7 @@ class FastZombie : public Zombie { public: using Zombie::Zombie; int getMovesPer
 class ExplodingZombie : public Zombie { public: using Zombie::Zombie; };
 class VampireZombie : public Zombie { public: using Zombie::Zombie; };
 
-// --- 3. Game State Class ---
+// --- 3. Trái tim quản lý logic và trạng thái vòng lặp Game ---
 class GameState {
 public:
     int width = 15;
@@ -77,21 +90,23 @@ public:
     bool game_over = false;
     bool game_won = false;
 
-    // Các biến phục vụ hiệu ứng Animation làm chậm độc lập với khung hình
-    std::vector<Position> flash_cells;
-    sf::Vector2f line_fx_start, line_fx_end;
-    bool is_drawing_line = false;
-    float fx_timer = 0.0f;
-    float fx_duration = 0.45f; 
+    // Quản lý thứ tự luồng điều khiển chuyển động của Zombie
+    TurnPhase phase = TurnPhase::HumanTurn;
+    size_t active_zombie_idx = 0;
+    int active_zombie_substep = 0;
+    float zombie_action_timer = 0.0f;
+    const float ZOMBIE_STEP_DELAY = 0.35f; // Thời gian giãn cách giữa mỗi bước đi của từng Zombie
 
-    // Bộ sinh số ngẫu nhiên chuẩn C++
+    // Đối tượng chứa hiệu ứng hoạt họa đang diễn ra
+    VisualFX active_fx;
+
     std::mt19937 rng{std::random_device{}()};
 
     GameState() { init_game(); }
 
-    void add_log(const std::string& text, ImVec4 color = ImVec4(0.75f, 0.75f, 0.75f, 1.0f), bool isBold = false) {
-        logs.push_back({text, color, isBold});
-        if (logs.size() > 150) logs.erase(logs.begin());
+    void add_log(const std::string& text, ImVec4 color = ImVec4(0.8f, 0.8f, 0.8f, 1.0f)) {
+        logs.push_back({text, color});
+        if (logs.size() > 100) logs.erase(logs.begin());
     }
 
     int distance(Position p1, Position p2) {
@@ -105,100 +120,44 @@ public:
         return {0, dy > 0 ? 1 : -1};
     }
 
-    void check_victory_conditions() {
-        if (human.hp <= 0) {
-            game_over = true;
-            add_log("=== BAN DA THUAN TRAN! HUMAN DA CHET ===", ImVec4(1.0f, 0.2f, 0.2f, 1.0f), true);
-        } else {
-            bool all_dead = true;
-            for (const auto& z : zombies) {
-                if (z->hp > 0) { all_dead = false; break; }
-            }
-            if (all_dead) {
-                game_won = true;
-                add_log("=== CHUC MUNG THANG LOI! DA DIET SACH ZOMBIE ===", ImVec4(1.0f, 0.85f, 0.0f, 1.0f), true);
-            }
-        }
-    }
-
-    void init_game() {
-        grid.assign(width, std::vector<Terrain>(height, Terrain::Dirt));
-        mine_grid.assign(width, std::vector<bool>(height, false));
-
-        // Tạo tường bao quanh biên
-        for (int x = 0; x < width; ++x) { grid[x][0] = Terrain::Wall; grid[x][height - 1] = Terrain::Wall; }
-        for (int y = 0; y < height; ++y) { grid[0][y] = Terrain::Wall; grid[width - 1][y] = Terrain::Wall; }
-
-        std::uniform_int_distribution<int> dist_grid(1, width - 2);
-        // Sinh chướng ngại vật ngẫu nhiên
-        for (int i = 0; i < 12; ++i) { grid[dist_grid(rng)][dist_grid(rng)] = Terrain::Obstacle; }
-        for (int i = 0; i < 6; ++i) {
-            int rx = dist_grid(rng), ry = dist_grid(rng);
-            if (grid[rx][ry] == Terrain::Dirt) grid[rx][ry] = Terrain::Water;
-        }
-
-        human.pos = {dist_grid(rng), dist_grid(rng)};
-        while (grid[human.pos.x][human.pos.y] == Terrain::Wall || grid[human.pos.x][human.pos.y] == Terrain::Obstacle) {
-            human.pos = {dist_grid(rng), dist_grid(rng)};
-        }
-
-        // Khởi tạo danh sách quái vật
-        std::vector<std::tuple<ZombieType, int, std::string>> z_types = {
-            {ZombieType::Normal, 2, "Zom Thuong"},
-            {ZombieType::Fast, 2, "Zom Nhanh"},
-            {ZombieType::Exploding, 3, "Zom No"},
-            {ZombieType::Vampire, 4, "Zom Dracula"}
-        };
-        std::uniform_int_distribution<int> dist_type(0, 3);
-
-        for (int i = 0; i < 8; ++i) {
-            auto [zt, zhp, zname] = z_types[dist_type(rng)];
-            Position z_pos = {dist_grid(rng), dist_grid(rng)};
-            while (z_pos == human.pos || grid[z_pos.x][z_pos.y] == Terrain::Wall || grid[z_pos.x][z_pos.y] == Terrain::Obstacle) {
-                z_pos = {dist_grid(rng), dist_grid(rng)};
-            }
-
-            if (zt == ZombieType::Normal) zombies.push_back(std::make_unique<NormalZombie>(z_pos, zhp, zname, zt));
-            else if (zt == ZombieType::Fast) zombies.push_back(std::make_unique<FastZombie>(z_pos, zhp, zname, zt));
-            else if (zt == ZombieType::Exploding) zombies.push_back(std::make_unique<ExplodingZombie>(z_pos, zhp, zname, zt));
-            else if (zt == ZombieType::Vampire) zombies.push_back(std::make_unique<VampireZombie>(z_pos, zhp, zname, zt));
-        }
-
-        add_log("Chao mung den voi ZomChess C++ Standard Edition!", ImVec4(0.0f, 1.0f, 1.0f, 1.0f), true);
-        add_log("Su dung chuot click vao ban co chien thuat de hanh dong.", ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
+    sf::Vector2f getCellCenter(int x, int y, float cellSize, float offset) {
+        return sf::Vector2f(x * cellSize + offset + cellSize / 2.0f, y * cellSize + offset + cellSize / 2.0f);
     }
 
     void trigger_explosion(int cx, int cy) {
-        add_log("[EXPLOSION] Vu no lon bung phat tai tam (" + std::to_string(cx) + ", " + std::to_string(cy) + ")!", ImVec4(1.0f, 0.5f, 0.0f, 1.0f), true);
+        add_log("[EXPLOSION] Phat no vung cuc lon tai vung toa do (" + std::to_string(cx) + ", " + std::to_string(cy) + ")!", ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
         
-        flash_cells.clear();
+        // Thiết lập vung hỏa hoạn nhấp nháy 9 ô
+        active_fx.type = FXType::Explosion;
+        active_fx.timer = 0.4f;
+        active_fx.max_duration = 0.4f;
+        active_fx.blast_cells.clear();
+
         for (int dx = -1; dx <= 1; ++dx) {
             for (int dy = -1; dy <= 1; ++dy) {
-                if (cx + dx >= 0 && cx + dx < width && cy + dy >= 0 && cy + dy < height) {
-                    flash_cells.push_back({cx + dx, cy + dy});
+                int nx = cx + dx, ny = cy + dy;
+                if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                    active_fx.blast_cells.push_back({nx, ny});
                 }
             }
         }
-        is_drawing_line = false; 
-        fx_timer = fx_duration; // Kích hoạt bộ đếm thời gian animation vẽ vùng nổ
 
-        if (std::max(std::abs(human.pos.x - cx), std::abs(human.pos.y - cy)) <= 1) {
+        if (distance(human.pos, {cx, cy}) <= 1) {
             human.hp = std::max(0, human.hp - 1);
-            add_log("-> Human dinh sat thuong no lan (-1 HP)!", ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
+            add_log("-> Sức ep lan tỏa khien Human thiet hai (-1 HP)!", ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
         }
 
         for (size_t i = 0; i < zombies.size(); ++i) {
             auto& zom = zombies[i];
-            if (zom->hp > 0 && std::max(std::abs(zom->pos.x - cx), std::abs(zom->pos.y - cy)) <= 1) {
+            if (zom->hp > 0 && distance(zom->pos, {cx, cy}) <= 1) {
                 zom->hp -= 1;
-                add_log("-> Zom #" + std::to_string(i+1) + " (" + zom->name + ") ganh sat thuong no (-1 HP).", ImVec4(1.0f, 0.6f, 0.0f, 1.0f));
+                add_log("-> Zombie #" + std::to_string(i+1) + " dinh boi thiet hai lan (-1 HP).", ImVec4(1.0f, 0.6f, 0.1f, 1.0f));
 
                 if (zom->hp <= 0 && zom->type == ZombieType::Exploding) {
-                    add_log("   [LIEN HOAN NO] Kich hoat phat no day chuyen!", ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
                     trigger_explosion(zom->pos.x, zom->pos.y);
                 }
                 
-                // Đẩy lùi Zombie
+                // Day lui thuc the sau vu no
                 int vx = (zom->pos.x - cx > 0) ? 1 : (zom->pos.x - cx < 0 ? -1 : 0);
                 int vy = (zom->pos.y - cy > 0) ? 1 : (zom->pos.y - cy < 0 ? -1 : 0);
                 if (vx != 0 || vy != 0) {
@@ -208,7 +167,7 @@ public:
                         zom->pos = {px, py};
                     } else {
                         zom->hp -= 1;
-                        add_log("   RAM! Zombie va vao vat can khi vang ra! -1 HP!", ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
+                        add_log("   [VA CHAM] Quai vat vang dap vao vat can cung! Roi them 1 HP!", ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
                         if (zom->hp <= 0 && zom->type == ZombieType::Exploding) {
                             trigger_explosion(zom->pos.x, zom->pos.y);
                         }
@@ -261,21 +220,23 @@ public:
             zom->pos = valid_moves[dist(rng)];
 
             if (mine_grid[zom->pos.x][zom->pos.y]) {
-                add_log("[MIN NO] Zom #" + std::to_string(idx+1) + " dap phai min o (" + std::to_string(zom->pos.x) + ", " + std::to_string(zom->pos.y) + ")!", ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
+                add_log("[BAY MIN] Zombie #" + std::to_string(idx+1) + " giam phai min phong thu o (" + std::to_string(zom->pos.x) + ", " + std::to_string(zom->pos.y) + ")!", ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
                 mine_grid[zom->pos.x][zom->pos.y] = false;
                 trigger_explosion(zom->pos.x, zom->pos.y);
             }
         }
     }
 
-    void handle_weapon_click(int tx, int ty) {
+    void handle_weapon_click(int tx, int ty, float cellSize, float boardOffset) {
         if (human.stamina < 1) {
-            add_log("Khong du the luc (stamina) de hanh dong!", ImVec4(1.0f, 1.0f, 0.0f, 1.0f));
+            add_log("The luc can kiet (stamina < 1), hanh dong that bai!", ImVec4(1.0f, 1.0f, 0.0f, 1.0f));
             input_mode = InputMode::MoveMode;
             return;
         }
 
         Position target{tx, ty};
+        sf::Vector2f hCenter = getCellCenter(human.pos.x, human.pos.y, cellSize, boardOffset);
+        sf::Vector2f tCenter = getCellCenter(tx, ty, cellSize, boardOffset);
 
         if (input_mode == InputMode::TargetKnife) {
             if (distance(human.pos, target) <= 1) {
@@ -283,10 +244,14 @@ public:
                     if (zombies[i]->hp > 0 && zombies[i]->pos == target) {
                         zombies[i]->hp -= 1;
                         human.stamina -= 1;
-                        add_log("[KNIFE] XOET! Dam trung Zombie #" + std::to_string(i+1) + ". HP con: " + std::to_string(zombies[i]->hp), ImVec4(0.0f, 1.0f, 0.5f, 1.0f));
+                        add_log("[KNIFE] Chém thọc dao găm vao Zombie #" + std::to_string(i+1) + "!", ImVec4(0.1f, 1.0f, 0.6f, 1.0f));
                         
-                        flash_cells = {target};
-                        fx_timer = fx_duration;
+                        // Kich hoat Animation hinh dao dam
+                        active_fx.type = FXType::Knife;
+                        active_fx.timer = 0.2f;
+                        active_fx.max_duration = 0.2f;
+                        active_fx.start_p = hCenter;
+                        active_fx.end_p = tCenter;
 
                         if (zombies[i]->hp <= 0 && zombies[i]->type == ZombieType::Exploding) {
                             trigger_explosion(target.x, target.y);
@@ -296,105 +261,129 @@ public:
                         return;
                     }
                 }
-                add_log("O chi dinh khong co muc tieu song!", ImVec4(1.0f, 1.0f, 0.0f, 1.0f));
+                add_log("O ban chon khong co vat the song phu hop!", ImVec4(1.0f, 1.0f, 0.0f, 1.0f));
             } else {
-                add_log("Dao ngan! Vui long chon o ngay sat ben cạnh.", ImVec4(1.0f, 1.0f, 0.0f, 1.0f));
+                add_log("Dao gam chi co the sat thuong pham vi sat vách!", ImVec4(1.0f, 1.0f, 0.0f, 1.0f));
             }
         } 
         else if (input_mode == InputMode::TargetPistol) {
-            if (human.pistol_ammo <= 0) { add_log("Het dan Sung ngan!", ImVec4(1.0f, 1.0f, 0.0f, 1.0f)); input_mode = InputMode::MoveMode; return; }
+            if (human.pistol_ammo <= 0) { add_log("Sung ngan het dan!", ImVec4(1.0f, 1.0f, 0.0f, 1.0f)); input_mode = InputMode::MoveMode; return; }
             auto [vx, vy] = get_8_direction(tx - human.pos.x, ty - human.pos.y);
             if (vx == 0 && vy == 0) return;
 
             human.pistol_ammo -= 1;
             human.stamina -= 1;
-            add_log("[PISTOL] DOANG! Khai hoa sung ngan huong (" + std::to_string(vx) + ", " + std::to_string(vy) + ")...", ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
+            add_log("[PISTOL] Khai hỏa sung ngan huong ban (" + std::to_string(vx) + ", " + std::to_string(vy) + ")...", ImVec4(0.9f, 0.9f, 0.9f, 1.0f));
 
-            float cellSize = 40.0f;
-            line_fx_start = sf::Vector2f(human.pos.x * cellSize + 40.0f, human.pos.y * cellSize + 40.0f);
-            line_fx_end = sf::Vector2f((human.pos.x + vx * 5) * cellSize + 40.0f, (human.pos.y + vy * 5) * cellSize + 40.0f);
-            is_drawing_line = true;
-            fx_timer = fx_duration;
+            Position hit_pos = human.pos;
+            bool hit_something = false;
 
-            bool hit = false;
             for (int step = 1; step <= 5; ++step) {
                 int cx = human.pos.x + vx * step;
                 int cy = human.pos.y + vy * step;
-                if (cx < 0 || cx >= width || cy < 0 || cy >= height || grid[cx][cy] == Terrain::Wall || grid[cx][cy] == Terrain::Obstacle) break;
-
+                if (cx < 0 || cx >= width || cy < 0 || cy >= height || grid[cx][cy] == Terrain::Wall || grid[cx][cy] == Terrain::Obstacle) {
+                    hit_pos = {cx, cy}; break;
+                }
                 for (size_t i = 0; i < zombies.size(); ++i) {
                     if (zombies[i]->hp > 0 && zombies[i]->pos == Position{cx, cy}) {
-                        double chance = (step <= 2) ? 1.0 : (step == 3 ? 0.7 : (step == 4 ? 0.4 : 0.0));
-                        std::uniform_real_distribution<double> dist_chance(0.0, 1.0);
-                        if (dist_chance(rng) <= chance) {
-                            zombies[i]->hp -= 1;
-                            add_log("-> Ban trung Zom #" + std::to_string(i+1) + " o cu ly " + std::to_string(step) + " o.", ImVec4(0.0f, 1.0f, 0.0f, 1.0f));
-                            if (zombies[i]->hp <= 0 && zombies[i]->type == ZombieType::Exploding) {
-                                trigger_explosion(cx, cy);
-                            }
-                        } else {
-                            add_log("-> Dan bay chech muc tieu!", ImVec4(1.0f, 1.0f, 0.0f, 1.0f));
-                        }
-                        hit = true; break;
+                        hit_pos = {cx, cy}; hit_something = true; break;
                     }
                 }
-                if (hit) break;
+                if (hit_something) break;
+                hit_pos = {cx, cy};
+            }
+
+            // Hoạt họa đuong đạn ghim tu nguoi choi den diem va cham dau tien
+            active_fx.type = FXType::Pistol;
+            active_fx.timer = 0.25f;
+            active_fx.max_duration = 0.25f;
+            active_fx.start_p = hCenter;
+            active_fx.end_p = getCellCenter(hit_pos.x, hit_pos.y, cellSize, boardOffset);
+
+            // Tinh toan sat thuong neu trung quai
+            for (size_t i = 0; i < zombies.size(); ++i) {
+                if (zombies[i]->hp > 0 && zombies[i]->pos == hit_pos) {
+                    int dist = distance(human.pos, hit_pos);
+                    double chance = (dist <= 2) ? 1.0 : (dist == 3 ? 0.7 : (dist == 4 ? 0.4 : 0.0));
+                    std::uniform_real_distribution<double> dist_chance(0.0, 1.0);
+                    if (dist_chance(rng) <= chance) {
+                        zombies[i]->hp -= 1;
+                        add_log("-> Dan xuyen thau Zombie #" + std::to_string(i+1) + "! -1 HP.", ImVec4(0.0f, 1.0f, 0.0f, 1.0f));
+                        if (zombies[i]->hp <= 0 && zombies[i]->type == ZombieType::Exploding) {
+                            trigger_explosion(hit_pos.x, hit_pos.y);
+                        }
+                    } else {
+                        add_log("-> Vien đan bay lech huong trong gang tấc!", ImVec4(1.0f, 0.6f, 0.0f, 1.0f));
+                    }
+                    break;
+                }
             }
         }
         else if (input_mode == InputMode::TargetShotgun) {
-            if (human.shotgun_ammo <= 0) { add_log("Het dan Shotgun!", ImVec4(1.0f, 1.0f, 0.0f, 1.0f)); input_mode = InputMode::MoveMode; return; }
+            if (human.shotgun_ammo <= 0) { add_log("Shotgun da het co so dan!", ImVec4(1.0f, 1.0f, 0.0f, 1.0f)); input_mode = InputMode::MoveMode; return; }
             auto [vx, vy] = get_8_direction(tx - human.pos.x, ty - human.pos.y);
             if (vx == 0 && vy == 0) return;
 
             human.shotgun_ammo -= 1;
             human.stamina -= 1;
-            add_log("[SHOTGUN] DOANG! Thổi bay mọi thu theo huong tịnh tiến!", ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
+            add_log("[SHOTGUN] OÀNG! Khai hoa vung hoa luc hinh non quet sach cac o!", ImVec4(1.0f, 0.4f, 0.2f, 1.0f));
 
-            flash_cells.clear();
+            active_fx.type = FXType::Shotgun;
+            active_fx.timer = 0.35f;
+            active_fx.max_duration = 0.35f;
+            active_fx.blast_cells.clear();
+            active_fx.start_p = hCenter;
+
+            // Xử lý logic hỏa lực hình nón quét rộng 3 lớp tam giác tịnh tiến
+            int px = -vy, py = vx; // Vector vuong goc de mo rong hinh non
             for (int step = 1; step <= 3; ++step) {
                 int cx = human.pos.x + vx * step;
                 int cy = human.pos.y + vy * step;
-                if (cx >= 0 && cx < width && cy >= 0 && cy < height) {
-                    flash_cells.push_back({cx, cy});
+                int spread = step - 1; // Do mo rong theo tung tang hinh tam giac
+                
+                for (int s = -spread; s <= spread; ++s) {
+                    int fx = cx + px * s;
+                    int fy = cy + py * s;
+                    if (fx >= 0 && fx < width && fy >= 0 && fy < height) {
+                        active_fx.blast_cells.push_back({fx, fy});
+                    }
                 }
             }
-            fx_timer = fx_duration;
 
-            for (int step = 1; step <= 3; ++step) {
-                int cx = human.pos.x + vx * step;
-                int cy = human.pos.y + vy * step;
-                if (cx < 0 || cx >= width || cy < 0 || cy >= height) break;
-
-                bool found = false;
+            // Gây sát thương lan rộng trong vung tam giac hỏa lực
+            for (auto p : active_fx.blast_cells) {
+                if (grid[p.x][p.y] == Terrain::Wall || grid[p.x][p.y] == Terrain::Obstacle) continue;
                 for (size_t i = 0; i < zombies.size(); ++i) {
-                    if (zombies[i]->hp > 0 && zombies[i]->pos == Position{cx, cy}) {
+                    if (zombies[i]->hp > 0 && zombies[i]->pos == p) {
                         zombies[i]->hp -= 1;
-                        int px = zombies[i]->pos.x + vx;
-                        int py = zombies[i]->pos.y + vy;
-                        if (px >= 0 && px < width && py >= 0 && py < height && grid[px][py] != Terrain::Wall && grid[px][py] != Terrain::Obstacle) {
-                            zombies[i]->pos = {px, py};
+                        add_log("-> Quet lua ghim vao Zombie #" + std::to_string(i+1) + ". Giam 1 HP.");
+                        
+                        // Đẩy lui thực thể
+                        int rx = p.x + vx;
+                        int ry = p.y + vy;
+                        if (rx >= 0 && rx < width && ry >= 0 && ry < height && grid[rx][ry] != Terrain::Wall && grid[rx][ry] != Terrain::Obstacle) {
+                            zombies[i]->pos = {rx, ry};
                         } else {
                             zombies[i]->hp -= 1;
-                            add_log("   RAM! Zombie va vao tuong sau luc day! -1 HP!", ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
+                            add_log("   [LUC DAY] Zombie dap gay tuong do áp luc dan! Roi them 1 HP!");
                         }
+
                         if (zombies[i]->hp <= 0 && zombies[i]->type == ZombieType::Exploding) {
                             trigger_explosion(zombies[i]->pos.x, zombies[i]->pos.y);
                         }
-                        found = true; break;
                     }
                 }
-                if (found) break;
             }
         }
         else if (input_mode == InputMode::TargetGrenade) {
-            if (human.grenades <= 0) { add_log("Het Luu dan!", ImVec4(1.0f, 1.0f, 0.0f, 1.0f)); input_mode = InputMode::MoveMode; return; }
+            if (human.grenades <= 0) { add_log("Hết luu đạn ném tay!", ImVec4(1.0f, 1.0f, 0.0f, 1.0f)); input_mode = InputMode::MoveMode; return; }
             auto [vx, vy] = get_8_direction(tx - human.pos.x, ty - human.pos.y);
             if (vx == 0 && vy == 0) return;
 
             human.grenades -= 1;
             human.stamina -= 1;
 
-            std::uniform_int_distribution<int> dist_steps(2, 5);
+            std::uniform_int_distribution<int> dist_steps(2, 4);
             int total_steps = dist_steps(rng);
             int cx = human.pos.x, cy = human.pos.y;
 
@@ -402,77 +391,170 @@ public:
                 int nx = cx + vx;
                 int ny = cy + vy;
                 if (nx < 0 || nx >= width || ny < 0 || ny >= height || grid[nx][ny] == Terrain::Wall || grid[nx][ny] == Terrain::Obstacle) {
-                    add_log("   [VAT CAN] Luu dan va vao tuong o buoc " + std::to_string(step), ImVec4(1.0f, 1.0f, 0.0f, 1.0f));
-                    break;
+                    add_log("   [VẬT CẢN] Lựu đạn chạm vách va vang lai!", ImVec4(1.0f, 0.8f, 0.0f, 1.0f)); break;
                 }
                 cx = nx; cy = ny;
             }
             grenade_box.active = true;
             grenade_box.pos = {cx, cy};
-            add_log("[TIMER] Luu dan da nam im tai o (" + std::to_string(cx) + ", " + std::to_string(cy) + ")...", ImVec4(0.5f, 1.0f, 0.0f, 1.0f));
+            add_log("[HẸN GIỜ] Quả luu đạn xoay vòng roi nam im tai o (" + std::to_string(cx) + ", " + std::to_string(cy) + ")...", ImVec4(0.3f, 1.0f, 0.3f, 1.0f));
         }
 
         input_mode = InputMode::MoveMode;
         check_victory_conditions();
     }
 
-    void end_turn() {
+    void start_zombie_phase() {
         if (game_over || game_won) return;
-        add_log("=== QUAN DICH BAT DAU LURK DI CHUYEN ===", ImVec4(1.0f, 1.0f, 0.0f, 1.0f));
+        add_log("=== QUÂN ĐỊCH BẮT ĐẦU DI CHUYỂN TUẦN TỰ ===", ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
+        phase = TurnPhase::ZombieAnimating;
+        active_zombie_idx = 0;
+        active_zombie_substep = 0;
+        zombie_action_timer = 0.0f;
+    }
 
-        for (size_t i = 0; i < zombies.size(); ++i) {
-            if (zombies[i]->hp <= 0) continue;
-            if (game_over) break; // [SỬA LỖI LẬP TỨC]: Người chơi chết phát bẻ gãy luôn luồng chạy của zombie tiếp theo
+    // Tiến trình cập nhật trạng thái động của game loop thời gian thực
+    void update_zombie_logic(float dt) {
+        if (phase != TurnPhase::ZombieAnimating) return;
+        if (active_fx.type != FXType::None) return; // Đóng băng bước đi của quái nếu hoạt họa cũ chưa phát xong
 
-            int moves = zombies[i]->getMovesPerTurn();
-            for (int step = 1; step <= moves; ++step) {
-                if (zombies[i]->hp <= 0 || game_over) break; // [SỬA LỖI ZOMBIE NHANH]: Chặn tuyệt đối bước chạy thứ 2 nếu người chơi đã chết trước đó
+        if (active_zombie_idx >= zombies.size()) {
+            // Hoan thanh toan bộ lượt di chuyển của Zombie
+            if (grenade_box.active && !game_over) {
+                add_log("[!] KÍCH NỔ: Luu đạn hen gio TICK.. TICK.. BÙM!", ImVec4(1.0f, 0.1f, 0.1f, 1.0f));
+                trigger_explosion(grenade_box.pos.x, grenade_box.pos.y);
+                grenade_box.active = false;
+            }
+            if (!game_over) {
+                current_turn++;
+                std::uniform_int_distribution<int> dist_stam(2, 6);
+                human.stamina = dist_stam(rng);
+                add_log("--- LƯỢT MỚI: VÒNG " + std::to_string(current_turn) + " (Thể lực +" + std::to_string(human.stamina) + ") ---", ImVec4(0.0f, 1.0f, 1.0f, 1.0f));
+            }
+            phase = TurnPhase::HumanTurn;
+            check_victory_conditions();
+            return;
+        }
 
-                zombie_single_step(i);
+        auto& zom = zombies[active_zombie_idx];
+        if (zom->hp <= 0 || game_over) {
+            active_zombie_idx++; active_zombie_substep = 0; return;
+        }
 
-                if (zombies[i]->hp > 0 && distance(zombies[i]->pos, human.pos) <= 1) {
-                    human.hp = std::max(0, human.hp - 1);
-                    add_log("[ATTACK] Zom #" + std::to_string(i+1) + " can ban! -1 HP.", ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
+        zombie_action_timer += dt;
+        if (zombie_action_timer >= std::max(0.05f, ZOMBIE_STEP_DELAY)) {
+            zombie_action_timer = 0.0f;
 
-                    if (zombies[i]->type == ZombieType::Vampire) {
-                        zombies[i]->hp += 1;
-                        add_log("   [HUT MAU] Dracula Zom duoc +1 HP!", ImVec4(1.0f, 0.0f, 1.0f, 1.0f));
-                    }
-                    check_victory_conditions();
-                    if (game_over) break; // Ngắt vòng lặp bước chạy nhỏ lập tức
+            // Di chuyển quái vật 1 ô đơn lẻ
+            zombie_single_step(active_zombie_idx);
+
+            // Kiểm tra áp sát tấn công người chơi
+            if (zom->hp > 0 && distance(zom->pos, human.pos) <= 1) {
+                human.hp = std::max(0, human.hp - 1);
+                add_log("[ATTACK] Kẻ địch #" + std::to_string(active_zombie_idx+1) + " (" + zom->name + ") cào rách vai Human! -1 HP.", ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
+                
+                if (zom->type == ZombieType::Vampire) {
+                    zom->hp += 1;
+                    add_log("   [HÚT MÁU] Ác quỷ Dracula đuợc hồi phục +1 HP!", ImVec4(1.0f, 0.0f, 1.0f, 1.0f));
                 }
+                check_victory_conditions();
+            }
+
+            active_zombie_substep++;
+            if (active_zombie_substep >= zom->getMovesPerTurn()) {
+                active_zombie_idx++;
+                active_zombie_substep = 0;
             }
         }
+    }
 
-        if (grenade_box.active && !game_over) {
-            add_log("[!] Luu dan TICK... TICK... NO TUNG!", ImVec4(1.0f, 0.0f, 0.0f, 1.0f));
-            trigger_explosion(grenade_box.pos.x, grenade_box.pos.y);
-            grenade_box.active = false;
+    void check_victory_conditions() {
+        if (human.hp <= 0) {
+            game_over = true;
+        } else {
+            bool all_dead = true;
+            for (const auto& z : zombies) { if (z->hp > 0) { all_dead = false; break; } }
+            if (all_dead) game_won = true;
+        }
+    }
+
+    void init_game() {
+        grid.assign(width, std::vector<Terrain>(height, Terrain::Dirt));
+        mine_grid.assign(width, std::vector<bool>(height, false));
+
+        for (int x = 0; x < width; ++x) { grid[x][0] = Terrain::Wall; grid[x][height - 1] = Terrain::Wall; }
+        for (int y = 0; y < height; ++y) { grid[0][y] = Terrain::Wall; grid[width - 1][y] = Terrain::Wall; }
+
+        std::uniform_int_distribution<int> dist_grid(1, width - 2);
+        for (int i = 0; i < 12; ++i) { grid[dist_grid(rng)][dist_grid(rng)] = Terrain::Obstacle; }
+        for (int i = 0; i < 6; ++i) {
+            int rx = dist_grid(rng), ry = dist_grid(rng);
+            if (grid[rx][ry] == Terrain::Dirt) grid[rx][ry] = Terrain::Water;
         }
 
-        if (!game_over) {
-            current_turn++;
-            std::uniform_int_distribution<int> dist_stam(2, 6);
-            human.stamina = dist_stam(rng);
-            input_mode = InputMode::MoveMode;
-            add_log("--- LUOT MOI: VONG " + std::to_string(current_turn) + " (The luc hoi phuc: +" + std::to_string(human.stamina) + ") ---", ImVec4(0.0f, 1.0f, 1.0f, 1.0f));
+        human.pos = {dist_grid(rng), dist_grid(rng)};
+        while (grid[human.pos.x][human.pos.y] == Terrain::Wall || grid[human.pos.x][human.pos.y] == Terrain::Obstacle) {
+            human.pos = {dist_grid(rng), dist_grid(rng)};
         }
-        check_victory_conditions();
+
+        std::vector<std::tuple<ZombieType, int, std::string>> z_types = {
+            {ZombieType::Normal, 2, "Zom Thường"},
+            {ZombieType::Fast, 2, "Zom Nhanh"},
+            {ZombieType::Exploding, 3, "Zom Nổ"},
+            {ZombieType::Vampire, 4, "Zom Dracula"}
+        };
+        std::uniform_int_distribution<int> dist_type(0, 3);
+
+        for (int i = 0; i < 8; ++i) {
+            auto [zt, zhp, zname] = z_types[dist_type(rng)];
+            Position z_pos = {dist_grid(rng), dist_grid(rng)};
+            while (z_pos == human.pos || grid[z_pos.x][z_pos.y] == Terrain::Wall || grid[z_pos.x][z_pos.y] == Terrain::Obstacle) {
+                z_pos = {dist_grid(rng), dist_grid(rng)};
+            }
+
+            if (zt == ZombieType::Normal) zombies.push_back(std::make_unique<NormalZombie>(z_pos, zhp, zname, zt));
+            else if (zt == ZombieType::Fast) zombies.push_back(std::make_unique<FastZombie>(z_pos, zhp, zname, zt));
+            else if (zt == ZombieType::Exploding) zombies.push_back(std::make_unique<ExplodingZombie>(z_pos, zhp, zname, zt));
+            else if (zt == ZombieType::Vampire) zombies.push_back(std::make_unique<VampireZombie>(z_pos, zhp, zname, zt));
+        }
+
+        add_log("Chào mừng đến với Trận địa ZomChess C++20 Cải tiến Đồ họa!", ImVec4(0.0f, 1.0f, 1.0f, 1.0f));
     }
 };
 
-// --- 4. Main Program & Application Engine ---
+// --- 4. Khởi chạy Ứng dụng & Dựng hình Đồ họa học ---
 int main() {
-    sf::RenderWindow window(sf::VideoMode(1350, 720), "ZomChess C++20 Clean Edition");
+    sf::RenderWindow window(sf::VideoMode(1400, 740), "ZomChess C++20 Refined Tactical Edition");
     window.setFramerateLimit(60);
     if (!ImGui::SFML::Init(window)) return -1;
+
+    // A. [NÂNG CẤP UI]: Phóng đại Font chữ & Thiết lập giao diện màu quân đội đặc thù
+    ImGuiIO& io = ImGui::GetIO();
+    io.FontGlobalScale = 1.35f; // Tăng kích thước chữ toàn diện lên 135% cực kỳ dễ nhìn
+
+    ImGuiStyle& style = ImGui::GetStyle();
+    style.FrameRounding = 6.0f;     // Bo tròn khuy bấm mềm mại
+    style.WindowRounding = 8.0f;    // Bo tròn viền khung điều khiển
+    style.FramePadding = ImVec2(10, 8); // Tăng đệm phím nhấn to rộng, dễ bấm chuột
+
+    // Bảng phối màu hiện đại: Nền xám đen sâu thẳm, Khuy bấm xanh quân sự Tactical tương phản lớn
+    style.Colors[ImGuiCol_WindowBg] = ImVec4(0.11f, 0.12f, 0.14f, 1.0f);
+    style.Colors[ImGuiCol_Button] = ImVec4(0.18f, 0.38f, 0.28f, 1.0f);        // Xanh lá quân đội đặc chủng
+    style.Colors[ImGuiCol_ButtonHovered] = ImVec4(0.24f, 0.52f, 0.38f, 1.0f); // Sáng bừng lên khi rê chuột qua
+    style.Colors[ImGuiCol_ButtonActive] = ImVec4(0.14f, 0.30f, 0.22f, 1.0f);
+    style.Colors[ImGuiCol_Header] = ImVec4(0.22f, 0.25f, 0.28f, 1.0f);
+
+    // B. [FONT CHỮ BÀN CỜ]: Nạp phông chữ vector tiêu chuẩn có sẵn trên Ubuntu để vẽ Số thứ tự Zombie
+    sf::Font boardFont;
+    bool hasFont = boardFont.loadFromFile("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf");
 
     GameState state;
     sf::Clock deltaClock;
 
-    float cellSize = 40.0f;
+    float cellSize = 42.0f;
     float boardOffset = 20.0f;
 
+    // --- VÒNG LẶP GAME CHUẨN HÓA THỨ TỰ ---
     while (window.isOpen()) {
         sf::Event event;
         while (window.pollEvent(event)) {
@@ -482,7 +564,7 @@ int main() {
                 window.close();
 
             if (!ImGui::GetIO().WantCaptureMouse && event.type == sf::Event::MouseButtonPressed) {
-                if (event.mouseButton.button == sf::Mouse::Left && !state.game_over && !state.game_won) {
+                if (event.mouseButton.button == sf::Mouse::Left && !state.game_over && !state.game_won && state.phase == TurnPhase::HumanTurn) {
                     int mx = event.mouseButton.x;
                     int my = event.mouseButton.y;
 
@@ -504,51 +586,52 @@ int main() {
                                         if (state.human.stamina >= cost) {
                                             state.human.pos = {tx, ty};
                                             state.human.stamina -= cost;
-                                            state.add_log("Human di chuyen sang o (" + std::to_string(tx) + ", " + std::to_string(ty) + ").");
+                                            state.add_log("Human di chuyen den o (" + std::to_string(tx) + ", " + std::to_string(ty) + ").");
                                         }
-                                    } else {
-                                        state.add_log("Khong the di vao o cua Zombie dang song!", ImVec4(1.0f, 1.0f, 0.0f, 1.0f));
                                     }
                                 }
                             }
                         } else {
-                            state.handle_weapon_click(tx, ty);
+                            state.handle_weapon_click(tx, ty, cellSize, boardOffset);
                         }
                     }
                 }
             }
         }
 
+        // 1. TÍNH DELTA TIME VÀ KHỞI TẠO FRAMESCOPE CHO IMGUI TRƯỚC TIÊN
         sf::Time dt = deltaClock.restart();
-        ImGui::SFML::Update(window, dt);
+        float dtSeconds = dt.asSeconds();
+        ImGui::SFML::Update(window, dt); // <-- Khắc phục hoàn toàn lỗi Assertion g.WithinFrameScope
 
-        // Quản lý thời gian vẽ hiệu ứng Animation (Giảm dần theo giây thực tế)
-        if (state.fx_timer > 0.0f) {
-            state.fx_timer -= dt.asSeconds();
-            if (state.fx_timer <= 0.0f) {
-                state.flash_cells.clear();
-                state.is_drawing_line = false;
+        // 2. CẬP NHẬT LOGIC GAME THỜI GIAN THỰC
+        if (state.active_fx.type != FXType::None) {
+            state.active_fx.timer -= dtSeconds;
+            if (state.active_fx.timer <= 0.0f) {
+                state.active_fx.type = FXType::None;
             }
         }
+        state.update_zombie_logic(dtSeconds);
 
-        window.clear(sf::Color(30, 30, 30));
+        // 3. XÓA NỀN VÀ VẼ TOÀN BỘ ĐỒ HỌA SFML (BÀN CỜ, NHÂN VẬT, ANIMATION)
+        window.clear(sf::Color(25, 26, 28));
 
-        // --- RENDER 1: BÀN CỜ TACTICAL CHẮC CHẮN (Tọa độ cứng, tuyệt đối không bị thay đổi kích thước) ---
+        // Vẽ ô bàn cờ
         for (int x = 0; x < state.width; ++x) {
             for (int y = 0; y < state.height; ++y) {
                 sf::RectangleShape cell(sf::Vector2f(cellSize - 2.0f, cellSize - 2.0f));
                 cell.setPosition(x * cellSize + boardOffset, y * cellSize + boardOffset);
 
-                if (state.grid[x][y] == Terrain::Wall) cell.setFillColor(sf::Color(70, 70, 70));
-                else if (state.grid[x][y] == Terrain::Obstacle) cell.setFillColor(sf::Color(45, 45, 45));
-                else if (state.grid[x][y] == Terrain::Water) cell.setFillColor(sf::Color(25, 75, 125));
-                else cell.setFillColor(sf::Color(115, 65, 30));
+                if (state.grid[x][y] == Terrain::Wall) cell.setFillColor(sf::Color(60, 62, 66));
+                else if (state.grid[x][y] == Terrain::Obstacle) cell.setFillColor(sf::Color(40, 41, 43));
+                else if (state.grid[x][y] == Terrain::Water) cell.setFillColor(sf::Color(35, 75, 115));
+                else cell.setFillColor(sf::Color(105, 60, 35));
 
                 window.draw(cell);
 
                 if (state.mine_grid[x][y]) {
                     sf::CircleShape mine(6.0f);
-                    mine.setFillColor(sf::Color::Red);
+                    mine.setFillColor(sf::Color(230, 40, 40));
                     mine.setOrigin(6.0f, 6.0f);
                     mine.setPosition(x * cellSize + boardOffset + cellSize/2, y * cellSize + boardOffset + cellSize/2);
                     window.draw(mine);
@@ -556,111 +639,165 @@ int main() {
             }
         }
 
-        // Vẽ Quả Lựu đạn hẹn giờ
         if (state.grenade_box.active) {
-            sf::CircleShape gren(9.0f, 3); // Tam giác màu xanh lá
-            gren.setFillColor(sf::Color::Green);
-            gren.setOrigin(9.0f, 9.0f);
+            sf::CircleShape gren(8.0f, 4);
+            gren.setFillColor(sf::Color(50, 210, 50));
+            gren.setOrigin(8.0f, 8.0f);
             gren.setPosition(state.grenade_box.pos.x * cellSize + boardOffset + cellSize/2, state.grenade_box.pos.y * cellSize + boardOffset + cellSize/2);
             window.draw(gren);
         }
 
-        // Vẽ danh sách Zombie lên bàn cờ
+        // Vẽ Zombies
         for (size_t i = 0; i < state.zombies.size(); ++i) {
             const auto& z = state.zombies[i];
             if (z->hp <= 0) {
-                // Xác Zombie chết (Dấu X màu đen)
                 sf::RectangleShape deadZ(sf::Vector2f(cellSize - 8.0f, cellSize - 8.0f));
-                deadZ.setFillColor(sf::Color(10, 10, 10, 150));
+                deadZ.setFillColor(sf::Color(15, 15, 15, 160));
                 deadZ.setPosition(z->pos.x * cellSize + boardOffset + 4.0f, z->pos.y * cellSize + boardOffset + 4.0f);
                 window.draw(deadZ);
                 continue;
             }
-            sf::RectangleShape zVisual(sf::Vector2f(cellSize - 8.0f, cellSize - 8.0f));
-            zVisual.setPosition(z->pos.x * cellSize + boardOffset + 4.0f, z->pos.y * cellSize + boardOffset + 4.0f);
+            sf::RectangleShape zVisual(sf::Vector2f(cellSize - 6.0f, cellSize - 6.0f));
+            zVisual.setPosition(z->pos.x * cellSize + boardOffset + 3.0f, z->pos.y * cellSize + boardOffset + 3.0f);
 
-            if (z->type == ZombieType::Fast) zVisual.setFillColor(sf::Color(150, 220, 50));
-            else if (z->type == ZombieType::Exploding) zVisual.setFillColor(sf::Color(230, 120, 20));
-            else if (z->type == ZombieType::Vampire) zVisual.setFillColor(sf::Color(140, 30, 140));
-            else zVisual.setFillColor(sf::Color(30, 120, 40));
+            if (z->type == ZombieType::Fast) zVisual.setFillColor(sf::Color(135, 200, 45));
+            else if (z->type == ZombieType::Exploding) zVisual.setFillColor(sf::Color(220, 110, 15));
+            else if (z->type == ZombieType::Vampire) zVisual.setFillColor(sf::Color(130, 30, 130));
+            else zVisual.setFillColor(sf::Color(40, 140, 55));
 
             window.draw(zVisual);
+
+            if (hasFont) {
+                sf::Text zIdStr;
+                zIdStr.setFont(boardFont);
+                zIdStr.setString(std::to_string(i + 1));
+                zIdStr.setCharacterSize(14);
+                zIdStr.setFillColor(sf::Color::White);
+                zIdStr.setStyle(sf::Text::Bold);
+                
+                sf::FloatRect textRect = zIdStr.getLocalBounds();
+                zIdStr.setOrigin(textRect.left + textRect.width/2.0f, textRect.top + textRect.height/2.0f);
+                zIdStr.setPosition(z->pos.x * cellSize + boardOffset + cellSize/2.0f, z->pos.y * cellSize + boardOffset + cellSize/2.0f);
+                window.draw(zIdStr);
+            }
         }
 
-        // Vẽ Người chơi (Ngôi sao hoặc hình tròn màu trắng lớn)
-        sf::CircleShape hVisual(cellSize / 2.6f);
+        // Vẽ Human
+        sf::CircleShape hVisual(cellSize / 2.5f);
         hVisual.setFillColor(sf::Color::White);
         hVisual.setPosition(state.human.pos.x * cellSize + boardOffset + 4.0f, state.human.pos.y * cellSize + boardOffset + 4.0f);
         window.draw(hVisual);
 
-        // Vẽ hiệu ứng đạn bay/ nổ lan làm chậm độc lập
-        if (state.fx_timer > 0.0f) {
-            if (state.is_drawing_line) {
-                sf::Vertex line[] = { sf::Vertex(state.line_fx_start, sf::Color::Yellow), sf::Vertex(state.line_fx_end, sf::Color::Yellow) };
-                window.draw(line, 2, sf::Lines);
+        // Vẽ các hiệu ứng đạn/nổ/chém (Visual FX)
+        if (state.active_fx.type != FXType::None) {
+            float progress = state.active_fx.timer / state.active_fx.max_duration;
+            sf::Uint8 alpha = static_cast<sf::Uint8>(progress * 255);
+
+            if (state.active_fx.type == FXType::Pistol) {
+                sf::Vertex bulletLine[] = {
+                    sf::Vertex(state.active_fx.start_p, sf::Color(255, 255, 100, alpha)),
+                    sf::Vertex(state.active_fx.end_p, sf::Color(255, 60, 60, alpha))
+                };
+                window.draw(bulletLine, 2, sf::Lines);
             }
-            for (auto p : state.flash_cells) {
-                sf::RectangleShape flash(sf::Vector2f(cellSize - 2.0f, cellSize - 2.0f));
-                flash.setFillColor(sf::Color(255, 0, 0, 140));
-                flash.setPosition(p.x * cellSize + boardOffset, p.y * cellSize + boardOffset);
-                window.draw(flash);
+            else if (state.active_fx.type == FXType::Knife) {
+                sf::Vector2f dir = state.active_fx.end_p - state.active_fx.start_p;
+                float len = std::sqrt(dir.x*dir.x + dir.y*dir.y);
+                if (len > 0) {
+                    sf::Vector2f unitDir = dir / len;
+                    sf::Vector2f perpDir(-unitDir.y, unitDir.x);
+
+                    sf::ConvexShape blade;
+                    blade.setPointCount(3);
+                    blade.setPoint(0, state.active_fx.start_p + perpDir * 5.0f);
+                    blade.setPoint(1, state.active_fx.start_p - perpDir * 5.0f);
+                    blade.setPoint(2, state.active_fx.start_p + unitDir * (cellSize * 1.1f));
+                    blade.setFillColor(sf::Color(0, 255, 200, alpha));
+                    window.draw(blade);
+                }
+            }
+            else if (state.active_fx.type == FXType::Shotgun) {
+                for (auto p : state.active_fx.blast_cells) {
+                    sf::RectangleShape orangeZone(sf::Vector2f(cellSize - 2.0f, cellSize - 2.0f));
+                    orangeZone.setFillColor(sf::Color(255, 130, 30, static_cast<sf::Uint8>(progress * 130)));
+                    orangeZone.setPosition(p.x * cellSize + boardOffset, p.y * cellSize + boardOffset);
+                    window.draw(orangeZone);
+                }
+                if (!state.active_fx.blast_cells.empty()) {
+                    sf::ConvexShape coneVisual;
+                    coneVisual.setPointCount(3);
+                    coneVisual.setPoint(0, state.active_fx.start_p);
+                    coneVisual.setPoint(1, state.getCellCenter(state.active_fx.blast_cells.front().x, state.active_fx.blast_cells.front().y, cellSize, boardOffset));
+                    coneVisual.setPoint(2, state.getCellCenter(state.active_fx.blast_cells.back().x, state.active_fx.blast_cells.back().y, cellSize, boardOffset));
+                    coneVisual.setFillColor(sf::Color(255, 160, 50, static_cast<sf::Uint8>(progress * 45)));
+                    window.draw(coneVisual);
+                }
+            }
+            else if (state.active_fx.type == FXType::Explosion) {
+                for (auto p : state.active_fx.blast_cells) {
+                    sf::RectangleShape fireGrid(sf::Vector2f(cellSize - 2.0f, cellSize - 2.0f));
+                    fireGrid.setFillColor(sf::Color(255, 60, 10, static_cast<sf::Uint8>(progress * 180)));
+                    fireGrid.setPosition(p.x * cellSize + boardOffset, p.y * cellSize + boardOffset);
+                    window.draw(fireGrid);
+                }
             }
         }
 
-        // --- RENDER 2: ĐỒ HỌA GIAO DIỆN DEAR IMGUI (Cố định thanh cuộn và layout bên phải) ---
-        ImGui::SetNextWindowPos(ImVec2(660, 20));
-        ImGui::SetNextWindowSize(ImVec2(660, 680));
-        ImGui::Begin("He Thong Dieu Khien Chien Truong", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
+        // 4. DỰNG VÀ VẼ GIAO DIỆN IMGUI
+        ImGui::SetNextWindowPos(ImVec2(670, 20));
+        ImGui::SetNextWindowSize(ImVec2(710, 690));
+        ImGui::Begin("Tactical Commander Panel", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
 
-        // Thanh trạng thái trên cùng
-        ImGui::TextColored(ImVec4(0, 1, 1, 1), "[VONG LUOT]: %d/%d", state.current_turn, state.turn_limit);
+        ImGui::TextColored(ImVec4(0, 1, 1, 1), "[VÒNG LƯỢT]: %d/%d", state.current_turn, state.turn_limit);
         ImGui::SameLine(); ImGui::Text(" | [STAMINA]: %d", state.human.stamina);
-        ImGui::SameLine(); ImGui::TextColored(ImVec4(1, 0.3f, 0.3f, 1), " | [HP]: %d", state.human.hp);
+        ImGui::SameLine(); ImGui::TextColored(ImVec4(1, 0.2f, 0.2f, 1), " | [MÁU CƠ THỂ]: %d", state.human.hp);
         
         ImGui::Separator();
 
-        // Toolbar Vũ khí hành động
-        if (ImGui::Button("END TURN", ImVec2(120, 35))) { state.end_turn(); }
-        ImGui::SameLine();
-        if (ImGui::Button("Dao (oo)")) { state.input_mode = InputMode::TargetKnife; }
-        ImGui::SameLine();
-        if (ImGui::Button(("Sung Ngan (" + std::to_string(state.human.pistol_ammo) + ")").c_str())) { state.input_mode = InputMode::TargetPistol; }
-        ImGui::SameLine();
-        if (ImGui::Button(("Shotgun (" + std::to_string(state.human.shotgun_ammo) + ")").c_str())) { state.input_mode = InputMode::TargetShotgun; }
-        ImGui::SameLine();
-        if (ImGui::Button(("Luu Dan (" + std::to_string(state.human.grenades) + ")").c_str())) { state.input_mode = InputMode::TargetGrenade; }
-        ImGui::SameLine();
-        if (ImGui::Button(("Cai Min (" + std::to_string(state.human.用mines) + ")").c_str())) {
-            if (!state.game_over && !state.game_won && state.human.stamina >= 1 && state.human.用mines > 0) {
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.65f, 0.15f, 0.15f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.85f, 0.25f, 0.25f, 1.0f));
+        if (ImGui::Button("END TURN (QUA LƯỢT)", ImVec2(210, 42))) { 
+            if (state.phase == TurnPhase::HumanTurn) state.start_zombie_phase(); 
+        }
+        ImGui::PopStyleColor(2);
+
+        ImGui::Spacing();
+        if (ImGui::Button("Dao Găm (oo)")) { state.input_mode = InputMode::TargetKnife; } ImGui::SameLine();
+        if (ImGui::Button(("Súng Ngắn (" + std::to_string(state.human.pistol_ammo) + ")").c_str())) { state.input_mode = InputMode::TargetPistol; } ImGui::SameLine();
+        if (ImGui::Button(("Shotgun (" + std::to_string(state.human.shotgun_ammo) + ")").c_str())) { state.input_mode = InputMode::TargetShotgun; } ImGui::SameLine();
+        if (ImGui::Button(("Lựu Đạn (" + std::to_string(state.human.grenades) + ")").c_str())) { state.input_mode = InputMode::TargetGrenade; } ImGui::SameLine();
+        if (ImGui::Button(("Gài Mìn (" + std::to_string(state.human.mines) + ")").c_str())) {
+            if (!state.game_over && !state.game_won && state.human.stamina >= 1 && state.human.mines > 0 && state.phase == TurnPhase::HumanTurn) {
                 state.mine_grid[state.human.pos.x][state.human.pos.y] = true;
-                state.human.用mines--;
+                state.human.mines--;
                 state.human.stamina--;
-                state.add_log("[MIN] Cai min thanh cong tai o hien tai!", ImVec4(1, 0.8f, 0, 1));
+                state.add_log("[MIN] Đặt thành công kíp nổ cố định tại vị trí đứng hiện tại!", ImVec4(1, 0.7f, 0, 1));
             }
         }
 
-        if (state.input_mode != InputMode::MoveMode) {
-            ImGui::TextColored(ImVec4(1, 1, 0, 1), "[CHE DO]: CLICK VAO BAN CO DE KIEN TRONG TAM BAN VU KHI!");
+        if (state.phase == TurnPhase::ZombieAnimating) {
+            ImGui::TextColored(ImVec4(1, 0.2f, 0.2f, 1), "[CẢNH BÁO]: QUÂN ĐỊCH ĐANG DI CHUYỂN TUẦN TỰ, VUI LÒNG ĐỢI...");
+        } else if (state.input_mode != InputMode::MoveMode) {
+            ImGui::TextColored(ImVec4(1, 1, 0, 1), "[CHẾ ĐỘ TẤM NGẮM]: CLICK VÀO Ô BÀN CỜ ĐỂ KHAI HỎA VŨ KHÍ!");
         } else {
-            ImGui::Text("[CHE DO]: Click o canh ben canh de di chuyển.");
+            ImGui::Text("[CHẾ ĐỘ]: Click vào các ô vây quanh để di chuyển.");
         }
 
         ImGui::Separator();
 
-        // [SỬA LỖI THANH CUỘN]: Cửa sổ danh sách quái vật, có thanh cuộn tự động khi vượt quá khung hình hiển thị
-        ImGui::TextColored(ImVec4(1, 0.8f, 0, 1), "=== DANH SACH KE DICH ===");
-        ImGui::BeginChild("ZombieListChild", ImVec2(0, 160), true, ImGuiWindowFlags_AlwaysVerticalScrollbar);
-        ImGui::Columns(3, "zombie_table");
-        ImGui::SetColumnWidth(0, 60); ImGui::SetColumnWidth(1, 200);
-        ImGui::Text("STT"); ImGui::NextColumn(); ImGui::Text("Chủng loại"); ImGui::NextColumn(); ImGui::Text("Máu (HP)"); ImGui::NextColumn();
+        ImGui::TextColored(ImVec4(1, 0.75f, 0, 1), "=== THỐNG KÊ QUÂN ĐỊCH TẠI ĐỊA BÀN ===");
+        ImGui::BeginChild("ZombieTableScroll", ImVec2(0, 150), true, ImGuiWindowFlags_AlwaysVerticalScrollbar);
+        ImGui::Columns(3, "zom_cols");
+        ImGui::SetColumnWidth(0, 80); ImGui::SetColumnWidth(1, 250);
+        ImGui::Text("Số hiệu"); ImGui::NextColumn(); ImGui::Text("Phân loại Chủng quái"); ImGui::NextColumn(); ImGui::Text("Trạng thái HP"); ImGui::NextColumn();
         ImGui::Separator();
         for (size_t i = 0; i < state.zombies.size(); ++i) {
             ImGui::Text("#%zu", i + 1); ImGui::NextColumn();
             ImGui::Text("%s", state.zombies[i]->name.c_str()); ImGui::NextColumn();
             if (state.zombies[i]->hp <= 0) {
-                ImGui::TextColored(ImVec4(1, 0, 0, 1), "[X] DA CHET");
+                ImGui::TextColored(ImVec4(1, 0.2f, 0.2f, 0.6f), "[DEAD] TIÊU DIỆT");
             } else {
-                ImGui::TextColored(ImVec4(0, 1, 0, 1), "%d HP", state.zombies[i]->hp);
+                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "%d HP Sinh lực", state.zombies[i]->hp);
             }
             ImGui::NextColumn();
         }
@@ -668,33 +805,31 @@ int main() {
 
         ImGui::Separator();
 
-        // [SỬA LỖI THANH CUỘN]: Cửa sổ Nhật ký chiến trường có tính năng tự động cuộn xuống dưới cùng khi có log mới
-        ImGui::TextColored(ImVec4(0, 1, 1, 1), "--- NHAT KY CHIEN TRUONG ---");
-        ImGui::BeginChild("LogsChild", ImVec2(0, 300), true, ImGuiWindowFlags_AlwaysVerticalScrollbar);
+        ImGui::TextColored(ImVec4(0, 1, 0.7f, 1), "--- NHẬT KÝ GHI NHẬN TẬP TRUNG ---");
+        ImGui::BeginChild("LogScrollBox", ImVec2(0, 260), true, ImGuiWindowFlags_AlwaysVerticalScrollbar);
         for (const auto& log : state.logs) {
             ImGui::TextColored(log.color, "%s", log.text.c_str());
         }
-        // Luôn tự động kéo chuột cuộn xuống dòng nhật ký mới nhất
         if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) {
             ImGui::SetScrollHereY(1.0f);
         }
         ImGui::EndChild();
 
-        // Màn hình kết thúc Game đè lên giao diện chính
         if (state.game_over || state.game_won) {
-            ImGui::OpenPopup("Game Status Over");
-            ImGui::SetNextWindowPos(ImVec2(300, 200), ImGuiCond_Appearing);
-            if (ImGui::BeginPopupModal("Game Status Over", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-                if (state.game_over) ImGui::TextColored(ImVec4(1, 0, 0, 1), "GAME OVER! Ban da hy sinh.");
-                else ImGui::TextColored(ImVec4(1, 0.8f, 0, 1), "VICTORY! Ban da chien thang quai vat.");
+            ImGui::OpenPopup("EndGameModal");
+            ImGui::SetNextWindowPos(ImVec2(320, 220), ImGuiCond_Appearing);
+            if (ImGui::BeginPopupModal("EndGameModal", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                if (state.game_over) ImGui::TextColored(ImVec4(1, 0.1f, 0.1f, 1), "THẤT BẠI! Lực lượng Human đã gục ngã trước đại dịch Zombie.");
+                else ImGui::TextColored(ImVec4(1, 0.8f, 0, 1), "CHIẾN THẮNG! Toàn bộ khu vực đã được quét sạch quái vật bảo an.");
                 ImGui::Separator();
-                if (ImGui::Button("Thoat game", ImVec2(120, 0))) { window.close(); }
+                if (ImGui::Button("Thoát Khỏi Trận Địa", ImVec2(180, 35))) { window.close(); }
                 ImGui::EndPopup();
             }
         }
 
         ImGui::End();
 
+        // 5. KẾT THÚC KHUNG HÌNH VÀ RENDER LÊN MÀN HÌNH
         ImGui::SFML::Render(window);
         window.display();
     }
