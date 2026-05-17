@@ -6,14 +6,13 @@
 #include <imgui.h>
 #include <SFML/System/Vector2.hpp>
 
-// Thêm Terrain::Fire
 enum class Terrain { Dirt, Water, Obstacle, Wall, Fire };
-// Thêm TargetMolotov
 enum class InputMode { MoveMode, TargetKnife, TargetPistol, TargetShotgun, TargetGrenade, TargetMolotov };
 enum class ZombieType { Normal, Fast, Exploding, Vampire };
 enum class TurnPhase { HumanTurn, ZombieAnimating };
-// Thêm Molotov FX
-enum class FXType { None, Knife, Pistol, Shotgun, Explosion, Molotov };
+
+// Added Bite and Scratch FX
+enum class FXType { None, Knife, Pistol, Shotgun, Explosion, Molotov, Bite, Scratch };
 enum class GameScene { MainMenu, Playing, MapEditor };
 
 struct Position {
@@ -34,7 +33,7 @@ struct GameConfig {
     int shotgun_ammo = 6;
     int grenades = 3;
     int mines = 2;
-    int molotovs = 3; // Số lượng bom xăng khởi tạo
+    int molotovs = 3; 
     int turn_limit = 50;
 
     int count_normal = 3;
@@ -57,9 +56,9 @@ struct LogLine {
 struct GrenadeTimer {
     bool active = false;
     Position pos{0, 0};
+    int turns_left = 2;
 };
 
-// Quản lý ô địa hình lửa
 struct FireCell {
     Position pos;
     int duration; 
@@ -72,6 +71,16 @@ struct VisualFX {
     sf::Vector2f start_p;
     sf::Vector2f end_p;
     std::vector<Position> blast_cells;
+    int cx = -1;
+    int cy = -1;
+};
+
+// System for dynamic floating damage/heal numbers
+struct FloatingText {
+    Position pos;
+    int amount; 
+    float timer = 1.0f;
+    float max_duration = 1.0f;
 };
 
 #endif // TYPES_H

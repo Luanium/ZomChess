@@ -18,7 +18,7 @@ int main() {
 
     GameState state;
     sf::Clock deltaClock;
-    sf::Clock animationClock; // Tính toán hiệu ứng lửa nhấp nháy
+    sf::Clock animationClock; 
 
     float cellSize = 40.0f;
     float boardOffset = 20.0f;
@@ -51,8 +51,6 @@ int main() {
                                         if (state.human.stamina >= cost) {
                                             state.human.pos = {tx, ty};
                                             state.human.stamina -= cost;
-                                            
-                                            // Kiểm tra lây lan lửa sau khi di chuyển
                                             state.check_fire_interactions();
                                         }
                                     }
@@ -71,7 +69,7 @@ int main() {
                     int tx = (mousePos.x - boardOffset) / cellSize;
                     int ty = (mousePos.y - boardOffset) / cellSize;
 
-                    if (tx > 0 && tx < state.active_config.map_width - 1 && ty > 0 && ty < state.active_config.map_height - 1) {
+                    if (tx >= 0 && tx < state.active_config.map_width && ty >= 0 && ty < state.active_config.map_height) {
                         state.active_config.custom_grid[tx][ty] = state.editor_selected_terrain;
                         if (state.editor_selected_terrain == Terrain::Dirt && sf::Keyboard::isKeyPressed(sf::Keyboard::LShift)) {
                             state.active_config.custom_human_pos = {tx, ty};
@@ -81,15 +79,24 @@ int main() {
             }
         }
 
-        // --- Cấu trúc ImGui Update nguyên bản gốc ---
-        sf::Time dt = deltaClock.restart();
-        float dtSeconds = dt.asSeconds();
-        ImGui::SFML::Update(window, dt); 
+        sf::Time dtTime = deltaClock.restart();
+        float dtSeconds = dtTime.asSeconds();
+        ImGui::SFML::Update(window, dtTime);
 
         if (state.current_scene == GameScene::Playing) {
             if (state.active_fx.type != FXType::None) {
                 state.active_fx.timer -= dtSeconds;
                 if (state.active_fx.timer <= 0.0f) state.active_fx.type = FXType::None;
+            }
+            for (auto it = state.attack_animations.begin(); it != state.attack_animations.end();) {
+                it->timer -= dtSeconds;
+                if (it->timer <= 0.0f) it = state.attack_animations.erase(it);
+                else ++it;
+            }
+            for (auto it = state.floating_texts.begin(); it != state.floating_texts.end();) {
+                it->timer -= dtSeconds;
+                if (it->timer <= 0.0f) it = state.floating_texts.erase(it);
+                else ++it;
             }
             state.update_zombie_logic(dtSeconds);
         }
@@ -126,12 +133,7 @@ int main() {
 
             if (state.active_config.custom_map_mode) {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.5f, 0.3f, 0.1f, 1));
-                if (ImGui::Button("⚙️ OPEN MAP VISUAL EDITOR", ImVec2(400, 35))) {
-                    int w = state.active_config.map_width; int h = state.active_config.map_height;
-                    for (int x = 0; x < w; ++x) { state.active_config.custom_grid[x][0] = Terrain::Wall; state.active_config.custom_grid[x][h-1] = Terrain::Wall; }
-                    for (int y = 0; y < h; ++y) { state.active_config.custom_grid[0][y] = Terrain::Wall; state.active_config.custom_grid[w-1][y] = Terrain::Wall; }
-                    state.current_scene = GameScene::MapEditor;
-                }
+                if (ImGui::Button("⚙️ OPEN MAP VISUAL EDITOR", ImVec2(400, 35))) state.current_scene = GameScene::MapEditor;
                 ImGui::PopStyleColor();
             }
 
@@ -224,7 +226,6 @@ int main() {
                     else if (state.grid[x][y] == Terrain::Obstacle) cell.setFillColor(sf::Color(40, 41, 43));
                     else if (state.grid[x][y] == Terrain::Water) cell.setFillColor(sf::Color(35, 75, 115));
                     else if (state.grid[x][y] == Terrain::Fire) {
-                        // Animation ngọn lửa chớp tắt bập bùng
                         int pulse = static_cast<int>(25.0f * std::sin(timeSec * 12.0f));
                         cell.setFillColor(sf::Color(220 + pulse, 100 + pulse / 2, 20));
                     }
@@ -244,7 +245,6 @@ int main() {
                 gren.setPosition(state.grenade_box.pos.x * cellSize + boardOffset + cellSize/2, state.grenade_box.pos.y * cellSize + boardOffset + cellSize/2); window.draw(gren);
             }
 
-            // Vẽ Zombie
             for (size_t i = 0; i < state.zombies.size(); ++i) {
                 const auto& z = state.zombies[i];
                 if (z->hp <= 0) {
@@ -254,7 +254,6 @@ int main() {
                 sf::RectangleShape zVisual(sf::Vector2f(cellSize - 6.0f, cellSize - 6.0f));
                 zVisual.setPosition(z->pos.x * cellSize + boardOffset + 3.0f, z->pos.y * cellSize + boardOffset + 3.0f);
                 
-                // MÀU SẮC ZOMBIE (Bảo tồn chuẩn xác theo code cũ)
                 if (z->type == ZombieType::Fast) zVisual.setFillColor(sf::Color(135, 200, 45));
                 else if (z->type == ZombieType::Exploding) zVisual.setFillColor(sf::Color(220, 110, 15));
                 else if (z->type == ZombieType::Vampire) zVisual.setFillColor(sf::Color(130, 30, 130));
@@ -265,29 +264,14 @@ int main() {
                     sf::Text zIdStr; zIdStr.setFont(boardFont); zIdStr.setString(std::to_string(i + 1)); zIdStr.setCharacterSize(14);
                     sf::FloatRect textRect = zIdStr.getLocalBounds(); zIdStr.setOrigin(textRect.left + textRect.width/2.0f, textRect.top + textRect.height/2.0f);
                     zIdStr.setPosition(z->pos.x * cellSize + boardOffset + cellSize/2.0f, z->pos.y * cellSize + boardOffset + cellSize/2.0f); window.draw(zIdStr);
-                    
-                    // Ký hiệu lửa nhấp nháy cho Zombie
-                    if (z->is_burning && std::fmod(timeSec, 0.6f) < 0.3f) {
-                        sf::Text fTxt("[F]", boardFont, 14); fTxt.setFillColor(sf::Color(255, 140, 0));
-                        fTxt.setPosition(z->pos.x * cellSize + boardOffset + 2, z->pos.y * cellSize + boardOffset - 12);
-                        window.draw(fTxt);
-                    }
                 }
             }
 
-            // Vẽ Human player
             sf::CircleShape hVisual(cellSize / 2.5f); hVisual.setFillColor(sf::Color::White);
             hVisual.setPosition(state.human.pos.x * cellSize + boardOffset + 4.0f, state.human.pos.y * cellSize + boardOffset + 4.0f);
             window.draw(hVisual);
 
-            // Ký hiệu lửa nhấp nháy cho Human
-            if (state.human.is_burning && hasFont && std::fmod(timeSec, 0.6f) < 0.3f) {
-                sf::Text hfTxt("[F]", boardFont, 14); hfTxt.setFillColor(sf::Color::Red);
-                hfTxt.setPosition(state.human.pos.x * cellSize + boardOffset + 2, state.human.pos.y * cellSize + boardOffset - 12);
-                window.draw(hfTxt);
-            }
-
-            // Xử lý FX đạn bắn bay (Bao gồm cả FX tia Molotov)
+            // Handle FX
             if (state.active_fx.type != FXType::None) {
                 float progress = state.active_fx.timer / state.active_fx.max_duration;
                 sf::Uint8 alpha = static_cast<sf::Uint8>(progress * 255);
@@ -301,6 +285,46 @@ int main() {
                         blastZone.setFillColor(state.active_fx.type == FXType::Shotgun ? sf::Color(255,130,30, progress*120) : sf::Color(255,50,10, progress*160));
                         blastZone.setPosition(p.x * cellSize + boardOffset, p.y * cellSize + boardOffset); window.draw(blastZone);
                     }
+                }
+            }
+
+            // Render Attack Animations (Bite/Scratch)
+            for (const auto& fx : state.attack_animations) {
+                float progress = 1.0f - (fx.timer / fx.max_duration);
+                sf::Uint8 alpha = static_cast<sf::Uint8>((1.0f - progress) * 255);
+                sf::Vector2f center = state.getCellCenter(fx.cx, fx.cy, cellSize, boardOffset);
+
+                if (fx.type == FXType::Bite) {
+                    float dist = (progress < 0.5f) ? (15.0f * (1.0f - progress * 2.0f)) : 0.0f;
+                    sf::Color teethCol(255, 50, 50, alpha);
+                    sf::Vertex top[] = { sf::Vertex(sf::Vector2f(center.x - 8, center.y - dist - 4), teethCol), sf::Vertex(sf::Vector2f(center.x, center.y - dist + 6), teethCol), sf::Vertex(sf::Vector2f(center.x + 8, center.y - dist - 4), teethCol) };
+                    sf::Vertex bot[] = { sf::Vertex(sf::Vector2f(center.x - 8, center.y + dist + 4), teethCol), sf::Vertex(sf::Vector2f(center.x, center.y + dist - 6), teethCol), sf::Vertex(sf::Vector2f(center.x + 8, center.y + dist + 4), teethCol) };
+                    window.draw(top, 3, sf::LineStrip);
+                    window.draw(bot, 3, sf::LineStrip);
+                } else if (fx.type == FXType::Scratch) {
+                    sf::Color clawCol(220, 220, 220, alpha);
+                    for (int i = -1; i <= 1; ++i) {
+                        float off = i * 6.0f;
+                        sf::Vertex line[] = { sf::Vertex(sf::Vector2f(center.x - 10 + off, center.y - 12 + off), clawCol), sf::Vertex(sf::Vector2f(center.x + 10 + off, center.y + 12 + off), clawCol) };
+                        window.draw(line, 2, sf::Lines);
+                    }
+                }
+            }
+
+            // Render Floating Text HP Updates
+            if (hasFont) {
+                for (const auto& ft : state.floating_texts) {
+                    float progress = 1.0f - (ft.timer / ft.max_duration);
+                    sf::Uint8 alpha = static_cast<sf::Uint8>((1.0f - progress) * 255);
+                    sf::Text fTxt;
+                    fTxt.setFont(boardFont);
+                    fTxt.setString((ft.amount > 0 ? "+" : "") + std::to_string(ft.amount));
+                    fTxt.setCharacterSize(16);
+                    fTxt.setFillColor(sf::Color(ft.amount > 0 ? 50 : 255, ft.amount > 0 ? 255 : 50, 50, alpha));
+                    
+                    sf::Vector2f center = state.getCellCenter(ft.pos.x, ft.pos.y, cellSize, boardOffset);
+                    fTxt.setPosition(center.x - 8, center.y - 15 - (progress * 25.0f));
+                    window.draw(fTxt);
                 }
             }
 
@@ -320,8 +344,7 @@ int main() {
                 if (state.phase == TurnPhase::HumanTurn) state.start_zombie_phase(); 
             }
 
-            ImGui::Spacing();
-            ImGui::TextColored(ImVec4(1, 0.4f, 1, 1), "WEAPONRY SELECTOR:");
+            ImGui::Spacing(); ImGui::TextColored(ImVec4(1, 0.4f, 1, 1), "WEAPONRY SELECTOR:");
             
             auto weapon_button = [&](const char* label, InputMode mode) {
                 if (state.input_mode == mode) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.4f, 0.0f, 1));
@@ -334,8 +357,6 @@ int main() {
             weapon_button(("Pistol (" + std::to_string(state.human.pistol_ammo) + ")").c_str(), InputMode::TargetPistol); ImGui::SameLine();
             weapon_button(("Shotgun (" + std::to_string(state.human.shotgun_ammo) + ")").c_str(), InputMode::TargetShotgun); ImGui::SameLine();
             weapon_button(("Grenade (" + std::to_string(state.human.grenades) + ")").c_str(), InputMode::TargetGrenade); ImGui::SameLine();
-            
-            // Nút bấm Molotov mới
             weapon_button(("Molotov (" + std::to_string(state.human.molotovs) + ")").c_str(), InputMode::TargetMolotov);
             
             if (ImGui::Button(("Plant Mine (" + std::to_string(state.human.mines) + ")").c_str())) {
@@ -349,11 +370,12 @@ int main() {
             ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "💀 HOSTILE RADAR DETECTIONS (%zu Active Targets):", state.zombies.size());
             
             ImGui::BeginChild("ZombieStatusBox", ImVec2(0, 180), true, ImGuiWindowFlags_HorizontalScrollbar);
-            if (ImGui::BeginTable("ZombieTable", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+            if (ImGui::BeginTable("ZombieTable", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
                 ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, 35.0f);
-                ImGui::TableSetupColumn("Type Class", ImGuiTableColumnFlags_WidthFixed, 110.0f);
-                ImGui::TableSetupColumn("Vital HP", ImGuiTableColumnFlags_WidthFixed, 80.0f);
-                ImGui::TableSetupColumn("Coordinates", ImGuiTableColumnFlags_WidthFixed, 90.0f);
+                ImGui::TableSetupColumn("Type Class", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+                ImGui::TableSetupColumn("Vital HP", ImGuiTableColumnFlags_WidthFixed, 75.0f);
+                ImGui::TableSetupColumn("Coordinates", ImGuiTableColumnFlags_WidthFixed, 85.0f);
+                ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, 60.0f);
                 ImGui::TableHeadersRow();
 
                 for (size_t i = 0; i < state.zombies.size(); ++i) {
@@ -380,7 +402,12 @@ int main() {
 
                     ImGui::TableSetColumnIndex(3);
                     if (z->hp <= 0) ImGui::Text("-");
-                    else ImGui::Text("[%d, %d] %s", z->pos.x, z->pos.y, z->is_burning ? "(FIRE)" : "");
+                    else ImGui::Text("[%d, %d]", z->pos.x, z->pos.y);
+
+                    ImGui::TableSetColumnIndex(4);
+                    if (z->hp <= 0) ImGui::Text("-");
+                    else if (z->is_burning) ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "[F]");
+                    else ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Clear");
                 }
                 ImGui::EndTable();
             }

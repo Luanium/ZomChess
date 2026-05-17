@@ -12,9 +12,9 @@ struct Human {
     int shotgun_ammo = 6;
     int grenades = 3;
     int mines = 2;
-    int molotovs = 3; // Đạn bom xăng
+    int molotovs = 3; 
     
-    bool is_burning = false; // Trạng thái thiêu đốt
+    bool is_burning = false; 
 };
 
 class Zombie {
@@ -24,7 +24,7 @@ public:
     std::string name;
     ZombieType type;
     
-    bool is_burning = false; // Trạng thái thiêu đốt
+    bool is_burning = false; 
 
     Zombie(Position p, int h, std::string n, ZombieType t) 
         : pos(p), hp(h), name(n), type(t) {}

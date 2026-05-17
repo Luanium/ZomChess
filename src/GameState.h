@@ -21,7 +21,7 @@ public:
     std::vector<std::vector<bool>> mine_grid;
     Human human;
     std::vector<std::unique_ptr<Zombie>> zombies;
-    std::vector<FireCell> fire_cells; // Quản lý thời gian cháy của địa hình
+    std::vector<FireCell> fire_cells; 
 
     int turn_limit = 50;
     int current_turn = 1;
@@ -38,8 +38,10 @@ public:
     const float ZOMBIE_STEP_DELAY = 0.35f;
 
     VisualFX active_fx;
-    std::mt19937 rng;
+    std::vector<VisualFX> attack_animations; 
+    std::vector<FloatingText> floating_texts;
 
+    std::mt19937 rng;
     Terrain editor_selected_terrain = Terrain::Obstacle;
 
     GameState();
@@ -53,14 +55,13 @@ public:
     int distance(Position p1, Position p2);
     std::pair<int, int> get_8_direction(int dx, int dy);
     sf::Vector2f getCellCenter(int x, int y, float cellSize, float offset);
+    
     void trigger_explosion(int cx, int cy);
     void zombie_single_step(size_t idx);
     void handle_weapon_click(int tx, int ty, float cellSize, float boardOffset);
     void start_zombie_phase();
     void update_zombie_logic(float dt);
     void check_victory_conditions();
-    
-    // Hàm mới xử lý cơ chế dính lửa và lan truyền
     void check_fire_interactions();
 
     bool export_challenge_file(const std::string& path);
