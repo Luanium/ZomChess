@@ -9,13 +9,13 @@
 
 class GameState {
 public:
-    GameScene current_scene = GameScene::MainMenu; // Starts on config panel
-    GameConfig active_config;                     // Tracks setup variables
+    GameScene current_scene = GameScene::MainMenu;
+    GameConfig active_config;                     
     
-    // File I/O tracking buffers
     char export_filename[64] = "my_custom_challenge.zom";
     char import_filename[64] = "my_custom_challenge.zom";
 
+    // Địa hình và thực thể runtime hiện tại của trận đấu
     int width = 15;
     int height = 15;
     std::vector<std::vector<Terrain>> grid;
@@ -39,9 +39,16 @@ public:
     VisualFX active_fx;
     std::mt19937 rng;
 
+    // Biến tạm phục vụ riêng cho Map Editor UI
+    Terrain editor_selected_terrain = Terrain::Obstacle;
+
     GameState();
 
     void init_game();
+    void apply_quick_difficulty(int difficulty_level); // 0: Easy, 1: Medium, 2: Hard
+    int calculate_available_spawn_cells();           // Tính số ô trống có thể đặt Zombie
+    bool is_zombie_count_valid();                    // Kiểm tra xem số lượng zombie có bị quá tải không
+
     void add_log(const std::string& text, ImVec4 color = ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
     int distance(Position p1, Position p2);
     std::pair<int, int> get_8_direction(int dx, int dy);
@@ -53,7 +60,6 @@ public:
     void update_zombie_logic(float dt);
     void check_victory_conditions();
 
-    // Challenge Management File utilities
     bool export_challenge_file(const std::string& path);
     bool import_challenge_file(const std::string& path);
 };

@@ -11,10 +11,23 @@ enum class InputMode { MoveMode, TargetKnife, TargetPistol, TargetShotgun, Targe
 enum class ZombieType { Normal, Fast, Exploding, Vampire };
 enum class TurnPhase { HumanTurn, ZombieAnimating };
 enum class FXType { None, Knife, Pistol, Shotgun, Explosion };
-enum class GameScene { MainMenu, Playing }; // Scene tracker
+enum class GameScene { MainMenu, Playing, MapEditor }; // Thêm cảnh thiết kế Map
 
-// Encapsulates configuration values for export/import
+struct Position {
+    int x;
+    int y;
+    bool operator==(const Position& other) const {
+        return x == other.x && y == other.y;
+    }
+};
+
+// Cấu trúc chứa toàn bộ thông tin thiết lập trận đấu và bản đồ
 struct GameConfig {
+    // Kích thước bàn cờ
+    int map_width = 15;
+    int map_height = 15;
+
+    // Chỉ số Nhân vật
     int human_hp = 5;
     int initial_stamina = 6;
     int pistol_ammo = 12;
@@ -23,19 +36,19 @@ struct GameConfig {
     int mines = 2;
     int turn_limit = 50;
 
-    // Hostile unit parameters
+    // Số lượng Zombie
     int count_normal = 3;
     int count_fast = 2;
     int count_exploding = 2;
     int count_vampire = 1;
-};
 
-struct Position {
-    int x;
-    int y;
-    bool operator==(const Position& other) const {
-        return x == other.x && y == other.y;
-    }
+    // Cơ chế tính năng mới
+    bool spawn_shield = true;      // Bảo hiểm 7x7 ô xung quanh Human
+    bool custom_map_mode = false;  // Chế độ chơi Map tự xây dựng
+
+    // Dữ liệu dùng cho Custom Map
+    Position custom_human_pos{1, 1};
+    std::vector<std::vector<Terrain>> custom_grid; 
 };
 
 struct LogLine {
