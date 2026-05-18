@@ -61,6 +61,7 @@ public:
     int distance(Position p1, Position p2);
     std::pair<int, int> get_8_direction(int dx, int dy);
     sf::Vector2f getCellCenter(int x, int y, float cellSize, float offset);
+    bool is_blocked_by_wall(Position start, Position end) const;
     
     void trigger_explosion(int cx, int cy);
     void zombie_single_step(size_t idx);
