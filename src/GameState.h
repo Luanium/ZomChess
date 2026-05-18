@@ -13,6 +13,10 @@ public:
     GameConfig active_config;                     
     bool use_vietnamese = false;
     
+    std::string tr(const std::string& en, const std::string& vi) const {
+        return use_vietnamese ? vi : en;
+    }
+    
     char export_filename[64] = "my_custom_challenge.zom";
     char import_filename[64] = "my_custom_challenge.zom";
 

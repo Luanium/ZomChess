@@ -83,6 +83,7 @@ struct VisualFX {
     int cy = -1;
     int dx = 0;
     int dy = 0;
+    std::string banner_text = "";
 };
 
 // System for dynamic floating damage/heal numbers

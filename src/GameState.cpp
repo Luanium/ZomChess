@@ -275,9 +275,9 @@ void GameState::init_game() {
             }
         };
 
-        grow_terrain(Terrain::Water, target_water, 0.75f);
-        grow_terrain(Terrain::Grass, target_grass, 0.75f);
-        grow_terrain(Terrain::Wall, target_wall, 0.40f);
+        grow_terrain(Terrain::Water, target_water, 0.55f);
+        grow_terrain(Terrain::Grass, target_grass, 0.55f);
+        grow_terrain(Terrain::Wall, target_wall, 0.25f);
 
         std::uniform_int_distribution<int> dist_x(0, width - 1);
         std::uniform_int_distribution<int> dist_y(0, height - 1);
@@ -424,14 +424,44 @@ bool GameState::is_blocked_by_wall(Position start, Position end) const {
 }
 
 void GameState::check_fire_interactions() {
-    if (grid[human.pos.x][human.pos.y] == Terrain::Fire && !human.is_burning) {
-        human.is_burning = true;
-        add_log("[FIRE] Human stepped into a blazing fire!", ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
+    if (grid[human.pos.x][human.pos.y] == Terrain::Water) {
+        if (human.is_burning) {
+            human.is_burning = false;
+            add_log(tr("[FIRE] Human stepped into water! Burning extinguished.", "[FIRE] Human da buoc vao nuoc! Lua da bi dap tat."), ImVec4(0.35f, 0.75f, 1.0f, 1.0f));
+        }
+    } else if (grid[human.pos.x][human.pos.y] == Terrain::Fire) {
+        if (human.is_burning) {
+            human.hp = std::max(0, human.hp - 1);
+            floating_texts.push_back({human.pos, -1, 1.0f, 1.0f});
+            add_log(tr("[FIRE] Human entered fire while already burning! Suffered 1 immediate Fire damage.", "[FIRE] Human di vao o lua khi dang bi thieu dot! Bi tru 1 mau lap tuc."), ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
+            check_victory_conditions();
+        } else {
+            human.is_burning = true;
+            add_log(tr("[FIRE] Human stepped into a blazing fire!", "[FIRE] Human da buoc vao mot o lua thieu dot!"), ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
+        }
     }
+
     for (auto& z : zombies) {
-        if (z->hp > 0 && !z->is_burning && grid[z->pos.x][z->pos.y] == Terrain::Fire) {
-            z->is_burning = true;
-            add_log("[FIRE] " + z->name + " stepped into a blazing fire!", ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
+        if (z->hp > 0) {
+            if (grid[z->pos.x][z->pos.y] == Terrain::Water) {
+                if (z->is_burning) {
+                    z->is_burning = false;
+                    add_log(tr("[FIRE] " + z->name + " stepped into water! Burning extinguished.", "[FIRE] " + z->name + " da buoc vao nuoc! Lua da bi dap tat."), ImVec4(0.35f, 0.75f, 1.0f, 1.0f));
+                }
+            } else if (grid[z->pos.x][z->pos.y] == Terrain::Fire) {
+                if (z->is_burning) {
+                    z->hp -= 1;
+                    floating_texts.push_back({z->pos, -1, 1.0f, 1.0f});
+                    add_log(tr("[FIRE] " + z->name + " entered fire while already burning! Suffered 1 immediate Fire damage.", "[FIRE] " + z->name + " di vao o lua khi dang bi thieu dot! Bi tru 1 mau lap tuc."), ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
+                    if (z->hp <= 0 && z->type == ZombieType::Exploding) {
+                        trigger_explosion(z->pos.x, z->pos.y, true);
+                    }
+                    check_victory_conditions();
+                } else {
+                    z->is_burning = true;
+                    add_log(tr("[FIRE] " + z->name + " stepped into a blazing fire!", "[FIRE] " + z->name + " da buoc vao mot o lua thieu dot!"), ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
+                }
+            }
         }
     }
 
@@ -443,13 +473,17 @@ void GameState::check_fire_interactions() {
 
     for (const auto& p : fire_sources) {
         if (!human.is_burning && distance(human.pos, p) <= 1) {
-            human.is_burning = true;
-            add_log("[FIRE] Human caught fire from close proximity!", ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
+            if (grid[human.pos.x][human.pos.y] != Terrain::Water) {
+                human.is_burning = true;
+                add_log(tr("[FIRE] Human caught fire from close proximity!", "[FIRE] Human bat lua do dung qua gan nguon lua!"), ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
+            }
         }
         for (auto& z : zombies) {
             if (z->hp > 0 && !z->is_burning && distance(z->pos, p) <= 1) {
-                z->is_burning = true;
-                add_log("[FIRE] " + z->name + " caught fire from close proximity!", ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
+                if (grid[z->pos.x][z->pos.y] != Terrain::Water) {
+                    z->is_burning = true;
+                    add_log(tr("[FIRE] " + z->name + " caught fire from close proximity!", "[FIRE] " + z->name + " bat lua do dung qua gan nguon lua!"), ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
+                }
             }
         }
     }
@@ -750,10 +784,7 @@ void GameState::finish_environment_phase() {
         if (human.is_paralyzed) {
             add_log("[SHOCK] Human is paralyzed this turn and cannot act.", ImVec4(0.45f, 0.9f, 1.0f, 1.0f));
         }
-        if (grid[human.pos.x][human.pos.y] == Terrain::Fire && !human.is_burning) {
-            human.is_burning = true;
-            add_log("[FIRE] Human started turn standing in fire!", ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
-        }
+        check_fire_interactions();
     }
 
     phase = TurnPhase::HumanTurn;

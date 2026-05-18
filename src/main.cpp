@@ -40,13 +40,20 @@ int main() {
 
     while (window.isOpen()) {
         static bool show_guide_popup = false;
+        static bool show_confirm_return_hub = false;
+        static bool show_confirm_exit_game = false;
         static float panelWidthCache = 380.0f;
         sf::Event event;
         while (window.pollEvent(event)) {
             ImGui::SFML::ProcessEvent(window, event);
 
-            if (event.type == sf::Event::Closed)
-                window.close();
+            if (event.type == sf::Event::Closed) {
+                if (state.current_scene == GameScene::Playing || state.current_scene == GameScene::MapEditor) {
+                    show_confirm_exit_game = true;
+                } else {
+                    window.close();
+                }
+            }
 
             if (state.current_scene == GameScene::Playing && !ImGui::GetIO().WantCaptureMouse && event.type == sf::Event::MouseButtonPressed) {
                 if (event.mouseButton.button == sf::Mouse::Left && !state.game_over && !state.game_won && state.phase == TurnPhase::HumanTurn && !state.human.is_paralyzed) {
@@ -75,6 +82,21 @@ int main() {
                                             state.human.stamina -= cost;
                                             state.check_fire_interactions();
                                             state.check_mine_interactions();
+                                        } else {
+                                            if (state.human.stamina == 0) {
+                                                state.add_log(tr("[SYSTEM] Out of stamina! End turn!", "[HE THONG] Het stamina! Ket thuc luot!"), ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
+                                                state.turn_banner_fx.type = FXType::Electricity;
+                                                state.turn_banner_fx.timer = 1.0f;
+                                                state.turn_banner_fx.max_duration = 1.0f;
+                                                state.turn_banner_fx.banner_text = (ui_lang == Lang::VI) ? "HET STAMINA! KET THUC LUOT!" : "OUT OF STAMINA! END TURN!";
+                                                state.start_zombie_phase();
+                                            } else {
+                                                state.add_log(tr("[SYSTEM] Not enough stamina!", "[HE THONG] Khong du stamina!"), ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
+                                                state.turn_banner_fx.type = FXType::Electricity;
+                                                state.turn_banner_fx.timer = 1.0f;
+                                                state.turn_banner_fx.max_duration = 1.0f;
+                                                state.turn_banner_fx.banner_text = (ui_lang == Lang::VI) ? "KHONG DU STAMINA!" : "NOT ENOUGH STAMINA!";
+                                            }
                                         }
                                     }
                                 }
@@ -108,6 +130,9 @@ int main() {
 
         if (state.current_scene == GameScene::Playing) {
             state.use_vietnamese = (ui_lang == Lang::VI);
+            if (state.human.stamina == 0 && state.input_mode != InputMode::MoveMode) {
+                state.input_mode = InputMode::MoveMode;
+            }
             cellSize = 40.0f;
             boardOffset = 20.0f;
             int maxViewX = std::max(0, state.width - VIEW_CELLS);
@@ -181,11 +206,68 @@ int main() {
             ImGui::Checkbox("Use Custom Map Design Mode", &state.active_config.custom_map_mode);
 
             ImGui::Spacing();
-            ImGui::TextColored(ImVec4(1, 0.8f, 0, 1), "--- PROCEDURAL GENERATION RATIOS ---");
-            ImGui::SliderInt("Dirt Ratio %", &state.active_config.ratio_dirt, 0, 100);
-            ImGui::SliderInt("Wall Ratio %", &state.active_config.ratio_wall, 0, 100);
-            ImGui::SliderInt("Water Ratio %", &state.active_config.ratio_water, 0, 100);
-            ImGui::SliderInt("Grass Ratio %", &state.active_config.ratio_grass, 0, 100);
+            ImGui::TextColored(ImVec4(1, 0.8f, 0, 1), "%s", tr("--- PROCEDURAL GENERATION RATIOS (SUM = 100%) ---", "--- TI LE SINH BAN CO (TONG = 100%) ---"));
+
+            auto adjust_ratios = [](int& target, int& o1, int& o2, int& o3, int new_val) {
+                int diff = new_val - target;
+                if (diff == 0) return;
+                target = new_val;
+                
+                // Distribute diff to o1, o2, o3
+                for (int step = 0; step < std::abs(diff); ++step) {
+                    int sign = (diff > 0) ? -1 : 1;
+                    if (sign == -1) {
+                        // Find the largest of o1, o2, o3 that is > 0 to decrement
+                        if (o1 >= o2 && o1 >= o3 && o1 > 0) o1 += sign;
+                        else if (o2 >= o1 && o2 >= o3 && o2 > 0) o2 += sign;
+                        else if (o3 > 0) o3 += sign;
+                    } else {
+                        // Increment o1, o2, o3 sequentially
+                        if (o1 <= o2 && o1 <= o3) o1 += sign;
+                        else if (o2 <= o1 && o2 <= o3) o2 += sign;
+                        else o3 += sign;
+                    }
+                }
+                
+                // Clamp all
+                target = std::clamp(target, 0, 100);
+                o1 = std::clamp(o1, 0, 100);
+                o2 = std::clamp(o2, 0, 100);
+                o3 = std::clamp(o3, 0, 100);
+                
+                int current_sum = target + o1 + o2 + o3;
+                if (current_sum != 100) {
+                    o1 += (100 - current_sum);
+                    o1 = std::clamp(o1, 0, 100);
+                }
+            };
+
+            int temp_dirt = state.active_config.ratio_dirt;
+            int temp_wall = state.active_config.ratio_wall;
+            int temp_water = state.active_config.ratio_water;
+            int temp_grass = state.active_config.ratio_grass;
+
+            int total_r = temp_dirt + temp_wall + temp_water + temp_grass;
+            if (total_r != 100) {
+                state.active_config.ratio_dirt = 60;
+                state.active_config.ratio_wall = 10;
+                state.active_config.ratio_water = 10;
+                state.active_config.ratio_grass = 20;
+                temp_dirt = 60; temp_wall = 10; temp_water = 10; temp_grass = 20;
+            }
+
+            if (ImGui::SliderInt("Dirt Ratio %", &temp_dirt, 0, 100)) {
+                adjust_ratios(state.active_config.ratio_dirt, state.active_config.ratio_wall, state.active_config.ratio_water, state.active_config.ratio_grass, temp_dirt);
+            }
+            if (ImGui::SliderInt("Wall Ratio %", &temp_wall, 0, 100)) {
+                adjust_ratios(state.active_config.ratio_wall, state.active_config.ratio_dirt, state.active_config.ratio_water, state.active_config.ratio_grass, temp_wall);
+            }
+            if (ImGui::SliderInt("Water Ratio %", &temp_water, 0, 100)) {
+                adjust_ratios(state.active_config.ratio_water, state.active_config.ratio_dirt, state.active_config.ratio_wall, state.active_config.ratio_grass, temp_water);
+            }
+            if (ImGui::SliderInt("Grass Ratio %", &temp_grass, 0, 100)) {
+                adjust_ratios(state.active_config.ratio_grass, state.active_config.ratio_dirt, state.active_config.ratio_wall, state.active_config.ratio_water, temp_grass);
+            }
 
             if (state.active_config.custom_map_mode) {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.5f, 0.3f, 0.1f, 1));
@@ -571,11 +653,15 @@ int main() {
             if (state.turn_banner_fx.type != FXType::None) {
                 float p = state.turn_banner_fx.timer / state.turn_banner_fx.max_duration;
                 sf::Uint8 a = static_cast<sf::Uint8>(255 * p);
+                if (!state.turn_banner_fx.banner_text.empty()) {
+                    a = 255;
+                }
                 if (hasFont) {
                     sf::Text msg;
                     msg.setFont(boardFont);
-                    msg.setCharacterSize(70);
-                    msg.setString("YOUR TURN");
+                    msg.setCharacterSize(state.turn_banner_fx.banner_text.empty() ? 70 : 45);
+                    std::string banner_str = state.turn_banner_fx.banner_text.empty() ? "YOUR TURN" : state.turn_banner_fx.banner_text;
+                    msg.setString(banner_str);
                     msg.setFillColor(sf::Color(255, 245, 120, a));
                     sf::FloatRect r = msg.getLocalBounds();
                     msg.setOrigin(r.left + r.width/2.0f, r.top + r.height/2.0f);
@@ -760,18 +846,19 @@ int main() {
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.72f, 0.14f, 0.14f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.82f, 0.2f, 0.2f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.58f, 0.08f, 0.08f, 1.0f));
-            if (ImGui::Button(tr("Return Hub", "Ve Hub"), ImVec2(150, 35))) state.current_scene = GameScene::MainMenu;
+            if (ImGui::Button(tr("Return Hub", "Ve Hub"), ImVec2(150, 35))) show_confirm_return_hub = true;
             ImGui::PopStyleColor(3);
 
             ImGui::TextColored(ImVec4(1, 0.55f, 0.9f, 1), "%s", tr("Weapons:", "Vu khi:"));
             
             auto weapon_button = [&](const char* label, InputMode mode) {
-                if (state.human.is_paralyzed) { ImGui::BeginDisabled(); }
+                bool disabled = state.human.is_paralyzed || state.human.stamina == 0;
+                if (disabled) { ImGui::BeginDisabled(); }
                 if (state.input_mode == mode) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.4f, 0.0f, 1));
                 else ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_Button]);
-                if (ImGui::Button(label) && !state.human.is_paralyzed) state.input_mode = mode;
+                if (ImGui::Button(label) && !disabled) state.input_mode = mode;
                 ImGui::PopStyleColor();
-                if (state.human.is_paralyzed) { ImGui::EndDisabled(); }
+                if (disabled) { ImGui::EndDisabled(); }
             };
 
             weapon_button("Knife", InputMode::TargetKnife); ImGui::SameLine();
@@ -833,6 +920,52 @@ int main() {
             int maxVY = std::max(0, state.height - VIEW_CELLS);
             ImGui::VSliderInt("##vscroll", ImVec2(16.0f, VIEW_CELLS * cellSize - 8.0f), &viewY, 0, maxVY);
             ImGui::End();
+
+            if (show_confirm_exit_game) ImGui::OpenPopup(tr("Exit ZomChess?", "Thoat Game ZomChess?"));
+            if (ImGui::BeginPopupModal(tr("Exit ZomChess?", "Thoat Game ZomChess?"), &show_confirm_exit_game, ImGuiWindowFlags_AlwaysAutoResize)) {
+                ImGui::Text("%s", tr("WARNING: All unsaved progress will be permanently lost!", "CANH BAO: Tat ca tien trinh chua luu se bi mat vinh vien!"));
+                ImGui::Text("%s", tr("Are you sure you want to quit the game?", "Ban co chac chan muon thoat khoi tro choi?"));
+                ImGui::Separator();
+                
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.72f, 0.14f, 0.14f, 1.0f));
+                if (ImGui::Button(tr("Yes, Quit Game", "Co, Thoat Game"), ImVec2(180, 30))) {
+                    window.close();
+                    show_confirm_exit_game = false;
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::PopStyleColor();
+                
+                ImGui::SameLine();
+                
+                if (ImGui::Button(tr("Cancel", "Huy"), ImVec2(180, 30))) {
+                    show_confirm_exit_game = false;
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
+            }
+
+            if (show_confirm_return_hub) ImGui::OpenPopup(tr("Exit Current Match?", "Thoat Tran Dau Hien Tai?"));
+            if (ImGui::BeginPopupModal(tr("Exit Current Match?", "Thoat Tran Dau Hien Tai?"), &show_confirm_return_hub, ImGuiWindowFlags_AlwaysAutoResize)) {
+                ImGui::Text("%s", tr("WARNING: All progress in the current match will be permanently lost!", "CANH BAO: Tat ca tien trinh tran dau hien tai se bi mat vinh vien!"));
+                ImGui::Text("%s", tr("Are you sure you want to return to the Main Menu?", "Ban co chac chan muon quay lai Menu Chinh?"));
+                ImGui::Separator();
+                
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.72f, 0.14f, 0.14f, 1.0f));
+                if (ImGui::Button(tr("Yes, Exit Match", "Co, Thoat Tran"), ImVec2(180, 30))) {
+                    state.current_scene = GameScene::MainMenu;
+                    show_confirm_return_hub = false;
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::PopStyleColor();
+                
+                ImGui::SameLine();
+                
+                if (ImGui::Button(tr("Cancel", "Huy"), ImVec2(180, 30))) {
+                    show_confirm_return_hub = false;
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
+            }
 
             if (show_guide_popup) ImGui::OpenPopup(tr("Game Guide", "Cam Nang Tro Choi"));
             if (ImGui::BeginPopupModal(tr("Game Guide", "Cam Nang Tro Choi"), &show_guide_popup, ImGuiWindowFlags_AlwaysAutoResize)) {
