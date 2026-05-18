@@ -22,6 +22,7 @@ class Zombie {
 public:
     Position pos;
     int hp;
+    int max_hp;
     std::string name;
     ZombieType type;
     
@@ -29,7 +30,7 @@ public:
     bool is_paralyzed = false;
 
     Zombie(Position p, int h, std::string n, ZombieType t) 
-        : pos(p), hp(h), name(n), type(t) {}
+        : pos(p), hp(h), max_hp(h), name(n), type(t) {}
     virtual ~Zombie() = default;
     virtual int getMovesPerTurn() const { return 1; }
 };
@@ -38,5 +39,6 @@ class NormalZombie : public Zombie { public: using Zombie::Zombie; };
 class FastZombie : public Zombie { public: using Zombie::Zombie; int getMovesPerTurn() const override { return 2; } };
 class ExplodingZombie : public Zombie { public: using Zombie::Zombie; };
 class VampireZombie : public Zombie { public: using Zombie::Zombie; };
+class SickZombie : public Zombie { public: using Zombie::Zombie; };
 
 #endif // ENTITIES_H

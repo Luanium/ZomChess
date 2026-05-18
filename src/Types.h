@@ -6,9 +6,9 @@
 #include <imgui.h>
 #include <SFML/System/Vector2.hpp>
 
-enum class Terrain { Dirt, Water, Obstacle, Wall, Fire };
+enum class Terrain { Dirt, Water, Wall, Fire };
 enum class InputMode { MoveMode, TargetKnife, TargetPistol, TargetShotgun, TargetGrenade, TargetMolotov };
-enum class ZombieType { Normal, Fast, Exploding, Vampire };
+enum class ZombieType { Normal, Fast, Exploding, Vampire, Sick };
 enum class TurnPhase { HumanTurn, ZombieAnimating, EnvironmentAnimating };
 
 // Added Bite and Scratch FX
@@ -40,9 +40,11 @@ struct GameConfig {
     int count_fast = 2;
     int count_exploding = 2;
     int count_vampire = 1;
+    int count_sick = 1;
 
     bool spawn_shield = true;      
     bool custom_map_mode = false;  
+    bool enable_environment = true;
 
     Position custom_human_pos{1, 1};
     std::vector<std::vector<Terrain>> custom_grid; 

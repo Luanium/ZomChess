@@ -11,6 +11,7 @@ class GameState {
 public:
     GameScene current_scene = GameScene::MainMenu;
     GameConfig active_config;                     
+    bool use_vietnamese = false;
     
     char export_filename[64] = "my_custom_challenge.zom";
     char import_filename[64] = "my_custom_challenge.zom";
@@ -42,11 +43,12 @@ public:
     std::string last_environment_event = "Clear skies";
 
     VisualFX active_fx;
+    VisualFX turn_banner_fx;
     std::vector<VisualFX> attack_animations; 
     std::vector<FloatingText> floating_texts;
 
     std::mt19937 rng;
-    Terrain editor_selected_terrain = Terrain::Obstacle;
+    Terrain editor_selected_terrain = Terrain::Wall;
 
     GameState();
 
