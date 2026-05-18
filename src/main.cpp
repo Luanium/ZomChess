@@ -391,27 +391,19 @@ int main() {
             float hCx = hlx * cellSize + boardOffset + cellSize * 0.5f;
             float hCy = hly * cellSize + boardOffset + cellSize * 0.5f;
 
-            sf::CircleShape aura(cellSize * 0.37f);
-            aura.setOrigin(cellSize * 0.37f, cellSize * 0.37f);
-            aura.setPosition(hCx, hCy);
-            aura.setFillColor(sf::Color(85, 205, 255, 45));
-            if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) window.draw(aura);
+            sf::RectangleShape hSquare(sf::Vector2f(cellSize - 6.0f, cellSize - 6.0f));
+            hSquare.setPosition(hlx * cellSize + boardOffset + 3.0f, hly * cellSize + boardOffset + 3.0f);
+            hSquare.setFillColor(sf::Color::White);
+            hSquare.setOutlineThickness(0.0f);
+            if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) window.draw(hSquare);
 
-            sf::CircleShape hCore(cellSize * 0.27f);
-            hCore.setOrigin(cellSize * 0.27f, cellSize * 0.27f);
-            hCore.setPosition(hCx, hCy);
-            hCore.setFillColor(sf::Color(232, 242, 250));
-            hCore.setOutlineThickness(2.2f);
-            hCore.setOutlineColor(sf::Color(70, 185, 255));
-            if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) window.draw(hCore);
-
-            sf::ConvexShape hPointer(3);
-            hPointer.setPoint(0, sf::Vector2f(0.0f, -7.0f));
-            hPointer.setPoint(1, sf::Vector2f(-6.0f, 5.0f));
-            hPointer.setPoint(2, sf::Vector2f(6.0f, 5.0f));
-            hPointer.setPosition(hCx, hCy - 1.0f);
-            hPointer.setFillColor(sf::Color(65, 160, 230));
-            if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) window.draw(hPointer);
+            sf::ConvexShape hTriangle(3);
+            hTriangle.setPoint(0, sf::Vector2f(0.0f, -5.0f));
+            hTriangle.setPoint(1, sf::Vector2f(-4.0f, 3.0f));
+            hTriangle.setPoint(2, sf::Vector2f(4.0f, 3.0f));
+            hTriangle.setPosition(hCx, hCy);
+            hTriangle.setFillColor(sf::Color(100, 100, 100));
+            if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) window.draw(hTriangle);
 
             // Human HP segmented bar at bottom
             int humanMaxHp = std::max(1, state.active_config.human_hp);
@@ -633,11 +625,15 @@ int main() {
             ImGui::SameLine();
             ImGui::Dummy(ImVec2(40, 1));
             ImGui::SameLine();
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.9f, 0.7f, 0.1f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 0.8f, 0.2f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.8f, 0.6f, 0.0f, 1.0f));
+            if (ImGui::Button(tr("GAME GUIDE", "HUONG DAN"), ImVec2(150, 35))) show_guide_popup = true;
+            ImGui::PopStyleColor(3);
+            ImGui::SameLine();
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.72f, 0.14f, 0.14f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.82f, 0.2f, 0.2f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.58f, 0.08f, 0.08f, 1.0f));
-            if (ImGui::Button(tr("GAME GUIDE", "HUONG DAN"), ImVec2(150, 35))) show_guide_popup = true;
-            ImGui::SameLine();
             if (ImGui::Button(tr("Return Hub", "Ve Hub"), ImVec2(150, 35))) state.current_scene = GameScene::MainMenu;
             ImGui::PopStyleColor(3);
 
@@ -652,13 +648,13 @@ int main() {
                 if (state.human.is_paralyzed) { ImGui::EndDisabled(); }
             };
 
-            weapon_button("Knife [1]", InputMode::TargetKnife); ImGui::SameLine();
+            weapon_button("Knife", InputMode::TargetKnife); ImGui::SameLine();
             weapon_button(("Pistol (" + std::to_string(state.human.pistol_ammo) + ")").c_str(), InputMode::TargetPistol); ImGui::SameLine();
-            weapon_button(("Shotgun (" + std::to_string(state.human.shotgun_ammo) + ")").c_str(), InputMode::TargetShotgun); ImGui::SameLine();
-            weapon_button(("Grenade (" + std::to_string(state.human.grenades) + ")").c_str(), InputMode::TargetGrenade); ImGui::SameLine();
-            weapon_button(("Molotov (" + std::to_string(state.human.molotovs) + ")").c_str(), InputMode::TargetMolotov);
+            weapon_button(("Shotgun (" + std::to_string(state.human.shotgun_ammo) + ")").c_str(), InputMode::TargetShotgun);
             
-            if (ImGui::Button(("Plant Mine (" + std::to_string(state.human.mines) + ")").c_str())) {
+            weapon_button(("Grenade (" + std::to_string(state.human.grenades) + ")").c_str(), InputMode::TargetGrenade); ImGui::SameLine();
+            weapon_button(("Molotov (" + std::to_string(state.human.molotovs) + ")").c_str(), InputMode::TargetMolotov); ImGui::SameLine();
+            if (ImGui::Button(("Mine (" + std::to_string(state.human.mines) + ")").c_str())) {
                 if (state.human.stamina >= 1 && state.human.mines > 0 && state.phase == TurnPhase::HumanTurn && !state.human.is_paralyzed) {
                     state.mine_grid[state.human.pos.x][state.human.pos.y] = true; 
                     state.human.mines--; state.human.stamina--;

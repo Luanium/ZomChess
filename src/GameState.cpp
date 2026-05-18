@@ -568,6 +568,15 @@ void GameState::finish_environment_phase() {
             add_log("[FIRE] Human started turn standing in fire!", ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
         }
     }
+    if (grenade_box.active) {
+        grenade_box.turns_left--;
+        if (grenade_box.turns_left <= 0) {
+            add_log("[RADIO] Grenade timer expires. Detonation!", ImVec4(1.0f, 0.45f, 0.1f, 1.0f));
+            trigger_explosion(grenade_box.pos.x, grenade_box.pos.y);
+            grenade_box.active = false;
+        }
+    }
+
     phase = TurnPhase::HumanTurn;
     add_log("=== HUMAN TURN " + std::to_string(current_turn) + " START ===", ImVec4(1.0f, 0.95f, 0.25f, 1.0f));
     turn_banner_fx.type = FXType::Electricity;
@@ -811,7 +820,7 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
         } 
         grenade_box.active = true; 
         grenade_box.pos = {cx, cy}; 
-        grenade_box.turns_left = 2; // Explodes after 2 ZombieAnimating phases
+        grenade_box.turns_left = 1; // Explodes after 1 ZombieAnimating phases
         add_log("[RADIO] Grenade launched to (" + std::to_string(cx + 1) + ", " + std::to_string(cy + 1) + "), fuse is live.", ImVec4(0.6f, 1.0f, 0.55f, 1.0f));
     } else if (input_mode == InputMode::TargetMolotov) {
         if (human.molotovs <= 0) { input_mode = InputMode::MoveMode; return; }
