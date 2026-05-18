@@ -10,7 +10,7 @@ int main() {
     enum class Lang { EN, VI };
     static Lang ui_lang = Lang::EN;
     auto tr = [&](const char* en, const char* vi) { return (ui_lang == Lang::VI) ? vi : en; };
-    sf::RenderWindow window(sf::VideoMode(1400, 750), "ZomChess Tactical Engine v2.1");
+    sf::RenderWindow window(sf::VideoMode(1400, 750), "ZomChess Tactical Engine v2.1", sf::Style::Titlebar | sf::Style::Close);
     window.setFramerateLimit(60);
     if (!ImGui::SFML::Init(window)) return -1;
 
@@ -33,6 +33,10 @@ int main() {
 
     float cellSize = 40.0f;
     float boardOffset = 20.0f;
+    const int VIEW_CELLS = 15;
+    int viewX = 0;
+    int viewY = 0;
+    bool view_initialized = false;
 
     while (window.isOpen()) {
         static bool show_guide_popup = false;
@@ -46,10 +50,15 @@ int main() {
 
             if (state.current_scene == GameScene::Playing && !ImGui::GetIO().WantCaptureMouse && event.type == sf::Event::MouseButtonPressed) {
                 if (event.mouseButton.button == sf::Mouse::Left && !state.game_over && !state.game_won && state.phase == TurnPhase::HumanTurn && !state.human.is_paralyzed) {
-                    int tx = (event.mouseButton.x - boardOffset) / cellSize;
-                    int ty = (event.mouseButton.y - boardOffset) / cellSize;
+                    int lx = (event.mouseButton.x - boardOffset) / cellSize;
+                    int ly = (event.mouseButton.y - boardOffset) / cellSize;
+                    int padX = (state.width < VIEW_CELLS) ? (VIEW_CELLS - state.width) / 2 : 0;
+                    int padY = (state.height < VIEW_CELLS) ? (VIEW_CELLS - state.height) / 2 : 0;
+                    int tx = viewX + (lx - padX);
+                    int ty = viewY + (ly - padY);
 
-                    if (tx >= 0 && tx < state.width && ty >= 0 && ty < state.height) {
+                    if (lx >= 0 && lx < VIEW_CELLS && ly >= 0 && ly < VIEW_CELLS &&
+                        tx >= 0 && tx < state.width && ty >= 0 && ty < state.height) {
                         if (state.input_mode == InputMode::MoveMode) {
                             int dx = std::abs(tx - state.human.pos.x);
                             int dy = std::abs(ty - state.human.pos.y);
@@ -98,15 +107,18 @@ int main() {
 
         if (state.current_scene == GameScene::Playing) {
             state.use_vietnamese = (ui_lang == Lang::VI);
-            sf::Vector2u winSize = window.getSize();
-            float panelW = (winSize.x >= 1100) ? std::max(300.0f, panelWidthCache) : static_cast<float>(winSize.x) - 20.0f;
-            bool stackedPanel = (winSize.x < 1100);
-            float boardAreaW = stackedPanel ? static_cast<float>(winSize.x) - 40.0f : static_cast<float>(winSize.x) - panelW - 40.0f;
-            float boardAreaH = stackedPanel ? static_cast<float>(winSize.y) * 0.58f : static_cast<float>(winSize.y) - 40.0f;
-            float maxCellW = boardAreaW / std::max(1, state.width);
-            float maxCellH = boardAreaH / std::max(1, state.height);
-            cellSize = std::max(22.0f, std::min(52.0f, std::min(maxCellW, maxCellH)));
+            cellSize = 40.0f;
             boardOffset = 20.0f;
+            int maxViewX = std::max(0, state.width - VIEW_CELLS);
+            int maxViewY = std::max(0, state.height - VIEW_CELLS);
+            if (!view_initialized) {
+                viewX = std::max(0, std::min(state.human.pos.x - VIEW_CELLS / 2, maxViewX));
+                viewY = std::max(0, std::min(state.human.pos.y - VIEW_CELLS / 2, maxViewY));
+                view_initialized = true;
+            } else {
+                viewX = std::max(0, std::min(viewX, maxViewX));
+                viewY = std::max(0, std::min(viewY, maxViewY));
+            }
             if (state.turn_banner_fx.type != FXType::None) {
                 state.turn_banner_fx.timer -= dtSeconds;
                 if (state.turn_banner_fx.timer <= 0.0f) state.turn_banner_fx.type = FXType::None;
@@ -145,11 +157,11 @@ int main() {
             ImGui::SameLine();
             if (ImGui::RadioButton("VI", ui_lang == Lang::VI)) ui_lang = Lang::VI;
             ImGui::SameLine();
-            if (ImGui::Button(tr("EASY", "DE"), ImVec2(150, 30))) { state.apply_quick_difficulty(0); state.init_game(); state.current_scene = GameScene::Playing; }
+            if (ImGui::Button(tr("EASY", "DE"), ImVec2(150, 30))) { state.apply_quick_difficulty(0); state.init_game(); state.current_scene = GameScene::Playing; view_initialized = false; }
             ImGui::SameLine();
-            if (ImGui::Button(tr("MEDIUM", "TRUNG BINH"), ImVec2(150, 30))) { state.apply_quick_difficulty(1); state.init_game(); state.current_scene = GameScene::Playing; }
+            if (ImGui::Button(tr("MEDIUM", "TRUNG BINH"), ImVec2(150, 30))) { state.apply_quick_difficulty(1); state.init_game(); state.current_scene = GameScene::Playing; view_initialized = false; }
             ImGui::SameLine();
-            if (ImGui::Button(tr("HARD", "KHO"), ImVec2(150, 30))) { state.apply_quick_difficulty(2); state.init_game(); state.current_scene = GameScene::Playing; }
+            if (ImGui::Button(tr("HARD", "KHO"), ImVec2(150, 30))) { state.apply_quick_difficulty(2); state.init_game(); state.current_scene = GameScene::Playing; view_initialized = false; }
 
             ImGui::Separator(); ImGui::Spacing();
             ImGui::Columns(2, "menu_split", false); ImGui::SetColumnWidth(0, 600);
@@ -212,7 +224,7 @@ int main() {
             if (overflow_error) ImGui::TextColored(ImVec4(1,0,0,1), "Fix error to run simulation.");
             else {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.6f, 0.15f, 1));
-                if (ImGui::Button("LAUNCH CUSTOM STRATEGY COMBAT", ImVec2(1200, 45))) { state.init_game(); state.current_scene = GameScene::Playing; }
+                if (ImGui::Button("LAUNCH CUSTOM STRATEGY COMBAT", ImVec2(1200, 45))) { state.init_game(); state.current_scene = GameScene::Playing; view_initialized = false; }
                 ImGui::PopStyleColor();
             }
             ImGui::End();
@@ -253,13 +265,17 @@ int main() {
         else if (state.current_scene == GameScene::Playing) {
             float timeSec = animationClock.getElapsedTime().asSeconds();
 
-            for (int x = 0; x < state.width; ++x) {
-                for (int y = 0; y < state.height; ++y) {
+            int padX = (state.width < VIEW_CELLS) ? (VIEW_CELLS - state.width) / 2 : 0;
+            int padY = (state.height < VIEW_CELLS) ? (VIEW_CELLS - state.height) / 2 : 0;
+            for (int lx = 0; lx < VIEW_CELLS; ++lx) {
+                for (int ly = 0; ly < VIEW_CELLS; ++ly) {
+                    int x = viewX + (lx - padX);
+                    int y = viewY + (ly - padY);
+                    bool in_map = (x >= 0 && x < state.width && y >= 0 && y < state.height);
                     sf::RectangleShape cell(sf::Vector2f(cellSize - 2.0f, cellSize - 2.0f));
-                    cell.setPosition(x * cellSize + boardOffset, y * cellSize + boardOffset);
+                    cell.setPosition(lx * cellSize + boardOffset, ly * cellSize + boardOffset);
 
-                    if (state.grid[x][y] == Terrain::Wall) cell.setFillColor(sf::Color(60, 62, 66));
-                    else if (state.grid[x][y] == Terrain::Wall) cell.setFillColor(sf::Color(40, 41, 43));
+                    if (!in_map || state.grid[x][y] == Terrain::Wall) cell.setFillColor(sf::Color(60, 62, 66));
                     else if (state.grid[x][y] == Terrain::Water) cell.setFillColor(sf::Color(35, 75, 115));
                     else if (state.grid[x][y] == Terrain::Fire) {
                         int pulse = static_cast<int>(25.0f * std::sin(timeSec * 12.0f));
@@ -269,46 +285,53 @@ int main() {
                     
                     window.draw(cell);
 
-                    if (state.mine_grid[x][y]) {
+                    if (in_map && state.mine_grid[x][y]) {
                         sf::CircleShape mine(6.0f); mine.setFillColor(sf::Color(230, 40, 40)); mine.setOrigin(6.0f, 6.0f);
-                        mine.setPosition(x * cellSize + boardOffset + cellSize/2, y * cellSize + boardOffset + cellSize/2); window.draw(mine);
+                        mine.setPosition(lx * cellSize + boardOffset + cellSize/2, ly * cellSize + boardOffset + cellSize/2); window.draw(mine);
                     }
                 }
             }
             if (hasFont) {
-                for (int x = 0; x < state.width; ++x) {
+                for (int lx = 0; lx < VIEW_CELLS; ++lx) {
                     sf::Text tx;
                     tx.setFont(boardFont);
                     tx.setCharacterSize(12);
-                    tx.setString(std::to_string(x + 1));
+                    tx.setString(std::to_string(viewX + (lx - padX) + 1));
                     tx.setFillColor(sf::Color(180, 190, 205));
-                    tx.setPosition(x * cellSize + boardOffset + cellSize * 0.35f, boardOffset - 16.0f);
+                    tx.setPosition(lx * cellSize + boardOffset + cellSize * 0.35f, boardOffset - 16.0f);
                     window.draw(tx);
                 }
-                for (int y = 0; y < state.height; ++y) {
+                for (int ly = 0; ly < VIEW_CELLS; ++ly) {
                     sf::Text ty;
                     ty.setFont(boardFont);
                     ty.setCharacterSize(12);
-                    ty.setString(std::to_string(y + 1));
+                    ty.setString(std::to_string(viewY + (ly - padY) + 1));
                     ty.setFillColor(sf::Color(180, 190, 205));
-                    ty.setPosition(boardOffset - 16.0f, y * cellSize + boardOffset + cellSize * 0.28f);
+                    ty.setPosition(boardOffset - 16.0f, ly * cellSize + boardOffset + cellSize * 0.28f);
                     window.draw(ty);
                 }
             }
 
             if (state.grenade_box.active) {
                 sf::CircleShape gren(8.0f, 4); gren.setFillColor(sf::Color(50, 210, 50)); gren.setOrigin(8.0f, 8.0f);
-                gren.setPosition(state.grenade_box.pos.x * cellSize + boardOffset + cellSize/2, state.grenade_box.pos.y * cellSize + boardOffset + cellSize/2); window.draw(gren);
+                int glx = state.grenade_box.pos.x - viewX + padX;
+                int gly = state.grenade_box.pos.y - viewY + padY;
+                if (glx >= 0 && glx < VIEW_CELLS && gly >= 0 && gly < VIEW_CELLS) {
+                    gren.setPosition(glx * cellSize + boardOffset + cellSize/2, gly * cellSize + boardOffset + cellSize/2); window.draw(gren);
+                }
             }
 
             for (size_t i = 0; i < state.zombies.size(); ++i) {
                 const auto& z = state.zombies[i];
+                int zlx = z->pos.x - viewX + padX;
+                int zly = z->pos.y - viewY + padY;
+                if (zlx < 0 || zlx >= VIEW_CELLS || zly < 0 || zly >= VIEW_CELLS) continue;
                 if (z->hp <= 0) {
                     sf::RectangleShape deadZ(sf::Vector2f(cellSize - 8.0f, cellSize - 8.0f)); deadZ.setFillColor(sf::Color(15, 15, 15, 160));
-                    deadZ.setPosition(z->pos.x * cellSize + boardOffset + 4.0f, z->pos.y * cellSize + boardOffset + 4.0f); window.draw(deadZ); continue;
+                    deadZ.setPosition(zlx * cellSize + boardOffset + 4.0f, zly * cellSize + boardOffset + 4.0f); window.draw(deadZ); continue;
                 }
                 sf::RectangleShape zVisual(sf::Vector2f(cellSize - 6.0f, cellSize - 6.0f));
-                zVisual.setPosition(z->pos.x * cellSize + boardOffset + 3.0f, z->pos.y * cellSize + boardOffset + 3.0f);
+                zVisual.setPosition(zlx * cellSize + boardOffset + 3.0f, zly * cellSize + boardOffset + 3.0f);
                 
                 if (z->type == ZombieType::Fast) zVisual.setFillColor(sf::Color(55, 168, 255));
                 else if (z->type == ZombieType::Exploding) zVisual.setFillColor(sf::Color(220, 110, 15));
@@ -322,8 +345,8 @@ int main() {
                 float barW = cellSize - 8.0f;
                 float segmentGap = 1.0f;
                 float segmentW = (barW - (safe_max_hp - 1) * segmentGap) / static_cast<float>(safe_max_hp);
-                float baseX = z->pos.x * cellSize + boardOffset + 4.0f;
-                float baseY = z->pos.y * cellSize + boardOffset + cellSize - 7.0f;
+                float baseX = zlx * cellSize + boardOffset + 4.0f;
+                float baseY = zly * cellSize + boardOffset + cellSize - 7.0f;
                 for (int hpSeg = 0; hpSeg < safe_max_hp; ++hpSeg) {
                     sf::RectangleShape seg(sf::Vector2f(std::max(1.0f, segmentW), 3.0f));
                     seg.setPosition(baseX + hpSeg * (segmentW + segmentGap), baseY);
@@ -336,7 +359,7 @@ int main() {
                     sf::Text zIdStr; zIdStr.setFont(boardFont); zIdStr.setString(std::to_string(i + 1)); zIdStr.setCharacterSize(14);
                     sf::FloatRect textRect = zIdStr.getLocalBounds(); zIdStr.setOrigin(textRect.left + textRect.width/2.0f, textRect.top + textRect.height/2.0f);
                     zIdStr.setFillColor(sf::Color::White);
-                    zIdStr.setPosition(z->pos.x * cellSize + boardOffset + cellSize/2.0f, z->pos.y * cellSize + boardOffset + cellSize/2.0f); window.draw(zIdStr);
+                    zIdStr.setPosition(zlx * cellSize + boardOffset + cellSize/2.0f, zly * cellSize + boardOffset + cellSize/2.0f); window.draw(zIdStr);
 
                     // Blinking status tags on zombie icon
                     bool blinkOn = std::sin(timeSec * 10.0f) > 0.0f;
@@ -347,7 +370,7 @@ int main() {
                             burnTxt.setCharacterSize(11);
                             burnTxt.setFillColor(sf::Color(230, 40, 40));
                             burnTxt.setString("B");
-                            burnTxt.setPosition(z->pos.x * cellSize + boardOffset + 6.0f, z->pos.y * cellSize + boardOffset + 2.0f);
+                            burnTxt.setPosition(zlx * cellSize + boardOffset + 6.0f, zly * cellSize + boardOffset + 2.0f);
                             window.draw(burnTxt);
                         }
                         if (z->is_paralyzed) {
@@ -356,31 +379,53 @@ int main() {
                             paraTxt.setCharacterSize(11);
                             paraTxt.setFillColor(sf::Color(242, 214, 61));
                             paraTxt.setString("P");
-                            paraTxt.setPosition(z->pos.x * cellSize + boardOffset + cellSize - 14.0f, z->pos.y * cellSize + boardOffset + 2.0f);
+                            paraTxt.setPosition(zlx * cellSize + boardOffset + cellSize - 14.0f, zly * cellSize + boardOffset + 2.0f);
                             window.draw(paraTxt);
                         }
                     }
                 }
             }
 
-            sf::RectangleShape hVisual(sf::Vector2f(cellSize - 6.0f, cellSize - 6.0f));
-            hVisual.setPosition(state.human.pos.x * cellSize + boardOffset + 3.0f, state.human.pos.y * cellSize + boardOffset + 3.0f);
-            hVisual.setFillColor(sf::Color(225, 235, 245));
-            window.draw(hVisual);
+            int hlx = state.human.pos.x - viewX + padX;
+            int hly = state.human.pos.y - viewY + padY;
+            float hCx = hlx * cellSize + boardOffset + cellSize * 0.5f;
+            float hCy = hly * cellSize + boardOffset + cellSize * 0.5f;
+
+            sf::CircleShape aura(cellSize * 0.37f);
+            aura.setOrigin(cellSize * 0.37f, cellSize * 0.37f);
+            aura.setPosition(hCx, hCy);
+            aura.setFillColor(sf::Color(85, 205, 255, 45));
+            if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) window.draw(aura);
+
+            sf::CircleShape hCore(cellSize * 0.27f);
+            hCore.setOrigin(cellSize * 0.27f, cellSize * 0.27f);
+            hCore.setPosition(hCx, hCy);
+            hCore.setFillColor(sf::Color(232, 242, 250));
+            hCore.setOutlineThickness(2.2f);
+            hCore.setOutlineColor(sf::Color(70, 185, 255));
+            if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) window.draw(hCore);
+
+            sf::ConvexShape hPointer(3);
+            hPointer.setPoint(0, sf::Vector2f(0.0f, -7.0f));
+            hPointer.setPoint(1, sf::Vector2f(-6.0f, 5.0f));
+            hPointer.setPoint(2, sf::Vector2f(6.0f, 5.0f));
+            hPointer.setPosition(hCx, hCy - 1.0f);
+            hPointer.setFillColor(sf::Color(65, 160, 230));
+            if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) window.draw(hPointer);
 
             // Human HP segmented bar at bottom
             int humanMaxHp = std::max(1, state.active_config.human_hp);
             float hBarW = cellSize - 8.0f;
             float hGap = 1.0f;
             float hSegW = (hBarW - (humanMaxHp - 1) * hGap) / static_cast<float>(humanMaxHp);
-            float hBaseX = state.human.pos.x * cellSize + boardOffset + 4.0f;
-            float hBaseY = state.human.pos.y * cellSize + boardOffset + cellSize - 7.0f;
+            float hBaseX = hlx * cellSize + boardOffset + 4.0f;
+            float hBaseY = hly * cellSize + boardOffset + cellSize - 7.0f;
             for (int hpSeg = 0; hpSeg < humanMaxHp; ++hpSeg) {
                 sf::RectangleShape seg(sf::Vector2f(std::max(1.0f, hSegW), 3.0f));
                 seg.setPosition(hBaseX + hpSeg * (hSegW + hGap), hBaseY);
                 if (hpSeg < state.human.hp) seg.setFillColor(sf::Color(70, 205, 90));
                 else seg.setFillColor(sf::Color(55, 55, 55));
-                window.draw(seg);
+                if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) window.draw(seg);
             }
 
             // Human stamina dots above HP bar
@@ -390,9 +435,9 @@ int main() {
             for (int d = 0; d < drawnDots; ++d) {
                 sf::CircleShape dot(2.7f);
                 dot.setFillColor(sf::Color(90, 205, 255));
-                dot.setPosition(state.human.pos.x * cellSize + boardOffset + 5.0f + d * 5.0f,
-                                state.human.pos.y * cellSize + boardOffset + cellSize - 15.0f);
-                window.draw(dot);
+                dot.setPosition(hlx * cellSize + boardOffset + 5.0f + d * 5.0f,
+                                hly * cellSize + boardOffset + cellSize - 15.0f);
+                if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) window.draw(dot);
             }
 
             if (hasFont) {
@@ -404,8 +449,8 @@ int main() {
                         burnTxt.setCharacterSize(11);
                         burnTxt.setFillColor(sf::Color(230, 40, 40));
                         burnTxt.setString("B");
-                        burnTxt.setPosition(state.human.pos.x * cellSize + boardOffset + 6.0f, state.human.pos.y * cellSize + boardOffset + 2.0f);
-                        window.draw(burnTxt);
+                        burnTxt.setPosition(hlx * cellSize + boardOffset + 6.0f, hly * cellSize + boardOffset + 2.0f);
+                        if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) window.draw(burnTxt);
                     }
                     if (state.human.is_paralyzed) {
                         sf::Text paraTxt;
@@ -413,27 +458,27 @@ int main() {
                         paraTxt.setCharacterSize(11);
                         paraTxt.setFillColor(sf::Color(242, 214, 61));
                         paraTxt.setString("P");
-                        paraTxt.setPosition(state.human.pos.x * cellSize + boardOffset + cellSize - 14.0f, state.human.pos.y * cellSize + boardOffset + 2.0f);
-                        window.draw(paraTxt);
+                        paraTxt.setPosition(hlx * cellSize + boardOffset + cellSize - 14.0f, hly * cellSize + boardOffset + 2.0f);
+                        if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) window.draw(paraTxt);
                     }
                 }
             }
 
             if (state.dark_cloud_active && state.active_fx.type != FXType::DarkCloud) {
-                sf::RectangleShape shroud(sf::Vector2f(state.width * cellSize, state.height * cellSize));
+                sf::RectangleShape shroud(sf::Vector2f(VIEW_CELLS * cellSize, VIEW_CELLS * cellSize));
                 shroud.setFillColor(sf::Color(0, 0, 0, 220));
                 shroud.setPosition(boardOffset, boardOffset);
                 window.draw(shroud);
                 sf::RectangleShape humanSpot(sf::Vector2f(cellSize - 6.0f, cellSize - 6.0f));
                 humanSpot.setFillColor(sf::Color(225, 235, 245));
-                humanSpot.setPosition(state.human.pos.x * cellSize + boardOffset + 3.0f, state.human.pos.y * cellSize + boardOffset + 3.0f);
-                window.draw(humanSpot);
+                humanSpot.setPosition(hlx * cellSize + boardOffset + 3.0f, hly * cellSize + boardOffset + 3.0f);
+                if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) window.draw(humanSpot);
             }
 
             if (state.turn_banner_fx.type != FXType::None) {
                 float p = state.turn_banner_fx.timer / state.turn_banner_fx.max_duration;
                 sf::Uint8 a = static_cast<sf::Uint8>(190 * p);
-                sf::RectangleShape glow(sf::Vector2f(state.width * cellSize, state.height * cellSize));
+                sf::RectangleShape glow(sf::Vector2f(VIEW_CELLS * cellSize, VIEW_CELLS * cellSize));
                 glow.setFillColor(sf::Color(255, 235, 70, a / 3));
                 glow.setPosition(boardOffset, boardOffset);
                 window.draw(glow);
@@ -445,7 +490,7 @@ int main() {
                     msg.setFillColor(sf::Color(255, 245, 120, a));
                     sf::FloatRect r = msg.getLocalBounds();
                     msg.setOrigin(r.left + r.width/2.0f, r.top + r.height/2.0f);
-                    msg.setPosition(boardOffset + state.width * cellSize * 0.5f, boardOffset + 18.0f);
+                    msg.setPosition(boardOffset + VIEW_CELLS * cellSize * 0.5f, boardOffset + 18.0f);
                     window.draw(msg);
                 }
             }
@@ -554,17 +599,13 @@ int main() {
                 }
             }
 
-            sf::Vector2u winSize2 = window.getSize();
-            float panelW2 = (winSize2.x >= 1100) ? std::max(300.0f, panelWidthCache) : static_cast<float>(winSize2.x) - 20.0f;
-            bool stackedPanel2 = (winSize2.x < 1100);
-            float panelX = stackedPanel2 ? 10.0f : (state.width * cellSize + boardOffset + 20.0f);
-            float panelY = stackedPanel2 ? (boardOffset + state.height * cellSize + 26.0f) : 20.0f;
-            float panelH = stackedPanel2 ? (static_cast<float>(winSize2.y) - panelY - 10.0f) : (static_cast<float>(winSize2.y) - 40.0f);
+            float panelX = boardOffset + VIEW_CELLS * cellSize + 28.0f;
+            float panelY = boardOffset;
+            float panelW2 = 1400.0f - panelX - 20.0f;
+            float panelH = VIEW_CELLS * cellSize;
             ImGui::SetNextWindowPos(ImVec2(panelX, panelY), ImGuiCond_Always);
-            ImGui::SetNextWindowSize(ImVec2(panelW2, std::max(220.0f, panelH)), ImGuiCond_FirstUseEver);
-            ImGui::SetNextWindowSizeConstraints(ImVec2(300.0f, 220.0f), ImVec2(winSize2.x - 10.0f, winSize2.y - 10.0f));
-            ImGui::Begin("Tactical Control Panel", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
-            panelWidthCache = ImGui::GetWindowWidth();
+            ImGui::SetNextWindowSize(ImVec2(panelW2, panelH), ImGuiCond_Always);
+            ImGui::Begin("Tactical Control Panel", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize);
 
             ImGui::TextColored(ImVec4(0.3f,0.95f,1,1), "%s %d/%d | ST %d | HP %d | %s [%d,%d] | %s: %s",
                                tr("TURN","LUOT"), state.current_turn, state.turn_limit, state.human.stamina, state.human.hp,
@@ -656,6 +697,20 @@ int main() {
             for (const auto& log : state.logs) ImGui::TextColored(log.color, "%s", log.text.c_str());
             if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) ImGui::SetScrollHereY(1.0f);
             ImGui::EndChild();
+
+            ImGui::SetNextWindowPos(ImVec2(boardOffset, boardOffset + VIEW_CELLS * cellSize + 6.0f), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(VIEW_CELLS * cellSize, 24.0f), ImGuiCond_Always);
+            ImGui::Begin("HScroll", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+            int maxHX = std::max(0, state.width - VIEW_CELLS);
+            ImGui::SliderInt("##hscroll", &viewX, 0, maxHX);
+            ImGui::End();
+
+            ImGui::SetNextWindowPos(ImVec2(boardOffset + VIEW_CELLS * cellSize + 2.0f, boardOffset), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(24.0f, VIEW_CELLS * cellSize), ImGuiCond_Always);
+            ImGui::Begin("VScroll", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+            int maxVY = std::max(0, state.height - VIEW_CELLS);
+            ImGui::VSliderInt("##vscroll", ImVec2(16.0f, VIEW_CELLS * cellSize - 8.0f), &viewY, 0, maxVY);
+            ImGui::End();
 
             if (show_guide_popup) ImGui::OpenPopup(tr("Game Guide", "Cam Nang Tro Choi"));
             if (ImGui::BeginPopupModal(tr("Game Guide", "Cam Nang Tro Choi"), &show_guide_popup, ImGuiWindowFlags_AlwaysAutoResize)) {
