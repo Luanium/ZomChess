@@ -276,13 +276,62 @@ int main() {
                     sf::RectangleShape cell(sf::Vector2f(cellSize - 2.0f, cellSize - 2.0f));
                     cell.setPosition(lx * cellSize + boardOffset, ly * cellSize + boardOffset);
 
-                    if (!in_map || state.grid[x][y] == Terrain::Wall) cell.setFillColor(sf::Color(60, 62, 66));
-                    else if (state.grid[x][y] == Terrain::Water) cell.setFillColor(sf::Color(35, 75, 115));
+                    if (!in_map || state.grid[x][y] == Terrain::Wall) {
+                        cell.setFillColor(sf::Color(60, 62, 66));
+                    }
+                    else if (state.grid[x][y] == Terrain::Water) {
+                        bool is_transitioning = false;
+                        if (state.active_fx.type == FXType::Rain) {
+                            for (auto p : state.active_fx.blast_cells) {
+                                if (p.x == x && p.y == y) {
+                                    is_transitioning = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (is_transitioning) {
+                            float progress = 1.0f - (state.active_fx.timer / state.active_fx.max_duration);
+                            sf::Color dirtColor(105, 60, 35);
+                            sf::Color waterColor(35, 75, 115);
+                            sf::Color lerpColor(
+                                static_cast<sf::Uint8>(dirtColor.r + progress * (waterColor.r - dirtColor.r)),
+                                static_cast<sf::Uint8>(dirtColor.g + progress * (waterColor.g - dirtColor.g)),
+                                static_cast<sf::Uint8>(dirtColor.b + progress * (waterColor.b - dirtColor.b))
+                            );
+                            cell.setFillColor(lerpColor);
+                        } else {
+                            cell.setFillColor(sf::Color(35, 75, 115));
+                        }
+                    }
                     else if (state.grid[x][y] == Terrain::Fire) {
                         int pulse = static_cast<int>(25.0f * std::sin(timeSec * 12.0f));
                         cell.setFillColor(sf::Color(220 + pulse, 100 + pulse / 2, 20));
                     }
-                    else cell.setFillColor(sf::Color(105, 60, 35));
+                    else {
+                        bool was_extinguished = false;
+                        if (state.active_fx.type == FXType::Rain) {
+                            for (auto p : state.active_fx.extinguished_cells) {
+                                if (p.x == x && p.y == y) {
+                                    was_extinguished = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (was_extinguished) {
+                            float progress = 1.0f - (state.active_fx.timer / state.active_fx.max_duration);
+                            int pulse = static_cast<int>(25.0f * std::sin(timeSec * 12.0f));
+                            sf::Color fireColor(220 + pulse, 100 + pulse / 2, 20);
+                            sf::Color dirtColor(105, 60, 35);
+                            sf::Color lerpColor(
+                                static_cast<sf::Uint8>(fireColor.r + progress * (dirtColor.r - fireColor.r)),
+                                static_cast<sf::Uint8>(fireColor.g + progress * (dirtColor.g - fireColor.g)),
+                                static_cast<sf::Uint8>(fireColor.b + progress * (dirtColor.b - fireColor.b))
+                            );
+                            cell.setFillColor(lerpColor);
+                        } else {
+                            cell.setFillColor(sf::Color(105, 60, 35));
+                        }
+                    }
                     
                     window.draw(cell);
 
@@ -333,8 +382,27 @@ int main() {
                     sf::RectangleShape deadZ(sf::Vector2f(cellSize - 8.0f, cellSize - 8.0f)); deadZ.setFillColor(sf::Color(15, 15, 15, 160));
                     deadZ.setPosition(zlx * cellSize + boardOffset + 4.0f, zly * cellSize + boardOffset + 4.0f); window.draw(deadZ); continue;
                 }
+                
+                float drawX = zlx * cellSize + boardOffset + 3.0f;
+                float drawY = zly * cellSize + boardOffset + 3.0f;
+                
+                if (state.active_fx.type == FXType::Wind) {
+                    bool was_pushed = false;
+                    for (auto p : state.active_fx.blast_cells) {
+                        if (p.x == z->pos.x && p.y == z->pos.y) {
+                            was_pushed = true;
+                            break;
+                        }
+                    }
+                    if (was_pushed) {
+                        float progress = 1.0f - (state.active_fx.timer / state.active_fx.max_duration);
+                        drawX += (progress - 1.0f) * state.active_fx.dx * cellSize;
+                        drawY += (progress - 1.0f) * state.active_fx.dy * cellSize;
+                    }
+                }
+
                 sf::RectangleShape zVisual(sf::Vector2f(cellSize - 6.0f, cellSize - 6.0f));
-                zVisual.setPosition(zlx * cellSize + boardOffset + 3.0f, zly * cellSize + boardOffset + 3.0f);
+                zVisual.setPosition(drawX, drawY);
                 
                 if (z->type == ZombieType::Fast) zVisual.setFillColor(sf::Color(55, 168, 255));
                 else if (z->type == ZombieType::Exploding) zVisual.setFillColor(sf::Color(220, 110, 15));
@@ -348,8 +416,8 @@ int main() {
                 float barW = cellSize - 8.0f;
                 float segmentGap = 1.0f;
                 float segmentW = (barW - (safe_max_hp - 1) * segmentGap) / static_cast<float>(safe_max_hp);
-                float baseX = zlx * cellSize + boardOffset + 4.0f;
-                float baseY = zly * cellSize + boardOffset + cellSize - 7.0f;
+                float baseX = drawX + 1.0f;
+                float baseY = drawY + cellSize - 10.0f;
                 for (int hpSeg = 0; hpSeg < safe_max_hp; ++hpSeg) {
                     sf::RectangleShape seg(sf::Vector2f(std::max(1.0f, segmentW), 3.0f));
                     seg.setPosition(baseX + hpSeg * (segmentW + segmentGap), baseY);
@@ -362,7 +430,7 @@ int main() {
                     sf::Text zIdStr; zIdStr.setFont(boardFont); zIdStr.setString(std::to_string(i + 1)); zIdStr.setCharacterSize(14);
                     sf::FloatRect textRect = zIdStr.getLocalBounds(); zIdStr.setOrigin(textRect.left + textRect.width/2.0f, textRect.top + textRect.height/2.0f);
                     zIdStr.setFillColor(sf::Color::White);
-                    zIdStr.setPosition(zlx * cellSize + boardOffset + cellSize/2.0f, zly * cellSize + boardOffset + cellSize/2.0f); window.draw(zIdStr);
+                    zIdStr.setPosition(drawX + (cellSize - 6.0f)/2.0f, drawY + (cellSize - 6.0f)/2.0f); window.draw(zIdStr);
 
                     // Blinking status tags on zombie icon
                     bool blinkOn = std::sin(timeSec * 10.0f) > 0.0f;
@@ -373,7 +441,7 @@ int main() {
                             burnTxt.setCharacterSize(11);
                             burnTxt.setFillColor(sf::Color(230, 40, 40));
                             burnTxt.setString("B");
-                            burnTxt.setPosition(zlx * cellSize + boardOffset + 6.0f, zly * cellSize + boardOffset + 2.0f);
+                            burnTxt.setPosition(drawX + 3.0f, drawY - 1.0f);
                             window.draw(burnTxt);
                         }
                         if (z->is_paralyzed) {
@@ -382,7 +450,7 @@ int main() {
                             paraTxt.setCharacterSize(11);
                             paraTxt.setFillColor(sf::Color(242, 214, 61));
                             paraTxt.setString("P");
-                            paraTxt.setPosition(zlx * cellSize + boardOffset + cellSize - 14.0f, zly * cellSize + boardOffset + 2.0f);
+                            paraTxt.setPosition(drawX + cellSize - 17.0f, drawY - 1.0f);
                             window.draw(paraTxt);
                         }
                     }
@@ -391,11 +459,30 @@ int main() {
 
             int hlx = state.human.pos.x - viewX + padX;
             int hly = state.human.pos.y - viewY + padY;
-            float hCx = hlx * cellSize + boardOffset + cellSize * 0.5f;
-            float hCy = hly * cellSize + boardOffset + cellSize * 0.5f;
+            
+            float drawX = hlx * cellSize + boardOffset + 3.0f;
+            float drawY = hly * cellSize + boardOffset + 3.0f;
+            
+            if (state.active_fx.type == FXType::Wind) {
+                bool was_pushed = false;
+                for (auto p : state.active_fx.blast_cells) {
+                    if (p.x == state.human.pos.x && p.y == state.human.pos.y) {
+                        was_pushed = true;
+                        break;
+                    }
+                }
+                if (was_pushed) {
+                    float progress = 1.0f - (state.active_fx.timer / state.active_fx.max_duration);
+                    drawX += (progress - 1.0f) * state.active_fx.dx * cellSize;
+                    drawY += (progress - 1.0f) * state.active_fx.dy * cellSize;
+                }
+            }
+
+            float hCx = drawX + (cellSize - 6.0f) * 0.5f;
+            float hCy = drawY + (cellSize - 6.0f) * 0.5f;
 
             sf::RectangleShape hSquare(sf::Vector2f(cellSize - 6.0f, cellSize - 6.0f));
-            hSquare.setPosition(hlx * cellSize + boardOffset + 3.0f, hly * cellSize + boardOffset + 3.0f);
+            hSquare.setPosition(drawX, drawY);
             hSquare.setFillColor(sf::Color::White);
             hSquare.setOutlineThickness(0.0f);
             if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) window.draw(hSquare);
@@ -537,10 +624,14 @@ int main() {
                         window.draw(gust, 2, sf::Lines);
                     }
                     for (auto p : state.active_fx.blast_cells) {
-                        sf::RectangleShape pushed(sf::Vector2f(cellSize - 2.0f, cellSize - 2.0f));
-                        pushed.setFillColor(sf::Color(200, 235, 255, progress * 90));
-                        pushed.setPosition(p.x * cellSize + boardOffset, p.y * cellSize + boardOffset);
-                        window.draw(pushed);
+                        int plx = p.x - viewX + padX;
+                        int ply = p.y - viewY + padY;
+                        if (plx >= 0 && plx < VIEW_CELLS && ply >= 0 && ply < VIEW_CELLS) {
+                            sf::RectangleShape pushed(sf::Vector2f(cellSize - 2.0f, cellSize - 2.0f));
+                            pushed.setFillColor(sf::Color(200, 235, 255, progress * 90));
+                            pushed.setPosition(plx * cellSize + boardOffset, ply * cellSize + boardOffset);
+                            window.draw(pushed);
+                        }
                     }
                 } else if (state.active_fx.type == FXType::Rain || state.active_fx.type == FXType::DarkCloud) {
                     if (state.active_fx.type == FXType::Rain) {

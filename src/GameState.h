@@ -63,7 +63,7 @@ public:
     sf::Vector2f getCellCenter(int x, int y, float cellSize, float offset);
     bool is_blocked_by_wall(Position start, Position end) const;
     
-    void trigger_explosion(int cx, int cy);
+    void trigger_explosion(int cx, int cy, bool is_zombie_exploding = false);
     void zombie_single_step(size_t idx);
     void handle_weapon_click(int tx, int ty, float cellSize, float boardOffset);
     void start_zombie_phase();

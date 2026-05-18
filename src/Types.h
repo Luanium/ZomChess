@@ -73,6 +73,7 @@ struct VisualFX {
     sf::Vector2f start_p;
     sf::Vector2f end_p;
     std::vector<Position> blast_cells;
+    std::vector<Position> extinguished_cells;
     int cx = -1;
     int cy = -1;
     int dx = 0;

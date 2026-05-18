@@ -430,8 +430,8 @@ std::vector<Position> GameState::get_conductive_cluster(Position start) const {
 void GameState::apply_windstorm(int dx, int dy) {
     last_environment_event = "Windstorm";
     active_fx.type = FXType::Wind;
-    active_fx.timer = 1.6f;
-    active_fx.max_duration = 1.6f;
+    active_fx.timer = 3.2f;
+    active_fx.max_duration = 3.2f;
     active_fx.dx = dx;
     active_fx.dy = dy;
     active_fx.blast_cells.clear();
@@ -502,9 +502,10 @@ void GameState::apply_windstorm(int dx, int dy) {
 void GameState::apply_heavy_rain() {
     last_environment_event = "Heavy rain";
     active_fx.type = FXType::Rain;
-    active_fx.timer = 1.6f;
-    active_fx.max_duration = 1.6f;
+    active_fx.timer = 3.2f;
+    active_fx.max_duration = 3.2f;
     active_fx.blast_cells.clear();
+    active_fx.extinguished_cells.clear();
 
     std::vector<Position> soaked;
     std::uniform_real_distribution<float> chance(0.0f, 1.0f);
@@ -526,7 +527,27 @@ void GameState::apply_heavy_rain() {
     }
     for (const auto& p : soaked) grid[p.x][p.y] = Terrain::Water;
     active_fx.blast_cells = soaked;
-    add_log("[ENV] Heavy rain floods " + std::to_string(soaked.size()) + " dirt cells.", ImVec4(0.35f, 0.65f, 1.0f, 1.0f));
+
+    std::vector<Position> extinguished;
+    for (int x = 0; x < width; ++x) {
+        for (int y = 0; y < height; ++y) {
+            if (grid[x][y] == Terrain::Fire) {
+                grid[x][y] = Terrain::Dirt;
+                extinguished.push_back({x, y});
+            }
+        }
+    }
+    
+    fire_cells.erase(std::remove_if(fire_cells.begin(), fire_cells.end(), [&](const FireCell& fc) {
+        for (const auto& p : extinguished) {
+            if (fc.pos == p) return true;
+        }
+        return false;
+    }), fire_cells.end());
+
+    active_fx.extinguished_cells = extinguished;
+
+    add_log("[ENV] Heavy rain floods " + std::to_string(soaked.size()) + " dirt cells and extinguishes " + std::to_string(extinguished.size()) + " fire cells.", ImVec4(0.35f, 0.65f, 1.0f, 1.0f));
 }
 
 void GameState::apply_dark_clouds() {
@@ -560,8 +581,8 @@ void GameState::apply_lightning_strike() {
     Position strike = cells[pick(rng)];
     std::vector<Position> conductive_cluster = get_conductive_cluster(strike);
     active_fx.type = FXType::Lightning;
-    active_fx.timer = 1.8f;
-    active_fx.max_duration = 1.8f;
+    active_fx.timer = 3.6f;
+    active_fx.max_duration = 3.6f;
     active_fx.cx = strike.x;
     active_fx.cy = strike.y;
     active_fx.blast_cells = conductive_cluster;
@@ -578,7 +599,7 @@ void GameState::apply_lightning_strike() {
             z->hp -= 1;
             floating_texts.push_back({z->pos, -1, 1.0f, 1.0f});
             add_log("-> " + z->name + " is struck by lightning! -1 HP.", ImVec4(1.0f, 0.75f, 0.2f, 1.0f));
-            if (z->hp <= 0 && z->type == ZombieType::Exploding) trigger_explosion(z->pos.x, z->pos.y);
+            if (z->hp <= 0 && z->type == ZombieType::Exploding) trigger_explosion(z->pos.x, z->pos.y, true);
         }
     }
 
@@ -649,43 +670,42 @@ void GameState::finish_environment_phase() {
 void GameState::update_environment_logic(float dt) {
     if (phase != TurnPhase::EnvironmentAnimating) return;
     
-    // If a detonated explosion is currently animating, wait for it!
-    if (active_fx.type != FXType::None && environment_action_timer >= ENVIRONMENT_STEP_DELAY) {
+    // Simply wait for the active environment FX animation to finish!
+    if (active_fx.type != FXType::None) {
         return;
     }
     
-    environment_action_timer += dt;
-    
-    if (active_fx.type == FXType::None || environment_action_timer >= ENVIRONMENT_STEP_DELAY) {
-        // Environment event has finished! Now tick grenades before starting human turn.
-        bool triggered_explosion = false;
-        for (auto& g : active_grenades) {
-            if (g.active) {
-                g.turns_left--;
-                if (g.turns_left <= 0) {
-                    add_log("[RADIO] Grenade timer expires. Detonation!", ImVec4(1.0f, 0.45f, 0.1f, 1.0f));
-                    trigger_explosion(g.pos.x, g.pos.y);
-                    g.active = false;
-                    triggered_explosion = true;
-                }
+    // Environment event has finished! Now tick grenades before starting human turn.
+    bool triggered_explosion = false;
+    for (auto& g : active_grenades) {
+        if (g.active) {
+            g.turns_left--;
+            if (g.turns_left <= 0) {
+                add_log("[RADIO] Grenade timer expires. Detonation!", ImVec4(1.0f, 0.45f, 0.1f, 1.0f));
+                trigger_explosion(g.pos.x, g.pos.y);
+                g.active = false;
+                triggered_explosion = true;
             }
         }
-        active_grenades.erase(std::remove_if(active_grenades.begin(), active_grenades.end(), [](const GrenadeTimer& g) { return !g.active; }), active_grenades.end());
-        
-        if (triggered_explosion) {
-            environment_action_timer = ENVIRONMENT_STEP_DELAY; // lock environment timer to wait for explosion
-            return;
-        }
-        
-        finish_environment_phase();
     }
+    active_grenades.erase(std::remove_if(active_grenades.begin(), active_grenades.end(), [](const GrenadeTimer& g) { return !g.active; }), active_grenades.end());
+    
+    if (triggered_explosion) {
+        // Wait for grenade explosion animation to finish!
+        return;
+    }
+    
+    finish_environment_phase();
 }
 
-void GameState::trigger_explosion(int cx, int cy) { 
+void GameState::trigger_explosion(int cx, int cy, bool is_zombie_exploding) { 
     add_log("[EXPLOSION] Detonated at (" + std::to_string(cx) + ", " + std::to_string(cy) + ")!", ImVec4(1.0f, 0.4f, 0.0f, 1.0f)); 
     
     Terrain center_t = grid[cx][cy];
-    int radius = (center_t == Terrain::Water) ? 1 : 2;
+    int radius = is_zombie_exploding ? 1 : 2;
+    if (center_t == Terrain::Water) {
+        radius = std::max(0, radius - 1);
+    }
 
     active_fx.type = FXType::Explosion; 
     active_fx.timer = 2.0f; 
@@ -698,30 +718,200 @@ void GameState::trigger_explosion(int cx, int cy) {
             if (nx >= 0 && nx < width && ny >= 0 && ny < height) { 
                 if (is_blocked_by_wall(Position{cx, cy}, Position{nx, ny})) continue;
                 active_fx.blast_cells.push_back({nx, ny}); 
-                
-                if (human.pos.x == nx && human.pos.y == ny) {
-                    human.hp = std::max(0, human.hp - 2);
-                    floating_texts.push_back({human.pos, -2, 1.0f, 1.0f});
-                    add_log("-> Human hit by blast! -2 HP.", ImVec4(1.0f, 0.2f, 0.2f, 1.0f)); 
-                }
-                
-                for (size_t i = 0; i < zombies.size(); ++i) { 
-                    auto& zom = zombies[i]; 
-                    if (zom->hp > 0 && zom->pos.x == nx && zom->pos.y == ny) {
-                        zom->hp -= 2; 
-                        floating_texts.push_back({zom->pos, -2, 1.0f, 1.0f});
-                        add_log("-> Zombie #" + std::to_string(i+1) + " damaged by blast. -2 HP.", ImVec4(1.0f, 0.6f, 0.1f, 1.0f)); 
-                        
-                        if (zom->hp <= 0 && zom->type == ZombieType::Exploding) { 
-                            trigger_explosion(zom->pos.x, zom->pos.y); 
+            }
+        }
+    }
+
+    auto get_entity_at = [&](Position p) -> std::pair<std::string, void*> {
+        if (human.hp > 0 && human.pos == p) return {"human", &human};
+        for (size_t i = 0; i < zombies.size(); ++i) {
+            if (zombies[i]->hp > 0 && zombies[i]->pos == p) return {"zombie", zombies[i].get()};
+        }
+        return {"none", nullptr};
+    };
+
+    struct DamageEvent {
+        bool is_human;
+        size_t zombie_idx;
+        int damage;
+        bool has_push;
+        Position push_target;
+        bool push_blocked;
+        std::string block_type; // "wall", "entity", "none"
+        void* blocking_entity;
+        bool is_blocking_entity_human;
+        size_t blocking_zombie_idx;
+    };
+
+    std::vector<DamageEvent> events;
+
+    // Check Human
+    bool human_hit = false;
+    for (auto cell : active_fx.blast_cells) {
+        if (human.pos == cell) {
+            human_hit = true;
+            break;
+        }
+    }
+
+    if (human_hit) {
+        int dist = std::max(std::abs(human.pos.x - cx), std::abs(human.pos.y - cy));
+        DamageEvent ev{true, 0, 0, false, {0,0}, false, "none", nullptr, false, 0};
+        if (dist == 0) {
+            ev.damage = 3;
+        } else if (dist == 1) {
+            ev.damage = 2;
+            ev.has_push = true;
+            int dx = human.pos.x - cx;
+            int dy = human.pos.y - cy;
+            ev.push_target = {human.pos.x + dx, human.pos.y + dy};
+            
+            if (ev.push_target.x < 0 || ev.push_target.x >= width || ev.push_target.y < 0 || ev.push_target.y >= height) {
+                ev.push_blocked = true;
+                ev.block_type = "wall";
+            } else if (grid[ev.push_target.x][ev.push_target.y] == Terrain::Wall) {
+                ev.push_blocked = true;
+                ev.block_type = "wall";
+            } else {
+                auto [ent_type, ent_ptr] = get_entity_at(ev.push_target);
+                if (ent_type != "none") {
+                    ev.push_blocked = true;
+                    ev.block_type = "entity";
+                    ev.blocking_entity = ent_ptr;
+                    ev.is_blocking_entity_human = (ent_type == "human");
+                    if (ent_type == "zombie") {
+                        for (size_t j = 0; j < zombies.size(); ++j) {
+                            if (zombies[j].get() == ent_ptr) {
+                                ev.blocking_zombie_idx = j;
+                                break;
+                            }
                         }
                     }
                 }
-            } 
-        } 
-    } 
-    
-    // Destroy adjacent wall cells to the explosion center
+            }
+        } else {
+            ev.damage = 1;
+        }
+        events.push_back(ev);
+    }
+
+    // Check Zombies
+    for (size_t i = 0; i < zombies.size(); ++i) {
+        auto& zom = zombies[i];
+        if (zom->hp <= 0) continue;
+        
+        bool zom_hit = false;
+        for (auto cell : active_fx.blast_cells) {
+            if (zom->pos == cell) {
+                zom_hit = true;
+                break;
+            }
+        }
+        
+        if (zom_hit) {
+            int dist = std::max(std::abs(zom->pos.x - cx), std::abs(zom->pos.y - cy));
+            DamageEvent ev{false, i, 0, false, {0,0}, false, "none", nullptr, false, 0};
+            if (dist == 0) {
+                ev.damage = 3;
+            } else if (dist == 1) {
+                ev.damage = 2;
+                ev.has_push = true;
+                int dx = zom->pos.x - cx;
+                int dy = zom->pos.y - cy;
+                ev.push_target = {zom->pos.x + dx, zom->pos.y + dy};
+                
+                if (ev.push_target.x < 0 || ev.push_target.x >= width || ev.push_target.y < 0 || ev.push_target.y >= height) {
+                    ev.push_blocked = true;
+                    ev.block_type = "wall";
+                } else if (grid[ev.push_target.x][ev.push_target.y] == Terrain::Wall) {
+                    ev.push_blocked = true;
+                    ev.block_type = "wall";
+                } else {
+                    auto [ent_type, ent_ptr] = get_entity_at(ev.push_target);
+                    if (ent_type != "none") {
+                        ev.push_blocked = true;
+                        ev.block_type = "entity";
+                        ev.blocking_entity = ent_ptr;
+                        ev.is_blocking_entity_human = (ent_type == "human");
+                        if (ent_type == "zombie") {
+                            for (size_t j = 0; j < zombies.size(); ++j) {
+                                if (zombies[j].get() == ent_ptr) {
+                                    ev.blocking_zombie_idx = j;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                ev.damage = 1;
+            }
+            events.push_back(ev);
+        }
+    }
+
+    std::vector<int> zombie_extra_damage(zombies.size(), 0);
+    int human_extra_damage = 0;
+
+    for (const auto& ev : events) {
+        int final_damage = ev.damage;
+        if (ev.has_push) {
+            if (ev.push_blocked) {
+                final_damage += 1;
+                add_log(ev.is_human ? "-> Human recoil blocked by obstacle! suffers +1 impact damage." 
+                                   : "-> Zombie #" + std::to_string(ev.zombie_idx+1) + " recoil blocked! suffers +1 impact damage.", 
+                        ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
+                
+                if (ev.block_type == "entity") {
+                    if (ev.is_blocking_entity_human) {
+                        human_extra_damage += 1;
+                        add_log("-> Blocking Human suffers 1 impact damage!", ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
+                    } else {
+                        zombie_extra_damage[ev.blocking_zombie_idx] += 1;
+                        add_log("-> Blocking Zombie #" + std::to_string(ev.blocking_zombie_idx+1) + " suffers 1 impact damage!", ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
+                    }
+                }
+            } else {
+                if (ev.is_human) {
+                    human.pos = ev.push_target;
+                    add_log("-> Human is blown back by the blast!", ImVec4(1.0f, 0.6f, 0.2f, 1.0f));
+                    check_fire_interactions();
+                    check_mine_interactions();
+                } else {
+                    zombies[ev.zombie_idx]->pos = ev.push_target;
+                    add_log("-> Zombie #" + std::to_string(ev.zombie_idx+1) + " is blown back by the blast!", ImVec4(1.0f, 0.6f, 0.2f, 1.0f));
+                    check_fire_interactions();
+                }
+            }
+        }
+
+        if (ev.is_human) {
+            human_extra_damage += final_damage;
+        } else {
+            zombie_extra_damage[ev.zombie_idx] += final_damage;
+        }
+    }
+
+    if (human_extra_damage > 0) {
+        human.hp = std::max(0, human.hp - human_extra_damage);
+        floating_texts.push_back({human.pos, -human_extra_damage, 1.0f, 1.0f});
+        add_log("-> Human total explosion damage: -" + std::to_string(human_extra_damage) + " HP.", ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
+    }
+
+    std::vector<Position> chain_reactions;
+
+    for (size_t i = 0; i < zombies.size(); ++i) {
+        if (zombie_extra_damage[i] > 0 && zombies[i]->hp > 0) {
+            zombies[i]->hp -= zombie_extra_damage[i];
+            floating_texts.push_back({zombies[i]->pos, -zombie_extra_damage[i], 1.0f, 1.0f});
+            add_log("-> Zombie #" + std::to_string(i+1) + " total explosion damage: -" + std::to_string(zombie_extra_damage[i]) + " HP.", ImVec4(1.0f, 0.5f, 0.1f, 1.0f));
+            
+            if (zombies[i]->hp <= 0 && zombies[i]->type == ZombieType::Exploding) {
+                chain_reactions.push_back(zombies[i]->pos);
+            }
+        }
+    }
+
     for (int dx = -1; dx <= 1; ++dx) {
         for (int dy = -1; dy <= 1; ++dy) {
             if (dx == 0 && dy == 0) continue;
@@ -736,6 +926,10 @@ void GameState::trigger_explosion(int cx, int cy) {
     }
 
     check_victory_conditions(); 
+
+    for (auto pos : chain_reactions) {
+        trigger_explosion(pos.x, pos.y, true);
+    }
 }
 
 void GameState::zombie_single_step(size_t idx) { 
@@ -809,7 +1003,7 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
                     active_fx.max_duration = 0.35f; 
                     active_fx.start_p = hCenter; 
                     active_fx.end_p = tCenter; 
-                    if (zombies[i]->hp <= 0 && zombies[i]->type == ZombieType::Exploding) trigger_explosion(target.x, target.y); 
+                    if (zombies[i]->hp <= 0 && zombies[i]->type == ZombieType::Exploding) trigger_explosion(target.x, target.y, true); 
                     input_mode = InputMode::MoveMode; 
                     check_victory_conditions(); 
                     return; 
@@ -861,7 +1055,7 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
                     zombies[i]->hp -= 1; 
                     floating_texts.push_back({zombies[i]->pos, -1, 1.0f, 1.0f});
                     add_log("[RADIO] Pistol round lands on Zombie #" + std::to_string(i + 1) + ".", ImVec4(1.0f, 0.95f, 0.35f, 1.0f));
-                    if (zombies[i]->hp <= 0 && zombies[i]->type == ZombieType::Exploding) trigger_explosion(hit_pos.x, hit_pos.y); 
+                    if (zombies[i]->hp <= 0 && zombies[i]->type == ZombieType::Exploding) trigger_explosion(hit_pos.x, hit_pos.y, true); 
                 } else {
                     add_log("[RADIO] Pistol round misses Zombie #" + std::to_string(i + 1) + ".", ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
                 }
@@ -1001,7 +1195,7 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
 
             if (zombies[i]->hp <= 0) {
                 if (zombies[i]->type == ZombieType::Exploding) {
-                    trigger_explosion(zombies[i]->pos.x, zombies[i]->pos.y);
+                    trigger_explosion(zombies[i]->pos.x, zombies[i]->pos.y, true);
                 }
                 continue;
             }
@@ -1013,7 +1207,7 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
                 zombies[i]->hp -= 1;
                 floating_texts.push_back({zombies[i]->pos, -1, 1.0f, 1.0f});
                 if (zombies[i]->hp <= 0 && zombies[i]->type == ZombieType::Exploding) {
-                    trigger_explosion(zombies[i]->pos.x, zombies[i]->pos.y);
+                    trigger_explosion(zombies[i]->pos.x, zombies[i]->pos.y, true);
                 }
             } else {
                 size_t blocking_zombie_idx = -1;
@@ -1036,10 +1230,10 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
                     add_log("[RADIO] Zombie #" + std::to_string(i + 1) + " collided with Zombie #" + std::to_string(blocking_zombie_idx + 1) + ". Both take 1 collision damage.", ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
 
                     if (zombies[i]->hp <= 0 && zombies[i]->type == ZombieType::Exploding) {
-                        trigger_explosion(zombies[i]->pos.x, zombies[i]->pos.y);
+                        trigger_explosion(zombies[i]->pos.x, zombies[i]->pos.y, true);
                     }
                     if (zombies[blocking_zombie_idx]->hp <= 0 && zombies[blocking_zombie_idx]->type == ZombieType::Exploding) {
-                        trigger_explosion(zombies[blocking_zombie_idx]->pos.x, zombies[blocking_zombie_idx]->pos.y);
+                        trigger_explosion(zombies[blocking_zombie_idx]->pos.x, zombies[blocking_zombie_idx]->pos.y, true);
                     }
                 } else {
                     zombies[i]->pos = {rx, ry};
@@ -1144,7 +1338,7 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
             add_log("-> Molotov landed in water. Fizzled out!", ImVec4(0.4f, 0.6f, 1.0f, 1.0f));
         } else if (grid[hit_pos.x][hit_pos.y] == Terrain::Dirt) {
             grid[hit_pos.x][hit_pos.y] = Terrain::Fire;
-            fire_cells.push_back({hit_pos, 1}); 
+            fire_cells.push_back({hit_pos, 2}); 
             add_log("-> Molotov created a fire zone!", ImVec4(1.0f, 0.3f, 0.0f, 1.0f));
             add_log("[RADIO] Fire spreads at (" + std::to_string(hit_pos.x + 1) + ", " + std::to_string(hit_pos.y + 1) + "). Keep distance!", ImVec4(1.0f, 0.45f, 0.1f, 1.0f));
         }
@@ -1198,7 +1392,7 @@ void GameState::update_zombie_logic(float dt) {
                     floating_texts.push_back({z->pos, -1, 1.0f, 1.0f});
                     z->is_burning = false;
                     add_log("[FIRE] " + z->name + " suffered 1 Burn Damage!", ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
-                    if (z->hp <= 0 && z->type == ZombieType::Exploding) trigger_explosion(z->pos.x, z->pos.y);
+                    if (z->hp <= 0 && z->type == ZombieType::Exploding) trigger_explosion(z->pos.x, z->pos.y, true);
                 }
             }
             
