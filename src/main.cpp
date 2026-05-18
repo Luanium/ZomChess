@@ -208,40 +208,6 @@ int main() {
             ImGui::Spacing();
             ImGui::TextColored(ImVec4(1, 0.8f, 0, 1), "%s", tr("--- PROCEDURAL GENERATION RATIOS (SUM = 100%) ---", "--- TI LE SINH BAN CO (TONG = 100%) ---"));
 
-            auto adjust_ratios = [](int& target, int& o1, int& o2, int& o3, int new_val) {
-                int diff = new_val - target;
-                if (diff == 0) return;
-                target = new_val;
-                
-                // Distribute diff to o1, o2, o3
-                for (int step = 0; step < std::abs(diff); ++step) {
-                    int sign = (diff > 0) ? -1 : 1;
-                    if (sign == -1) {
-                        // Find the largest of o1, o2, o3 that is > 0 to decrement
-                        if (o1 >= o2 && o1 >= o3 && o1 > 0) o1 += sign;
-                        else if (o2 >= o1 && o2 >= o3 && o2 > 0) o2 += sign;
-                        else if (o3 > 0) o3 += sign;
-                    } else {
-                        // Increment o1, o2, o3 sequentially
-                        if (o1 <= o2 && o1 <= o3) o1 += sign;
-                        else if (o2 <= o1 && o2 <= o3) o2 += sign;
-                        else o3 += sign;
-                    }
-                }
-                
-                // Clamp all
-                target = std::clamp(target, 0, 100);
-                o1 = std::clamp(o1, 0, 100);
-                o2 = std::clamp(o2, 0, 100);
-                o3 = std::clamp(o3, 0, 100);
-                
-                int current_sum = target + o1 + o2 + o3;
-                if (current_sum != 100) {
-                    o1 += (100 - current_sum);
-                    o1 = std::clamp(o1, 0, 100);
-                }
-            };
-
             int temp_dirt = state.active_config.ratio_dirt;
             int temp_wall = state.active_config.ratio_wall;
             int temp_water = state.active_config.ratio_water;
@@ -256,18 +222,124 @@ int main() {
                 temp_dirt = 60; temp_wall = 10; temp_water = 10; temp_grass = 20;
             }
 
-            if (ImGui::SliderInt("Dirt Ratio %", &temp_dirt, 0, 100)) {
-                adjust_ratios(state.active_config.ratio_dirt, state.active_config.ratio_wall, state.active_config.ratio_water, state.active_config.ratio_grass, temp_dirt);
+            int p1 = temp_dirt;
+            int p2 = p1 + temp_wall;
+            int p3 = p2 + temp_water;
+
+            float bar_width = ImGui::GetContentRegionAvail().x - 10.0f;
+            if (bar_width < 100.0f) bar_width = 360.0f;
+            float bar_height = 20.0f;
+
+            ImVec2 cursor_pos = ImGui::GetCursorScreenPos();
+            ImGui::InvisibleButton("##multi_slider_button", ImVec2(bar_width, bar_height + 8.0f));
+            
+            bool active = ImGui::IsItemActive();
+            bool hovered = ImGui::IsItemHovered();
+            ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+            static int active_knob = -1;
+            ImVec2 mouse_pos = ImGui::GetIO().MousePos;
+
+            if (active) {
+                float clicked_pct = (mouse_pos.x - cursor_pos.x) / bar_width * 100.0f;
+                clicked_pct = std::max(0.0f, std::min(100.0f, clicked_pct));
+
+                if (ImGui::IsMouseClicked(0)) {
+                    float d1 = std::abs(clicked_pct - p1);
+                    float d2 = std::abs(clicked_pct - p2);
+                    float d3 = std::abs(clicked_pct - p3);
+                    if (d1 <= d2 && d1 <= d3) active_knob = 0;
+                    else if (d2 <= d1 && d2 <= d3) active_knob = 1;
+                    else active_knob = 2;
+                }
+
+                if (active_knob == 0) {
+                    p1 = std::round(clicked_pct);
+                    p1 = std::max(0, std::min(p2, p1));
+                } else if (active_knob == 1) {
+                    p2 = std::round(clicked_pct);
+                    p2 = std::max(p1, std::min(p3, p2));
+                } else if (active_knob == 2) {
+                    p3 = std::round(clicked_pct);
+                    p3 = std::max(p2, std::min(100, p3));
+                }
+            } else {
+                active_knob = -1;
             }
-            if (ImGui::SliderInt("Wall Ratio %", &temp_wall, 0, 100)) {
-                adjust_ratios(state.active_config.ratio_wall, state.active_config.ratio_dirt, state.active_config.ratio_water, state.active_config.ratio_grass, temp_wall);
-            }
-            if (ImGui::SliderInt("Water Ratio %", &temp_water, 0, 100)) {
-                adjust_ratios(state.active_config.ratio_water, state.active_config.ratio_dirt, state.active_config.ratio_wall, state.active_config.ratio_grass, temp_water);
-            }
-            if (ImGui::SliderInt("Grass Ratio %", &temp_grass, 0, 100)) {
-                adjust_ratios(state.active_config.ratio_grass, state.active_config.ratio_dirt, state.active_config.ratio_wall, state.active_config.ratio_water, temp_grass);
-            }
+
+            state.active_config.ratio_dirt = p1;
+            state.active_config.ratio_wall = p2 - p1;
+            state.active_config.ratio_water = p3 - p2;
+            state.active_config.ratio_grass = 100 - p3;
+
+            temp_dirt = state.active_config.ratio_dirt;
+            temp_wall = state.active_config.ratio_wall;
+            temp_water = state.active_config.ratio_water;
+            temp_grass = state.active_config.ratio_grass;
+
+            float x0 = cursor_pos.x;
+            float x1 = x0 + p1 * (bar_width / 100.f);
+            float x2 = x0 + p2 * (bar_width / 100.f);
+            float x3 = x0 + p3 * (bar_width / 100.f);
+            float x4 = x0 + bar_width;
+
+            float y_top = cursor_pos.y + 4.0f;
+            float y_bot = y_top + bar_height;
+
+            ImU32 col_dirt = ImGui::ColorConvertFloat4ToU32(ImVec4(105/255.f, 60/255.f, 35/255.f, 1.f));
+            ImU32 col_wall = ImGui::ColorConvertFloat4ToU32(ImVec4(60/255.f, 62/255.f, 66/255.f, 1.f));
+            ImU32 col_water = ImGui::ColorConvertFloat4ToU32(ImVec4(35/255.f, 75/255.f, 115/255.f, 1.f));
+            ImU32 col_grass = ImGui::ColorConvertFloat4ToU32(ImVec4(55/255.f, 125/255.f, 35/255.f, 1.f));
+
+            draw_list->AddRectFilled(ImVec2(x0, y_top), ImVec2(x1, y_bot), col_dirt);
+            draw_list->AddRectFilled(ImVec2(x1, y_top), ImVec2(x2, y_bot), col_wall);
+            draw_list->AddRectFilled(ImVec2(x2, y_top), ImVec2(x3, y_bot), col_water);
+            draw_list->AddRectFilled(ImVec2(x3, y_top), ImVec2(x4, y_bot), col_grass);
+
+            auto draw_knob = [&](float x_center, int knob_idx) {
+                bool knob_hovered = hovered && std::abs(mouse_pos.x - x_center) < 10.0f;
+                bool knob_active = (active_knob == knob_idx);
+                ImU32 knob_color = ImGui::ColorConvertFloat4ToU32(ImVec4(0.9f, 0.9f, 0.9f, 1.0f));
+                if (knob_active) knob_color = ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 0.85f, 0.1f, 1.0f));
+                else if (knob_hovered) knob_color = ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+
+                float knob_half_w = 3.0f;
+                draw_list->AddRectFilled(
+                    ImVec2(x_center - knob_half_w, y_top - 2.0f),
+                    ImVec2(x_center + knob_half_w, y_bot + 2.0f),
+                    knob_color,
+                    1.5f
+                );
+                draw_list->AddRect(
+                    ImVec2(x_center - knob_half_w, y_top - 2.0f),
+                    ImVec2(x_center + knob_half_w, y_bot + 2.0f),
+                    ImGui::ColorConvertFloat4ToU32(ImVec4(0.1f, 0.1f, 0.1f, 0.8f)),
+                    1.5f
+                );
+            };
+
+            draw_knob(x1, 0);
+            draw_knob(x2, 1);
+            draw_knob(x3, 2);
+
+            draw_list->AddRect(ImVec2(x0, y_top), ImVec2(x4, y_bot), ImGui::ColorConvertFloat4ToU32(ImVec4(0.2f, 0.2f, 0.2f, 0.6f)), 0.0f, 0, 1.5f);
+
+            ImGui::Spacing();
+            
+            auto draw_legend_item = [&](const char* label, ImVec4 color, int ratio) {
+                ImVec2 cursor = ImGui::GetCursorScreenPos();
+                ImDrawList* d = ImGui::GetWindowDrawList();
+                d->AddRectFilled(ImVec2(cursor.x, cursor.y + 3.0f), ImVec2(cursor.x + 12.0f, cursor.y + 15.0f), ImGui::ColorConvertFloat4ToU32(color));
+                d->AddRect(ImVec2(cursor.x, cursor.y + 3.0f), ImVec2(cursor.x + 12.0f, cursor.y + 15.0f), ImGui::ColorConvertFloat4ToU32(ImVec4(1,1,1,0.5f)));
+                ImGui::Dummy(ImVec2(15.0f, 18.0f));
+                ImGui::SameLine();
+                ImGui::Text("%s: %d%%", label, ratio);
+            };
+
+            draw_legend_item(tr("Dirt", "Dat"), ImVec4(105/255.f, 60/255.f, 35/255.f, 1.f), temp_dirt); ImGui::SameLine(); ImGui::Dummy(ImVec2(10.0f, 1.0f)); ImGui::SameLine();
+            draw_legend_item(tr("Wall", "Tuong"), ImVec4(60/255.f, 62/255.f, 66/255.f, 1.f), temp_wall); ImGui::SameLine(); ImGui::Dummy(ImVec2(10.0f, 1.0f)); ImGui::SameLine();
+            draw_legend_item(tr("Water", "Nuoc"), ImVec4(35/255.f, 75/255.f, 115/255.f, 1.f), temp_water); ImGui::SameLine(); ImGui::Dummy(ImVec2(10.0f, 1.0f)); ImGui::SameLine();
+            draw_legend_item(tr("Grass", "Co"), ImVec4(55/255.f, 125/255.f, 35/255.f, 1.f), temp_grass);
 
             if (state.active_config.custom_map_mode) {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.5f, 0.3f, 0.1f, 1));
