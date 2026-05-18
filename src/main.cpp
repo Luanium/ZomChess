@@ -180,6 +180,13 @@ int main() {
             ImGui::Checkbox("Enable Environment Events", &state.active_config.enable_environment);
             ImGui::Checkbox("Use Custom Map Design Mode", &state.active_config.custom_map_mode);
 
+            ImGui::Spacing();
+            ImGui::TextColored(ImVec4(1, 0.8f, 0, 1), "--- PROCEDURAL GENERATION RATIOS ---");
+            ImGui::SliderInt("Dirt Ratio %", &state.active_config.ratio_dirt, 0, 100);
+            ImGui::SliderInt("Wall Ratio %", &state.active_config.ratio_wall, 0, 100);
+            ImGui::SliderInt("Water Ratio %", &state.active_config.ratio_water, 0, 100);
+            ImGui::SliderInt("Grass Ratio %", &state.active_config.ratio_grass, 0, 100);
+
             if (state.active_config.custom_map_mode) {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.5f, 0.3f, 0.1f, 1));
                 if (ImGui::Button("⚙️ OPEN MAP VISUAL EDITOR", ImVec2(400, 35))) state.current_scene = GameScene::MapEditor;
@@ -238,8 +245,8 @@ int main() {
                     cell.setPosition(x * cellSize + boardOffset, y * cellSize + boardOffset);
                     Terrain t = state.active_config.custom_grid[x][y];
                     if (t == Terrain::Wall) cell.setFillColor(sf::Color(60, 62, 66));
-                    else if (t == Terrain::Wall) cell.setFillColor(sf::Color(40, 41, 43));
                     else if (t == Terrain::Water) cell.setFillColor(sf::Color(35, 75, 115));
+                    else if (t == Terrain::Grass) cell.setFillColor(sf::Color(55, 125, 35));
                     else cell.setFillColor(sf::Color(105, 60, 35));
                     window.draw(cell);
 
@@ -258,6 +265,7 @@ int main() {
             if (ImGui::RadioButton("Plain Dirt Floor", state.editor_selected_terrain == Terrain::Dirt)) state.editor_selected_terrain = Terrain::Dirt;
             if (ImGui::RadioButton("Reinforced Wall", state.editor_selected_terrain == Terrain::Wall)) state.editor_selected_terrain = Terrain::Wall;
             if (ImGui::RadioButton("Deep Water Hazard", state.editor_selected_terrain == Terrain::Water)) state.editor_selected_terrain = Terrain::Water;
+            if (ImGui::RadioButton("Tall Lush Grass", state.editor_selected_terrain == Terrain::Grass)) state.editor_selected_terrain = Terrain::Grass;
 
             ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
             if (ImGui::Button("SAVE DESIGN & RETURN TO ENGINE", ImVec2(360, 50))) state.current_scene = GameScene::MainMenu;
@@ -306,6 +314,9 @@ int main() {
                     else if (state.grid[x][y] == Terrain::Fire) {
                         int pulse = static_cast<int>(25.0f * std::sin(timeSec * 12.0f));
                         cell.setFillColor(sf::Color(220 + pulse, 100 + pulse / 2, 20));
+                    }
+                    else if (state.grid[x][y] == Terrain::Grass) {
+                        cell.setFillColor(sf::Color(55, 125, 35));
                     }
                     else {
                         bool was_extinguished = false;
