@@ -32,7 +32,7 @@ int main() {
                 window.close();
 
             if (state.current_scene == GameScene::Playing && !ImGui::GetIO().WantCaptureMouse && event.type == sf::Event::MouseButtonPressed) {
-                if (event.mouseButton.button == sf::Mouse::Left && !state.game_over && !state.game_won && state.phase == TurnPhase::HumanTurn) {
+                if (event.mouseButton.button == sf::Mouse::Left && !state.game_over && !state.game_won && state.phase == TurnPhase::HumanTurn && !state.human.is_paralyzed) {
                     int tx = (event.mouseButton.x - boardOffset) / cellSize;
                     int ty = (event.mouseButton.y - boardOffset) / cellSize;
 
@@ -99,6 +99,7 @@ int main() {
                 else ++it;
             }
             state.update_zombie_logic(dtSeconds);
+            state.update_environment_logic(dtSeconds);
         }
 
         window.clear(sf::Color(22, 23, 25));
@@ -271,6 +272,17 @@ int main() {
             hVisual.setPosition(state.human.pos.x * cellSize + boardOffset + 4.0f, state.human.pos.y * cellSize + boardOffset + 4.0f);
             window.draw(hVisual);
 
+            if (state.dark_cloud_active && state.active_fx.type != FXType::DarkCloud) {
+                sf::RectangleShape shroud(sf::Vector2f(state.width * cellSize, state.height * cellSize));
+                shroud.setFillColor(sf::Color(0, 0, 0, 220));
+                shroud.setPosition(boardOffset, boardOffset);
+                window.draw(shroud);
+                sf::CircleShape humanSpot(cellSize / 2.5f);
+                humanSpot.setFillColor(sf::Color::White);
+                humanSpot.setPosition(state.human.pos.x * cellSize + boardOffset + 4.0f, state.human.pos.y * cellSize + boardOffset + 4.0f);
+                window.draw(humanSpot);
+            }
+
             // Handle FX
             if (state.active_fx.type != FXType::None) {
                 float progress = state.active_fx.timer / state.active_fx.max_duration;
@@ -284,6 +296,53 @@ int main() {
                         sf::RectangleShape blastZone(sf::Vector2f(cellSize - 2.0f, cellSize - 2.0f));
                         blastZone.setFillColor(state.active_fx.type == FXType::Shotgun ? sf::Color(255,130,30, progress*120) : sf::Color(255,50,10, progress*160));
                         blastZone.setPosition(p.x * cellSize + boardOffset, p.y * cellSize + boardOffset); window.draw(blastZone);
+                    }
+                } else if (state.active_fx.type == FXType::Wind) {
+                    sf::Color windColor(180, 220, 255, alpha);
+                    for (int i = -4; i <= 20; ++i) {
+                        float sx = boardOffset + (i * 38.0f * state.active_fx.dx) + std::sin(timeSec * 8.0f + i) * 18.0f;
+                        float sy = boardOffset + (i * 30.0f * state.active_fx.dy) + std::cos(timeSec * 7.0f + i) * 18.0f;
+                        sf::Vertex gust[] = {
+                            sf::Vertex(sf::Vector2f(sx, sy), windColor),
+                            sf::Vertex(sf::Vector2f(sx + state.active_fx.dx * state.width * cellSize, sy + state.active_fx.dy * state.height * cellSize), sf::Color(180, 220, 255, 0))
+                        };
+                        window.draw(gust, 2, sf::Lines);
+                    }
+                    for (auto p : state.active_fx.blast_cells) {
+                        sf::RectangleShape pushed(sf::Vector2f(cellSize - 2.0f, cellSize - 2.0f));
+                        pushed.setFillColor(sf::Color(200, 235, 255, progress * 90));
+                        pushed.setPosition(p.x * cellSize + boardOffset, p.y * cellSize + boardOffset);
+                        window.draw(pushed);
+                    }
+                } else if (state.active_fx.type == FXType::Rain || state.active_fx.type == FXType::DarkCloud) {
+                    if (state.active_fx.type == FXType::Rain) {
+                        sf::Color rainColor(110, 170, 255, alpha);
+                        for (int i = 0; i < 90; ++i) {
+                            float x = boardOffset + std::fmod(i * 37.0f + timeSec * 260.0f, state.width * cellSize);
+                            float y = boardOffset + std::fmod(i * 53.0f + timeSec * 420.0f, state.height * cellSize);
+                            sf::Vertex drop[] = { sf::Vertex(sf::Vector2f(x, y), rainColor), sf::Vertex(sf::Vector2f(x - 7, y + 16), sf::Color(110, 170, 255, 0)) };
+                            window.draw(drop, 2, sf::Lines);
+                        }
+                    } else {
+                        sf::RectangleShape cloud(sf::Vector2f(state.width * cellSize, state.height * cellSize));
+                        cloud.setFillColor(sf::Color(0, 0, 0, static_cast<sf::Uint8>((1.0f - progress) * 210)));
+                        cloud.setPosition(boardOffset, boardOffset);
+                        window.draw(cloud);
+                    }
+                } else if (state.active_fx.type == FXType::Lightning) {
+                    sf::Vector2f center = state.getCellCenter(state.active_fx.cx, state.active_fx.cy, cellSize, boardOffset);
+                    sf::Vertex bolt[] = {
+                        sf::Vertex(sf::Vector2f(center.x - 10, boardOffset), sf::Color(255, 255, 160, alpha)),
+                        sf::Vertex(sf::Vector2f(center.x + 6, center.y - 10), sf::Color(160, 230, 255, alpha)),
+                        sf::Vertex(sf::Vector2f(center.x - 4, center.y + 10), sf::Color(255, 255, 255, alpha)),
+                        sf::Vertex(sf::Vector2f(center.x + 10, center.y + cellSize / 2), sf::Color(160, 230, 255, 0))
+                    };
+                    window.draw(bolt, 4, sf::LineStrip);
+                    for (auto p : state.active_fx.blast_cells) {
+                        sf::RectangleShape electric(sf::Vector2f(cellSize - 4.0f, cellSize - 4.0f));
+                        electric.setFillColor(sf::Color(80, 220, 255, progress * 130));
+                        electric.setPosition(p.x * cellSize + boardOffset + 2.0f, p.y * cellSize + boardOffset + 2.0f);
+                        window.draw(electric);
                     }
                 }
             }
@@ -335,6 +394,9 @@ int main() {
             ImGui::TextColored(ImVec4(0,1,1,1), "🎯 TURN: %d/%d", state.current_turn, state.turn_limit);
             ImGui::TextColored(ImVec4(0, 1, 0, 1), "🔋 STAMINA: %d | ❤️ HEALTH: %d", state.human.stamina, state.human.hp);
             if (state.human.is_burning) ImGui::TextColored(ImVec4(1, 0.4f, 0, 1), "⚠️ WARNING: You are BURNING!");
+            if (state.human.is_paralyzed) ImGui::TextColored(ImVec4(0.45f, 0.9f, 1.0f, 1), "⚡ PARALYZED: end turn to recover.");
+            if (state.dark_cloud_active) ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.7f, 1), "☁ Dark clouds hide the board until the next environment turn.");
+            ImGui::TextColored(ImVec4(0.65f, 0.85f, 1.0f, 1), "Environment: %s", state.last_environment_event.c_str());
             ImGui::Text("Position: [%d, %d]", state.human.pos.x, state.human.pos.y);
             ImGui::Separator();
 
@@ -347,10 +409,12 @@ int main() {
             ImGui::Spacing(); ImGui::TextColored(ImVec4(1, 0.4f, 1, 1), "WEAPONRY SELECTOR:");
             
             auto weapon_button = [&](const char* label, InputMode mode) {
+                if (state.human.is_paralyzed) { ImGui::BeginDisabled(); }
                 if (state.input_mode == mode) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.4f, 0.0f, 1));
                 else ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_Button]);
-                if (ImGui::Button(label)) state.input_mode = mode;
+                if (ImGui::Button(label) && !state.human.is_paralyzed) state.input_mode = mode;
                 ImGui::PopStyleColor();
+                if (state.human.is_paralyzed) { ImGui::EndDisabled(); }
             };
 
             weapon_button("Knife [1]", InputMode::TargetKnife); ImGui::SameLine();
@@ -360,7 +424,7 @@ int main() {
             weapon_button(("Molotov (" + std::to_string(state.human.molotovs) + ")").c_str(), InputMode::TargetMolotov);
             
             if (ImGui::Button(("Plant Mine (" + std::to_string(state.human.mines) + ")").c_str())) {
-                if (state.human.stamina >= 1 && state.human.mines > 0 && state.phase == TurnPhase::HumanTurn) {
+                if (state.human.stamina >= 1 && state.human.mines > 0 && state.phase == TurnPhase::HumanTurn && !state.human.is_paralyzed) {
                     state.mine_grid[state.human.pos.x][state.human.pos.y] = true; 
                     state.human.mines--; state.human.stamina--;
                 }
@@ -406,6 +470,7 @@ int main() {
 
                     ImGui::TableSetColumnIndex(4);
                     if (z->hp <= 0) ImGui::Text("-");
+                    else if (z->is_paralyzed) ImGui::TextColored(ImVec4(0.45f, 0.9f, 1.0f, 1.0f), "[P]");
                     else if (z->is_burning) ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "[F]");
                     else ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Clear");
                 }

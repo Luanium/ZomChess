@@ -14,7 +14,8 @@ struct Human {
     int mines = 2;
     int molotovs = 3; 
     
-    bool is_burning = false; 
+    bool is_burning = false;
+    bool is_paralyzed = false;
 };
 
 class Zombie {
@@ -24,7 +25,8 @@ public:
     std::string name;
     ZombieType type;
     
-    bool is_burning = false; 
+    bool is_burning = false;
+    bool is_paralyzed = false;
 
     Zombie(Position p, int h, std::string n, ZombieType t) 
         : pos(p), hp(h), name(n), type(t) {}

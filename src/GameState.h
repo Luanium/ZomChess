@@ -36,6 +36,10 @@ public:
     int active_zombie_substep = 0;
     float zombie_action_timer = 0.0f;
     const float ZOMBIE_STEP_DELAY = 0.35f;
+    float environment_action_timer = 0.0f;
+    const float ENVIRONMENT_STEP_DELAY = 0.9f;
+    bool dark_cloud_active = false;
+    std::string last_environment_event = "Clear skies";
 
     VisualFX active_fx;
     std::vector<VisualFX> attack_animations; 
@@ -60,9 +64,21 @@ public:
     void zombie_single_step(size_t idx);
     void handle_weapon_click(int tx, int ty, float cellSize, float boardOffset);
     void start_zombie_phase();
+    void start_environment_phase();
+    void resolve_environment_turn();
+    void finish_environment_phase();
     void update_zombie_logic(float dt);
+    void update_environment_logic(float dt);
     void check_victory_conditions();
     void check_fire_interactions();
+    bool is_blocking_cell(int x, int y) const;
+    bool has_living_entity_at(Position p) const;
+    bool is_conductive_cell(Position p) const;
+    std::vector<Position> get_conductive_cluster(Position start) const;
+    void apply_windstorm(int dx, int dy);
+    void apply_heavy_rain();
+    void apply_dark_clouds();
+    void apply_lightning_strike();
 
     bool export_challenge_file(const std::string& path);
     bool import_challenge_file(const std::string& path);

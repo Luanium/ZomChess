@@ -9,10 +9,10 @@
 enum class Terrain { Dirt, Water, Obstacle, Wall, Fire };
 enum class InputMode { MoveMode, TargetKnife, TargetPistol, TargetShotgun, TargetGrenade, TargetMolotov };
 enum class ZombieType { Normal, Fast, Exploding, Vampire };
-enum class TurnPhase { HumanTurn, ZombieAnimating };
+enum class TurnPhase { HumanTurn, ZombieAnimating, EnvironmentAnimating };
 
 // Added Bite and Scratch FX
-enum class FXType { None, Knife, Pistol, Shotgun, Explosion, Molotov, Bite, Scratch };
+enum class FXType { None, Knife, Pistol, Shotgun, Explosion, Molotov, Bite, Scratch, Wind, Rain, DarkCloud, Lightning, Electricity };
 enum class GameScene { MainMenu, Playing, MapEditor };
 
 struct Position {
@@ -73,6 +73,8 @@ struct VisualFX {
     std::vector<Position> blast_cells;
     int cx = -1;
     int cy = -1;
+    int dx = 0;
+    int dy = 0;
 };
 
 // System for dynamic floating damage/heal numbers

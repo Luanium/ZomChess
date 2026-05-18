@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <fstream>
 #include <iostream>
+#include <queue>
 
 GameState::GameState() : rng(std::random_device{}()) {
     active_config.custom_grid.assign(active_config.map_width, std::vector<Terrain>(active_config.map_height, Terrain::Dirt));
@@ -152,6 +153,9 @@ void GameState::init_game() {
     fire_cells.clear();
     floating_texts.clear();
     attack_animations.clear();
+    active_fx = VisualFX{};
+    dark_cloud_active = false;
+    last_environment_event = "Clear skies";
     game_over = false; 
     game_won = false;
     current_turn = 1; 
@@ -170,6 +174,7 @@ void GameState::init_game() {
     human.mines = active_config.mines;
     human.molotovs = active_config.molotovs;
     human.is_burning = false;
+    human.is_paralyzed = false;
 
     mine_grid.assign(width, std::vector<bool>(height, false));
 
@@ -280,6 +285,256 @@ void GameState::check_fire_interactions() {
     }
 }
 
+
+bool GameState::is_blocking_cell(int x, int y) const {
+    if (x < 0 || x >= width || y < 0 || y >= height) return true;
+    return grid[x][y] == Terrain::Wall || grid[x][y] == Terrain::Obstacle;
+}
+
+bool GameState::has_living_entity_at(Position p) const {
+    if (human.hp > 0 && human.pos == p) return true;
+    for (const auto& z : zombies) {
+        if (z->hp > 0 && z->pos == p) return true;
+    }
+    return false;
+}
+
+bool GameState::is_conductive_cell(Position p) const {
+    if (p.x < 0 || p.x >= width || p.y < 0 || p.y >= height) return false;
+    return grid[p.x][p.y] == Terrain::Water || has_living_entity_at(p);
+}
+
+std::vector<Position> GameState::get_conductive_cluster(Position start) const {
+    std::vector<Position> cluster;
+    if (!is_conductive_cell(start)) return cluster;
+
+    std::vector<std::vector<bool>> visited(width, std::vector<bool>(height, false));
+    std::queue<Position> q;
+    q.push(start);
+    visited[start.x][start.y] = true;
+
+    const int dirs[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+    while (!q.empty()) {
+        Position cur = q.front();
+        q.pop();
+        cluster.push_back(cur);
+
+        for (const auto& d : dirs) {
+            Position next{cur.x + d[0], cur.y + d[1]};
+            if (next.x < 0 || next.x >= width || next.y < 0 || next.y >= height) continue;
+            if (visited[next.x][next.y] || !is_conductive_cell(next)) continue;
+            visited[next.x][next.y] = true;
+            q.push(next);
+        }
+    }
+    return cluster;
+}
+
+void GameState::apply_windstorm(int dx, int dy) {
+    last_environment_event = "Windstorm";
+    active_fx.type = FXType::Wind;
+    active_fx.timer = 0.9f;
+    active_fx.max_duration = 0.9f;
+    active_fx.dx = dx;
+    active_fx.dy = dy;
+    active_fx.blast_cells.clear();
+
+    struct EntityRef { bool human; size_t idx; Position pos; };
+    std::vector<EntityRef> refs;
+    if (human.hp > 0) refs.push_back({true, 0, human.pos});
+    for (size_t i = 0; i < zombies.size(); ++i) {
+        if (zombies[i]->hp > 0) refs.push_back({false, i, zombies[i]->pos});
+    }
+
+    std::sort(refs.begin(), refs.end(), [dx, dy](const EntityRef& a, const EntityRef& b) {
+        return a.pos.x * dx + a.pos.y * dy > b.pos.x * dx + b.pos.y * dy;
+    });
+
+    auto initially_occupied = [&](Position p, const EntityRef& self) {
+        for (const auto& other : refs) {
+            if (other.human == self.human && other.idx == self.idx) continue;
+            if (other.pos == p) return true;
+        }
+        return false;
+    };
+    auto currently_occupied = [&](Position p, const EntityRef& self) {
+        if (!self.human && human.hp > 0 && human.pos == p) return true;
+        for (size_t i = 0; i < zombies.size(); ++i) {
+            if (zombies[i]->hp > 0 && (self.human || self.idx != i) && zombies[i]->pos == p) return true;
+        }
+        return false;
+    };
+
+    int moved = 0;
+    for (const auto& ref : refs) {
+        Position current = ref.human ? human.pos : zombies[ref.idx]->pos;
+        Position original = ref.pos;
+        Position back{original.x - dx, original.y - dy};
+        Position front{original.x + dx, original.y + dy};
+        Position target{current.x + dx, current.y + dy};
+        if (is_blocking_cell(front.x, front.y) || initially_occupied(front, ref)) continue;
+        if (is_blocking_cell(back.x, back.y) || initially_occupied(back, ref)) continue;
+        if (is_blocking_cell(target.x, target.y) || currently_occupied(target, ref)) continue;
+
+        if (ref.human) human.pos = target;
+        else zombies[ref.idx]->pos = target;
+        active_fx.blast_cells.push_back(front);
+        moved++;
+    }
+    add_log("[ENV] Windstorm blows " + std::to_string(dx) + "," + std::to_string(dy) + " and pushes " + std::to_string(moved) + " entities.", ImVec4(0.65f, 0.85f, 1.0f, 1.0f));
+    check_fire_interactions();
+}
+
+void GameState::apply_heavy_rain() {
+    last_environment_event = "Heavy rain";
+    active_fx.type = FXType::Rain;
+    active_fx.timer = 0.9f;
+    active_fx.max_duration = 0.9f;
+    active_fx.blast_cells.clear();
+
+    std::vector<Position> soaked;
+    std::uniform_real_distribution<float> chance(0.0f, 1.0f);
+    const int dirs[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+    for (int x = 0; x < width; ++x) {
+        for (int y = 0; y < height; ++y) {
+            if (grid[x][y] != Terrain::Dirt) continue;
+            bool next_to_water = false;
+            for (const auto& d : dirs) {
+                int nx = x + d[0], ny = y + d[1];
+                if (nx >= 0 && nx < width && ny >= 0 && ny < height && grid[nx][ny] == Terrain::Water) {
+                    next_to_water = true;
+                    break;
+                }
+            }
+            float threshold = next_to_water ? 0.35f : 0.08f;
+            if (chance(rng) < threshold) soaked.push_back({x, y});
+        }
+    }
+    for (const auto& p : soaked) grid[p.x][p.y] = Terrain::Water;
+    active_fx.blast_cells = soaked;
+    add_log("[ENV] Heavy rain floods " + std::to_string(soaked.size()) + " dirt cells.", ImVec4(0.35f, 0.65f, 1.0f, 1.0f));
+}
+
+void GameState::apply_dark_clouds() {
+    last_environment_event = "Dark clouds";
+    dark_cloud_active = true;
+    active_fx.type = FXType::DarkCloud;
+    active_fx.timer = 0.9f;
+    active_fx.max_duration = 0.9f;
+    add_log("[ENV] Dark clouds cover the board until the next environment turn.", ImVec4(0.45f, 0.45f, 0.65f, 1.0f));
+}
+
+void GameState::apply_lightning_strike() {
+    last_environment_event = "Lightning";
+    std::vector<Position> cells;
+    std::vector<double> weights;
+    for (int x = 0; x < width; ++x) {
+        for (int y = 0; y < height; ++y) {
+            if (is_blocking_cell(x, y)) continue;
+            Position p{x, y};
+            bool entity = has_living_entity_at(p);
+            double w = 1.0;
+            if (grid[x][y] == Terrain::Water) w *= 4.0;
+            if (entity) w *= 2.0;
+            cells.push_back(p);
+            weights.push_back(w);
+        }
+    }
+    if (cells.empty()) return;
+
+    std::discrete_distribution<int> pick(weights.begin(), weights.end());
+    Position strike = cells[pick(rng)];
+    std::vector<Position> conductive_cluster = get_conductive_cluster(strike);
+    active_fx.type = FXType::Lightning;
+    active_fx.timer = 1.0f;
+    active_fx.max_duration = 1.0f;
+    active_fx.cx = strike.x;
+    active_fx.cy = strike.y;
+    active_fx.blast_cells = conductive_cluster;
+
+    add_log("[ENV] Lightning strikes (" + std::to_string(strike.x) + ", " + std::to_string(strike.y) + ")!", ImVec4(1.0f, 1.0f, 0.35f, 1.0f));
+
+    if (human.hp > 0 && human.pos == strike) {
+        human.hp = std::max(0, human.hp - 1);
+        floating_texts.push_back({human.pos, -1, 1.0f, 1.0f});
+        add_log("-> Human is struck by lightning! -1 HP.", ImVec4(1.0f, 0.25f, 0.25f, 1.0f));
+    }
+    for (auto& z : zombies) {
+        if (z->hp > 0 && z->pos == strike) {
+            z->hp -= 1;
+            floating_texts.push_back({z->pos, -1, 1.0f, 1.0f});
+            add_log("-> " + z->name + " is struck by lightning! -1 HP.", ImVec4(1.0f, 0.75f, 0.2f, 1.0f));
+            if (z->hp <= 0 && z->type == ZombieType::Exploding) trigger_explosion(z->pos.x, z->pos.y);
+        }
+    }
+
+    for (const auto& p : conductive_cluster) {
+        if (human.hp > 0 && human.pos == p) human.is_paralyzed = true;
+        for (auto& z : zombies) {
+            if (z->hp > 0 && z->pos == p) z->is_paralyzed = true;
+        }
+    }
+    if (!conductive_cluster.empty()) {
+        add_log("-> Electricity spreads through " + std::to_string(conductive_cluster.size()) + " conductive cells; occupants are paralyzed next action.", ImVec4(0.45f, 0.9f, 1.0f, 1.0f));
+    }
+    check_victory_conditions();
+}
+
+void GameState::resolve_environment_turn() {
+    if (dark_cloud_active) dark_cloud_active = false;
+
+    std::discrete_distribution<int> event_dist({58, 16, 14, 4, 8});
+    int event = event_dist(rng);
+    if (event == 0) {
+        last_environment_event = "Clear skies";
+        add_log("[ENV] Clear skies. Nothing happens.", ImVec4(0.6f, 0.75f, 0.85f, 1.0f));
+        active_fx = VisualFX{};
+    } else if (event == 1) {
+        const std::vector<std::pair<int, int>> dirs{{-1,-1},{0,-1},{1,-1},{-1,0},{1,0},{-1,1},{0,1},{1,1}};
+        std::uniform_int_distribution<int> dir_dist(0, static_cast<int>(dirs.size()) - 1);
+        auto [dx, dy] = dirs[dir_dist(rng)];
+        apply_windstorm(dx, dy);
+    } else if (event == 2) {
+        apply_heavy_rain();
+    } else if (event == 3) {
+        apply_dark_clouds();
+    } else {
+        apply_lightning_strike();
+    }
+}
+
+void GameState::start_environment_phase() {
+    if (game_over || game_won) return;
+    phase = TurnPhase::EnvironmentAnimating;
+    environment_action_timer = 0.0f;
+    resolve_environment_turn();
+}
+
+void GameState::finish_environment_phase() {
+    if (!game_over) {
+        current_turn++;
+        std::uniform_int_distribution<int> dist_stam(2, 6);
+        human.stamina = human.is_paralyzed ? 0 : dist_stam(rng);
+        if (human.is_paralyzed) {
+            add_log("[SHOCK] Human is paralyzed this turn and cannot act.", ImVec4(0.45f, 0.9f, 1.0f, 1.0f));
+        }
+        if (grid[human.pos.x][human.pos.y] == Terrain::Fire && !human.is_burning) {
+            human.is_burning = true;
+            add_log("[FIRE] Human started turn standing in fire!", ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
+        }
+    }
+    phase = TurnPhase::HumanTurn;
+    check_victory_conditions();
+}
+
+void GameState::update_environment_logic(float dt) {
+    if (phase != TurnPhase::EnvironmentAnimating) return;
+    environment_action_timer += dt;
+    if (active_fx.type == FXType::None || environment_action_timer >= ENVIRONMENT_STEP_DELAY) {
+        finish_environment_phase();
+    }
+}
+
 void GameState::trigger_explosion(int cx, int cy) { 
     add_log("[EXPLOSION] Detonated at (" + std::to_string(cx) + ", " + std::to_string(cy) + ")!", ImVec4(1.0f, 0.4f, 0.0f, 1.0f)); 
     
@@ -324,6 +579,7 @@ void GameState::trigger_explosion(int cx, int cy) {
 void GameState::zombie_single_step(size_t idx) { 
     if (game_over || game_won) return; 
     auto& zom = zombies[idx]; 
+    if (zom->is_paralyzed) return;
     double lambda = 1.2; 
     int current_dist = distance(zom->pos, human.pos); 
     std::vector<Position> valid_moves; 
@@ -549,6 +805,11 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
 void GameState::start_zombie_phase() { 
     if (game_over || game_won) return; 
     
+    if (human.is_paralyzed) {
+        human.is_paralyzed = false;
+        human.stamina = 0;
+    }
+
     if (human.is_burning) {
         human.hp = std::max(0, human.hp - 1);
         floating_texts.push_back({human.pos, -1, 1.0f, 1.0f});
@@ -596,24 +857,21 @@ void GameState::update_zombie_logic(float dt) {
             }
         }
         
-        if (!game_over) { 
-            current_turn++; 
-            std::uniform_int_distribution<int> dist_stam(2, 6); 
-            human.stamina = dist_stam(rng); 
-            
-            if (grid[human.pos.x][human.pos.y] == Terrain::Fire && !human.is_burning) {
-                human.is_burning = true;
-                add_log("[FIRE] Human started turn standing in fire!", ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
-            }
-        } 
-        phase = TurnPhase::HumanTurn; 
-        check_victory_conditions(); 
+        check_victory_conditions();
+        if (!game_over && !game_won) start_environment_phase();
         return; 
     } 
     auto& zom = zombies[active_zombie_idx]; 
     if (zom->hp <= 0 || game_over) { 
         active_zombie_idx++; active_zombie_substep = 0; return; 
     } 
+    if (zom->is_paralyzed) {
+        add_log("[SHOCK] " + zom->name + " is paralyzed and loses this action.", ImVec4(0.45f, 0.9f, 1.0f, 1.0f));
+        zom->is_paralyzed = false;
+        active_zombie_idx++;
+        active_zombie_substep = 0;
+        return;
+    }
     zombie_action_timer += dt; 
     if (zombie_action_timer >= std::max(0.05f, ZOMBIE_STEP_DELAY)) { 
         zombie_action_timer = 0.0f; 
