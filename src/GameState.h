@@ -27,7 +27,7 @@ public:
     int turn_limit = 50;
     int current_turn = 1;
     InputMode input_mode = InputMode::MoveMode;
-    GrenadeTimer grenade_box;
+    std::vector<GrenadeTimer> active_grenades;
     std::vector<LogLine> logs;
     bool game_over = false;
     bool game_won = false;
@@ -74,6 +74,7 @@ public:
     void update_environment_logic(float dt);
     void check_victory_conditions();
     void check_fire_interactions();
+    void check_mine_interactions();
     bool is_blocking_cell(int x, int y) const;
     bool has_living_entity_at(Position p) const;
     bool is_conductive_cell(Position p) const;

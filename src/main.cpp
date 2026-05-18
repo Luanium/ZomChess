@@ -74,6 +74,7 @@ int main() {
                                             state.human.pos = {tx, ty};
                                             state.human.stamina -= cost;
                                             state.check_fire_interactions();
+                                            state.check_mine_interactions();
                                         }
                                     }
                                 }
@@ -312,12 +313,14 @@ int main() {
                 }
             }
 
-            if (state.grenade_box.active) {
-                sf::CircleShape gren(8.0f, 4); gren.setFillColor(sf::Color(50, 210, 50)); gren.setOrigin(8.0f, 8.0f);
-                int glx = state.grenade_box.pos.x - viewX + padX;
-                int gly = state.grenade_box.pos.y - viewY + padY;
-                if (glx >= 0 && glx < VIEW_CELLS && gly >= 0 && gly < VIEW_CELLS) {
-                    gren.setPosition(glx * cellSize + boardOffset + cellSize/2, gly * cellSize + boardOffset + cellSize/2); window.draw(gren);
+            for (const auto& g : state.active_grenades) {
+                if (g.active) {
+                    sf::CircleShape gren(8.0f, 4); gren.setFillColor(sf::Color(50, 210, 50)); gren.setOrigin(8.0f, 8.0f);
+                    int glx = g.pos.x - viewX + padX;
+                    int gly = g.pos.y - viewY + padY;
+                    if (glx >= 0 && glx < VIEW_CELLS && gly >= 0 && gly < VIEW_CELLS) {
+                        gren.setPosition(glx * cellSize + boardOffset + cellSize/2, gly * cellSize + boardOffset + cellSize/2); window.draw(gren);
+                    }
                 }
             }
 
@@ -458,7 +461,7 @@ int main() {
 
             if (state.dark_cloud_active && state.active_fx.type != FXType::DarkCloud) {
                 sf::RectangleShape shroud(sf::Vector2f(VIEW_CELLS * cellSize, VIEW_CELLS * cellSize));
-                shroud.setFillColor(sf::Color(0, 0, 0, 220));
+                shroud.setFillColor(sf::Color(0, 0, 0, 254));
                 shroud.setPosition(boardOffset, boardOffset);
                 window.draw(shroud);
                 sf::RectangleShape humanSpot(sf::Vector2f(cellSize - 6.0f, cellSize - 6.0f));
@@ -469,20 +472,16 @@ int main() {
 
             if (state.turn_banner_fx.type != FXType::None) {
                 float p = state.turn_banner_fx.timer / state.turn_banner_fx.max_duration;
-                sf::Uint8 a = static_cast<sf::Uint8>(190 * p);
-                sf::RectangleShape glow(sf::Vector2f(VIEW_CELLS * cellSize, VIEW_CELLS * cellSize));
-                glow.setFillColor(sf::Color(255, 235, 70, a / 3));
-                glow.setPosition(boardOffset, boardOffset);
-                window.draw(glow);
+                sf::Uint8 a = static_cast<sf::Uint8>(255 * p);
                 if (hasFont) {
                     sf::Text msg;
                     msg.setFont(boardFont);
-                    msg.setCharacterSize(30);
+                    msg.setCharacterSize(70);
                     msg.setString("YOUR TURN");
                     msg.setFillColor(sf::Color(255, 245, 120, a));
                     sf::FloatRect r = msg.getLocalBounds();
                     msg.setOrigin(r.left + r.width/2.0f, r.top + r.height/2.0f);
-                    msg.setPosition(boardOffset + VIEW_CELLS * cellSize * 0.5f, boardOffset + 18.0f);
+                    msg.setPosition(boardOffset + VIEW_CELLS * cellSize * 0.5f, boardOffset + VIEW_CELLS * cellSize * 0.5f);
                     window.draw(msg);
                 }
             }
@@ -491,14 +490,39 @@ int main() {
             if (state.active_fx.type != FXType::None) {
                 float progress = state.active_fx.timer / state.active_fx.max_duration;
                 sf::Uint8 alpha = static_cast<sf::Uint8>(progress * 255);
-                if (state.active_fx.type == FXType::Pistol || state.active_fx.type == FXType::Molotov) {
-                    sf::Color beamColor = (state.active_fx.type == FXType::Molotov) ? sf::Color(255, 120, 0, alpha) : sf::Color(255, 255, 100, alpha);
-                    sf::Vertex bLine[] = { sf::Vertex(state.active_fx.start_p, beamColor), sf::Vertex(state.active_fx.end_p, sf::Color(255, 60, 60, alpha)) };
+                if (state.active_fx.type == FXType::Pistol) {
+                    sf::Vertex bLine[] = { sf::Vertex(state.active_fx.start_p, sf::Color(255, 255, 100, alpha)), sf::Vertex(state.active_fx.end_p, sf::Color(255, 60, 60, alpha)) };
                     window.draw(bLine, 2, sf::Lines);
+                } else if (state.active_fx.type == FXType::Molotov) {
+                    float t = 1.0f - progress;
+                    sf::Vector2f current_pos = state.active_fx.start_p + (state.active_fx.end_p - state.active_fx.start_p) * t;
+                    sf::CircleShape proj(6.0f, 6); 
+                    proj.setFillColor(sf::Color(255, 120, 0, 230)); 
+                    proj.setOutlineColor(sf::Color(200, 30, 0, 230));
+                    proj.setOutlineThickness(1.5f);
+                    proj.setOrigin(6.0f, 6.0f);
+                    proj.setPosition(current_pos);
+                    window.draw(proj);
+                } else if (state.active_fx.type == FXType::GrenadeFly) {
+                    float t = 1.0f - progress;
+                    sf::Vector2f current_pos = state.active_fx.start_p + (state.active_fx.end_p - state.active_fx.start_p) * t;
+                    sf::CircleShape proj(6.0f, 8); 
+                    proj.setFillColor(sf::Color(100, 255, 100, 220)); 
+                    proj.setOutlineColor(sf::Color(30, 150, 30, 220));
+                    proj.setOutlineThickness(1.5f);
+                    proj.setOrigin(6.0f, 6.0f);
+                    proj.setPosition(current_pos);
+                    window.draw(proj);
                 } else if (state.active_fx.type == FXType::Shotgun || state.active_fx.type == FXType::Explosion) {
+                    float intensity = std::sqrt(progress);
+                    if (state.active_fx.type == FXType::Explosion) {
+                        // High-frequency blinking/flashing effect for explosions
+                        float flash = 0.2f + 0.8f * std::abs(std::sin(state.active_fx.timer * 35.0f));
+                        intensity = progress * flash;
+                    }
                     for (auto p : state.active_fx.blast_cells) {
                         sf::RectangleShape blastZone(sf::Vector2f(cellSize - 2.0f, cellSize - 2.0f));
-                        blastZone.setFillColor(state.active_fx.type == FXType::Shotgun ? sf::Color(255,130,30, progress*120) : sf::Color(255,50,10, progress*160));
+                        blastZone.setFillColor(state.active_fx.type == FXType::Shotgun ? sf::Color(255,130,30, intensity*180) : sf::Color(255,50,10, intensity*240));
                         blastZone.setPosition(p.x * cellSize + boardOffset, p.y * cellSize + boardOffset); window.draw(blastZone);
                     }
                 } else if (state.active_fx.type == FXType::Wind) {
@@ -529,7 +553,7 @@ int main() {
                         }
                     } else {
                         sf::RectangleShape cloud(sf::Vector2f(state.width * cellSize, state.height * cellSize));
-                        cloud.setFillColor(sf::Color(0, 0, 0, static_cast<sf::Uint8>((1.0f - progress) * 210)));
+                        cloud.setFillColor(sf::Color(0, 0, 0, static_cast<sf::Uint8>((1.0f - progress) * 254)));
                         cloud.setPosition(boardOffset, boardOffset);
                         window.draw(cloud);
                     }

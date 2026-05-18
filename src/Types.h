@@ -12,7 +12,7 @@ enum class ZombieType { Normal, Fast, Exploding, Vampire, Sick };
 enum class TurnPhase { HumanTurn, ZombieAnimating, EnvironmentAnimating };
 
 // Added Bite and Scratch FX
-enum class FXType { None, Knife, Pistol, Shotgun, Explosion, Molotov, Bite, Scratch, Wind, Rain, DarkCloud, Lightning, Electricity };
+enum class FXType { None, Knife, Pistol, Shotgun, Explosion, Molotov, Bite, Scratch, Wind, Rain, DarkCloud, Lightning, Electricity, GrenadeFly };
 enum class GameScene { MainMenu, Playing, MapEditor };
 
 struct Position {
