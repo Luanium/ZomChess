@@ -288,15 +288,15 @@ int main() {
             int temp_dirt = state.active_config.ratio_dirt;
             int temp_wall = state.active_config.ratio_wall;
             int temp_water = state.active_config.ratio_water;
-            int temp_grass = state.active_config.ratio_grass;
+            int temp_forest = state.active_config.ratio_forest;
 
-            int total_r = temp_dirt + temp_wall + temp_water + temp_grass;
+            int total_r = temp_dirt + temp_wall + temp_water + temp_forest;
             if (total_r != 100) {
                 state.active_config.ratio_dirt = 60;
                 state.active_config.ratio_wall = 10;
                 state.active_config.ratio_water = 10;
-                state.active_config.ratio_grass = 20;
-                temp_dirt = 60; temp_wall = 10; temp_water = 10; temp_grass = 20;
+                state.active_config.ratio_forest = 20;
+                temp_dirt = 60; temp_wall = 10; temp_water = 10; temp_forest = 20;
             }
 
             int p1 = temp_dirt;
@@ -347,12 +347,12 @@ int main() {
             state.active_config.ratio_dirt = p1;
             state.active_config.ratio_wall = p2 - p1;
             state.active_config.ratio_water = p3 - p2;
-            state.active_config.ratio_grass = 100 - p3;
+            state.active_config.ratio_forest = 100 - p3;
 
             temp_dirt = state.active_config.ratio_dirt;
             temp_wall = state.active_config.ratio_wall;
             temp_water = state.active_config.ratio_water;
-            temp_grass = state.active_config.ratio_grass;
+            temp_forest = state.active_config.ratio_forest;
 
             float x0 = cursor_pos.x;
             float x1 = x0 + p1 * (bar_width / 100.f);
@@ -366,12 +366,12 @@ int main() {
             ImU32 col_dirt = ImGui::ColorConvertFloat4ToU32(ImVec4(105/255.f, 60/255.f, 35/255.f, 1.f));
             ImU32 col_wall = ImGui::ColorConvertFloat4ToU32(ImVec4(60/255.f, 62/255.f, 66/255.f, 1.f));
             ImU32 col_water = ImGui::ColorConvertFloat4ToU32(ImVec4(35/255.f, 75/255.f, 115/255.f, 1.f));
-            ImU32 col_grass = ImGui::ColorConvertFloat4ToU32(ImVec4(55/255.f, 125/255.f, 35/255.f, 1.f));
+            ImU32 col_forest = ImGui::ColorConvertFloat4ToU32(ImVec4(34/255.f, 110/255.f, 48/255.f, 1.f));
 
             draw_list->AddRectFilled(ImVec2(x0, y_top), ImVec2(x1, y_bot), col_dirt);
             draw_list->AddRectFilled(ImVec2(x1, y_top), ImVec2(x2, y_bot), col_wall);
             draw_list->AddRectFilled(ImVec2(x2, y_top), ImVec2(x3, y_bot), col_water);
-            draw_list->AddRectFilled(ImVec2(x3, y_top), ImVec2(x4, y_bot), col_grass);
+            draw_list->AddRectFilled(ImVec2(x3, y_top), ImVec2(x4, y_bot), col_forest);
 
             auto draw_knob = [&](float x_center, int knob_idx) {
                 bool knob_hovered = hovered && std::abs(mouse_pos.x - x_center) < 10.0f;
@@ -406,7 +406,7 @@ int main() {
             draw_legend_item(tr("Dirt", "Dat"), ImVec4(105/255.f, 60/255.f, 35/255.f, 1.f), temp_dirt); ImGui::SameLine(); ImGui::Dummy(ImVec2(10.0f, 1.0f)); ImGui::SameLine();
             draw_legend_item(tr("Wall", "Tuong"), ImVec4(60/255.f, 62/255.f, 66/255.f, 1.f), temp_wall); ImGui::SameLine(); ImGui::Dummy(ImVec2(10.0f, 1.0f)); ImGui::SameLine();
             draw_legend_item(tr("Water", "Nuoc"), ImVec4(35/255.f, 75/255.f, 115/255.f, 1.f), temp_water); ImGui::SameLine(); ImGui::Dummy(ImVec2(10.0f, 1.0f)); ImGui::SameLine();
-            draw_legend_item(tr("Grass", "Co"), ImVec4(55/255.f, 125/255.f, 35/255.f, 1.f), temp_grass);
+            draw_legend_item(tr("Forest", "Rung"), ImVec4(34/255.f, 110/255.f, 48/255.f, 1.f), temp_forest);
 
             if (state.active_config.custom_map_mode) {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.5f, 0.3f, 0.1f, 1));
@@ -620,7 +620,7 @@ int main() {
                     Terrain t = state.active_config.custom_grid[x][y];
                     if (t == Terrain::Wall) cell.setFillColor(sf::Color(60, 62, 66));
                     else if (t == Terrain::Water) cell.setFillColor(sf::Color(35, 75, 115));
-                    else if (t == Terrain::Grass) cell.setFillColor(sf::Color(55, 125, 35));
+                    else if (t == Terrain::Forest) cell.setFillColor(sf::Color(34, 110, 48));
                     else cell.setFillColor(sf::Color(105, 60, 35));
                     window.draw(cell);
 
@@ -639,7 +639,7 @@ int main() {
             if (ImGui::RadioButton("Plain Dirt Floor", state.editor_selected_terrain == Terrain::Dirt)) state.editor_selected_terrain = Terrain::Dirt;
             if (ImGui::RadioButton("Reinforced Wall", state.editor_selected_terrain == Terrain::Wall)) state.editor_selected_terrain = Terrain::Wall;
             if (ImGui::RadioButton("Deep Water Hazard", state.editor_selected_terrain == Terrain::Water)) state.editor_selected_terrain = Terrain::Water;
-            if (ImGui::RadioButton("Tall Lush Grass", state.editor_selected_terrain == Terrain::Grass)) state.editor_selected_terrain = Terrain::Grass;
+            if (ImGui::RadioButton(state.tr("Dense Forest", "Rung Ram Cung").c_str(), state.editor_selected_terrain == Terrain::Forest)) state.editor_selected_terrain = Terrain::Forest;
 
             ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
             if (ImGui::Button("SAVE DESIGN & RETURN TO ENGINE", ImVec2(360, 50))) state.current_scene = GameScene::MainMenu;
@@ -689,8 +689,8 @@ int main() {
                         int pulse = static_cast<int>(25.0f * std::sin(timeSec * 12.0f));
                         cell.setFillColor(sf::Color(220 + pulse, 100 + pulse / 2, 20));
                     }
-                    else if (state.grid[x][y] == Terrain::Grass) {
-                        cell.setFillColor(sf::Color(55, 125, 35));
+                    else if (state.grid[x][y] == Terrain::Forest) {
+                        cell.setFillColor(sf::Color(34, 110, 48));
                     }
                     else {
                         bool was_extinguished = false;

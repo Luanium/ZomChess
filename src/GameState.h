@@ -80,7 +80,7 @@ public:
     void check_victory_conditions();
     void check_fire_interactions();
     void check_mine_interactions();
-    void propagate_grass_fire(int cx, int cy);
+    void propagate_gradual_forest_fire();
     void set_cell_on_fire(int x, int y);
     bool is_blocking_cell(int x, int y) const;
     bool has_living_entity_at(Position p) const;

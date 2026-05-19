@@ -107,7 +107,7 @@ bool GameState::export_challenge_file(const std::string& path) {
     outFile << "ENABLE_ENV "      << (active_config.enable_environment ? 1 : 0) << "\n";
     outFile << "RATIO_WALL "      << active_config.ratio_wall << "\n";
     outFile << "RATIO_WATER "     << active_config.ratio_water << "\n";
-    outFile << "RATIO_GRASS "     << active_config.ratio_grass << "\n";
+    outFile << "RATIO_FOREST "    << active_config.ratio_forest << "\n";
     outFile << "RATIO_DIRT "      << active_config.ratio_dirt << "\n";
     outFile << "CUST_HUMAN_X "    << active_config.custom_human_pos.x << "\n";
     outFile << "CUST_HUMAN_Y "    << active_config.custom_human_pos.y << "\n";
@@ -168,7 +168,7 @@ bool GameState::import_challenge_file(const std::string& path) {
         else if (key == "CUST_HUMAN_Y") active_config.custom_human_pos.y = val;
         else if (key == "RATIO_WALL")   active_config.ratio_wall = val;
         else if (key == "RATIO_WATER")  active_config.ratio_water = val;
-        else if (key == "RATIO_GRASS")  active_config.ratio_grass = val;
+        else if (key == "RATIO_FOREST") active_config.ratio_forest = val;
         else if (key == "RATIO_DIRT")   active_config.ratio_dirt = val;
         else if (key == "ENV_PROB_CLEAR")  active_config.env_prob_clear = val;
         else if (key == "ENV_PROB_WIND")   active_config.env_prob_wind = val;
@@ -227,11 +227,11 @@ void GameState::init_game() {
     else {
         grid.assign(width, std::vector<Terrain>(height, Terrain::Dirt));
         
-        float total_ratio = active_config.ratio_wall + active_config.ratio_water + active_config.ratio_grass + active_config.ratio_dirt;
+        float total_ratio = active_config.ratio_wall + active_config.ratio_water + active_config.ratio_forest + active_config.ratio_dirt;
         if (total_ratio <= 0.0f) {
             active_config.ratio_wall = 10;
             active_config.ratio_water = 10;
-            active_config.ratio_grass = 20;
+            active_config.ratio_forest = 20;
             active_config.ratio_dirt = 60;
             total_ratio = 100.0f;
         }
@@ -239,7 +239,7 @@ void GameState::init_game() {
         int total_cells = width * height;
         int target_wall = std::round(total_cells * (active_config.ratio_wall / total_ratio));
         int target_water = std::round(total_cells * (active_config.ratio_water / total_ratio));
-        int target_grass = std::round(total_cells * (active_config.ratio_grass / total_ratio));
+        int target_forest = std::round(total_cells * (active_config.ratio_forest / total_ratio));
 
         auto grow_terrain = [&](Terrain t, int target_count, float cluster_prob) {
             int current_count = 0;
@@ -295,7 +295,7 @@ void GameState::init_game() {
         };
 
         grow_terrain(Terrain::Water, target_water, 0.55f);
-        grow_terrain(Terrain::Grass, target_grass, 0.55f);
+        grow_terrain(Terrain::Forest, target_forest, 0.55f);
         grow_terrain(Terrain::Wall, target_wall, 0.25f);
 
         std::uniform_int_distribution<int> dist_x(0, width - 1);
@@ -741,8 +741,8 @@ void GameState::apply_lightning_strike() {
 
     add_log("[ENV] Lightning strikes (" + std::to_string(strike.x) + ", " + std::to_string(strike.y) + ")!", ImVec4(1.0f, 1.0f, 0.35f, 1.0f));
 
-    if (grid[strike.x][strike.y] == Terrain::Grass) {
-        add_log("[ENV] Lightning set the grass at (" + std::to_string(strike.x + 1) + ", " + std::to_string(strike.y + 1) + ") on fire!", ImVec4(1.0f, 0.45f, 0.0f, 1.0f));
+    if (grid[strike.x][strike.y] == Terrain::Forest) {
+        add_log("[ENV] Lightning set the forest at (" + std::to_string(strike.x + 1) + ", " + std::to_string(strike.y + 1) + ") on fire!", ImVec4(1.0f, 0.45f, 0.0f, 1.0f));
         set_cell_on_fire(strike.x, strike.y);
     }
 
@@ -832,6 +832,7 @@ void GameState::finish_environment_phase() {
     turn_banner_fx.timer = 1.5f;
     turn_banner_fx.max_duration = 1.5f;
     turn_banner_fx.banner_text = "";
+    propagate_gradual_forest_fire();
     check_victory_conditions();
 }
 
@@ -1504,7 +1505,7 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
         
         if (grid[hit_pos.x][hit_pos.y] == Terrain::Water) {
             add_log("-> Molotov landed in water. Fizzled out!", ImVec4(0.4f, 0.6f, 1.0f, 1.0f));
-        } else if (grid[hit_pos.x][hit_pos.y] == Terrain::Dirt || grid[hit_pos.x][hit_pos.y] == Terrain::Grass) {
+        } else if (grid[hit_pos.x][hit_pos.y] == Terrain::Dirt || grid[hit_pos.x][hit_pos.y] == Terrain::Forest) {
             set_cell_on_fire(hit_pos.x, hit_pos.y);
             add_log("[RADIO] Fire spreads at (" + std::to_string(hit_pos.x + 1) + ", " + std::to_string(hit_pos.y + 1) + "). Keep distance!", ImVec4(1.0f, 0.45f, 0.1f, 1.0f));
         }
@@ -1544,7 +1545,8 @@ void GameState::start_zombie_phase() {
     phase = TurnPhase::ZombieAnimating; 
     active_zombie_idx = 0; 
     active_zombie_substep = 0; 
-    zombie_action_timer = 0.0f; 
+    zombie_action_timer = 0.0f;
+    propagate_gradual_forest_fire(); 
 }
 
 void GameState::update_zombie_logic(float dt) { 
@@ -1599,6 +1601,7 @@ void GameState::update_zombie_logic(float dt) {
         zom->is_paralyzed = false;
         active_zombie_idx++;
         active_zombie_substep = 0;
+        propagate_gradual_forest_fire();
         return;
     }
     zombie_action_timer += dt; 
@@ -1664,6 +1667,7 @@ void GameState::update_zombie_logic(float dt) {
         }
         if (active_zombie_substep >= max_moves) { 
             active_zombie_idx++; active_zombie_substep = 0; 
+            propagate_gradual_forest_fire();
         } 
     } 
 }
@@ -1678,73 +1682,69 @@ void GameState::check_victory_conditions() {
     } 
 }
 
-void GameState::propagate_grass_fire(int cx, int cy) {
-    if (cx < 0 || cx >= width || cy < 0 || cy >= height) return;
-    if (grid[cx][cy] != Terrain::Grass) return;
-
-    std::vector<Position> cluster;
-    std::queue<Position> q;
-    std::vector<std::vector<bool>> visited(width, std::vector<bool>(height, false));
-
-    q.push({cx, cy});
-    visited[cx][cy] = true;
-
+void GameState::propagate_gradual_forest_fire() {
+    std::vector<Position> to_catch_fire;
     const int dirs[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
-
-    while (!q.empty()) {
-        Position curr = q.front();
-        q.pop();
-        cluster.push_back(curr);
-
-        for (const auto& d : dirs) {
-            int nx = curr.x + d[0];
-            int ny = curr.y + d[1];
-            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-                if (!visited[nx][ny] && grid[nx][ny] == Terrain::Grass) {
-                    visited[nx][ny] = true;
-                    q.push({nx, ny});
+    
+    for (int x = 0; x < width; ++x) {
+        for (int y = 0; y < height; ++y) {
+            if (grid[x][y] == Terrain::Forest) {
+                bool near_fire = false;
+                for (const auto& d : dirs) {
+                    int nx = x + d[0];
+                    int ny = y + d[1];
+                    if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                        if (grid[nx][ny] == Terrain::Fire) {
+                            near_fire = true;
+                            break;
+                        }
+                    }
+                }
+                if (near_fire) {
+                    to_catch_fire.push_back({x, y});
                 }
             }
         }
     }
-
-    add_log("[FIRE] Grass wildfire started! Propagating to " + std::to_string(cluster.size()) + " connected grass cells.", ImVec4(1.0f, 0.45f, 0.1f, 1.0f));
-
-    for (const auto& p : cluster) {
-        grid[p.x][p.y] = Terrain::Fire;
-        bool exists = false;
-        for (const auto& fc : fire_cells) {
-            if (fc.pos == p) {
-                exists = true;
-                break;
+    
+    if (!to_catch_fire.empty()) {
+        add_log(tr("[FIRE] Forest wildfire spreads gradually to " + std::to_string(to_catch_fire.size()) + " forest cells!",
+                   "[FIRE] Lua rung lan tu tu sang " + std::to_string(to_catch_fire.size()) + " o rung tiep theo!"), ImVec4(1.0f, 0.45f, 0.1f, 1.0f));
+        for (const auto& p : to_catch_fire) {
+            grid[p.x][p.y] = Terrain::Fire;
+            bool exists = false;
+            for (const auto& fc : fire_cells) {
+                if (fc.pos == p) {
+                    exists = true;
+                    break;
+                }
             }
-        }
-        if (!exists) {
-            fire_cells.push_back({p, 2});
-        }
-
-        if (human.hp > 0 && human.pos == p) {
-            if (!human.is_burning) {
-                human.is_burning = true;
-                add_log("[FIRE] Human is caught in the grass wildfire! Started burning.", ImVec4(1.0f, 0.3f, 0.0f, 1.0f));
+            if (!exists) {
+                fire_cells.push_back({p, 2});
             }
-        }
-        for (auto& z : zombies) {
-            if (z->hp > 0 && z->pos == p) {
-                if (!z->is_burning) {
-                    z->is_burning = true;
-                    add_log("[FIRE] " + z->name + " is caught in the grass wildfire! Started burning.", ImVec4(1.0f, 0.3f, 0.0f, 1.0f));
+            
+            if (human.hp > 0 && human.pos == p) {
+                if (!human.is_burning) {
+                    human.is_burning = true;
+                    add_log(tr("[FIRE] Human is caught in the forest wildfire! Started burning.", "[FIRE] Human bi mac ket trong dam chay rung! Bat dau thieu dot."), ImVec4(1.0f, 0.3f, 0.0f, 1.0f));
+                }
+            }
+            for (auto& z : zombies) {
+                if (z->hp > 0 && z->pos == p) {
+                    if (!z->is_burning) {
+                        z->is_burning = true;
+                        add_log(tr("[FIRE] " + z->name + " is caught in the forest wildfire! Started burning.", "[FIRE] " + z->name + " bi mac ket trong dam chay rung! Bat dau thieu dot."), ImVec4(1.0f, 0.3f, 0.0f, 1.0f));
+                    }
                 }
             }
         }
+        check_fire_interactions();
     }
 }
 
 void GameState::set_cell_on_fire(int x, int y) {
     if (x < 0 || x >= width || y < 0 || y >= height) return;
-    if (grid[x][y] == Terrain::Grass) {
-        propagate_grass_fire(x, y);
-    } else if (grid[x][y] == Terrain::Dirt) {
+    if (grid[x][y] == Terrain::Forest || grid[x][y] == Terrain::Dirt) {
         grid[x][y] = Terrain::Fire;
         bool exists = false;
         for (const auto& fc : fire_cells) {

@@ -6,7 +6,7 @@
 #include <imgui.h>
 #include <SFML/System/Vector2.hpp>
 
-enum class Terrain { Dirt, Water, Wall, Fire, Grass };
+enum class Terrain { Dirt, Water, Wall, Fire, Forest };
 enum class InputMode { MoveMode, TargetKnife, TargetPistol, TargetShotgun, TargetGrenade, TargetMolotov };
 enum class ZombieType { Normal, Fast, Exploding, Vampire, Sick };
 enum class TurnPhase { HumanTurn, ZombieAnimating, EnvironmentAnimating };
@@ -29,7 +29,7 @@ struct GameConfig {
 
     int ratio_wall = 10;
     int ratio_water = 10;
-    int ratio_grass = 20;
+    int ratio_forest = 20;
     int ratio_dirt = 60;
 
     int human_hp = 5;
