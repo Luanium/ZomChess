@@ -12,6 +12,7 @@ public:
     GameScene current_scene = GameScene::MainMenu;
     GameConfig active_config;                     
     bool use_vietnamese = false;
+    bool human_sick_stamina_penalty = false;
     
     std::string tr(const std::string& en, const std::string& vi) const {
         return use_vietnamese ? vi : en;

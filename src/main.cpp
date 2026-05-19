@@ -10,7 +10,7 @@ int main() {
     enum class Lang { EN, VI };
     static Lang ui_lang = Lang::EN;
     auto tr = [&](const char* en, const char* vi) { return (ui_lang == Lang::VI) ? vi : en; };
-    sf::RenderWindow window(sf::VideoMode(1400, 750), "ZomChess Tactical Engine v2.1", sf::Style::Titlebar | sf::Style::Close);
+    sf::RenderWindow window(sf::VideoMode(1400, 658), "ZomChess Tactical Engine v2.1", sf::Style::Titlebar | sf::Style::Close);
     window.setFramerateLimit(60);
     if (!ImGui::SFML::Init(window)) return -1;
 
@@ -147,7 +147,10 @@ int main() {
             }
             if (state.turn_banner_fx.type != FXType::None) {
                 state.turn_banner_fx.timer -= dtSeconds;
-                if (state.turn_banner_fx.timer <= 0.0f) state.turn_banner_fx.type = FXType::None;
+                if (state.turn_banner_fx.timer <= 0.0f) {
+                    state.turn_banner_fx.type = FXType::None;
+                    state.turn_banner_fx.banner_text = "";
+                }
             }
             if (state.active_fx.type != FXType::None) {
                 state.active_fx.timer -= dtSeconds;
@@ -171,8 +174,8 @@ int main() {
         state.use_vietnamese = (ui_lang == Lang::VI);
 
         if (state.current_scene == GameScene::MainMenu) {
-            ImGui::SetNextWindowPos(ImVec2(80, 40));
-            ImGui::SetNextWindowSize(ImVec2(1240, 670));
+            ImGui::SetNextWindowPos(ImVec2(0, 0));
+            ImGui::SetNextWindowSize(ImVec2(1400, 658));
             ImGui::Begin("ZomChess Tactical System Hub", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
 
             ImGui::TextColored(ImVec4(0.2f, 0.95f, 0.9f, 1), "%s", tr("QUICK PLAY", "CHOI NHANH"));
@@ -183,26 +186,100 @@ int main() {
             ImGui::SameLine();
             if (ImGui::RadioButton("VI", ui_lang == Lang::VI)) ui_lang = Lang::VI;
             ImGui::SameLine();
-            if (ImGui::Button(tr("EASY", "DE"), ImVec2(150, 30))) { state.apply_quick_difficulty(0); state.init_game(); state.current_scene = GameScene::Playing; view_initialized = false; }
+            if (ImGui::Button(tr("EASY", "DE"), ImVec2(120, 30))) { state.apply_quick_difficulty(0); state.init_game(); state.current_scene = GameScene::Playing; view_initialized = false; }
             ImGui::SameLine();
-            if (ImGui::Button(tr("MEDIUM", "TRUNG BINH"), ImVec2(150, 30))) { state.apply_quick_difficulty(1); state.init_game(); state.current_scene = GameScene::Playing; view_initialized = false; }
+            if (ImGui::Button(tr("MEDIUM", "TRUNG BINH"), ImVec2(120, 30))) { state.apply_quick_difficulty(1); state.init_game(); state.current_scene = GameScene::Playing; view_initialized = false; }
             ImGui::SameLine();
-            if (ImGui::Button(tr("HARD", "KHO"), ImVec2(150, 30))) { state.apply_quick_difficulty(2); state.init_game(); state.current_scene = GameScene::Playing; view_initialized = false; }
+            if (ImGui::Button(tr("HARD", "KHO"), ImVec2(120, 30))) { state.apply_quick_difficulty(2); state.init_game(); state.current_scene = GameScene::Playing; view_initialized = false; }
+            ImGui::SameLine();
+            if (ImGui::Button(tr("UNFAIR", "SIEU KHO"), ImVec2(120, 30))) { state.apply_quick_difficulty(3); state.init_game(); state.current_scene = GameScene::Playing; view_initialized = false; }
 
             ImGui::Separator(); ImGui::Spacing();
-            ImGui::Columns(2, "menu_split", false); ImGui::SetColumnWidth(0, 600);
+            ImGui::Columns(2, "menu_split", false); ImGui::SetColumnWidth(0, 690);
             ImGui::TextColored(ImVec4(1, 0.8f, 0, 1), "--- BATTLEFIELD DIMENSIONS ---");
             
+            auto draw_legend_item = [&](const char* label, ImVec4 color, int ratio) {
+                ImVec2 cursor = ImGui::GetCursorScreenPos();
+                ImDrawList* d = ImGui::GetWindowDrawList();
+                d->AddRectFilled(ImVec2(cursor.x, cursor.y + 3.0f), ImVec2(cursor.x + 12.0f, cursor.y + 15.0f), ImGui::ColorConvertFloat4ToU32(color));
+                d->AddRect(ImVec2(cursor.x, cursor.y + 3.0f), ImVec2(cursor.x + 12.0f, cursor.y + 15.0f), ImGui::ColorConvertFloat4ToU32(ImVec4(1,1,1,0.5f)));
+                ImGui::Dummy(ImVec2(15.0f, 18.0f));
+                ImGui::SameLine();
+                ImGui::Text("%s: %d%%", label, ratio);
+            };
+
+            auto draw_elegant_slider = [&](const char* label, int* val, int min_val, int max_val, ImVec4 bar_color, ImVec4 text_color = ImVec4(1, 1, 1, 1)) {
+                ImGui::TextColored(text_color, "%s: %d", label, *val);
+                float width = ImGui::GetContentRegionAvail().x - 10.0f;
+                if (width < 100.0f) width = 360.0f;
+                float height = 12.0f;
+                
+                ImVec2 cursor_pos = ImGui::GetCursorScreenPos();
+                char id_buf[128];
+                snprintf(id_buf, sizeof(id_buf), "##ele_slider_%s", label);
+                ImGui::InvisibleButton(id_buf, ImVec2(width, height + 8.0f));
+                
+                bool active = ImGui::IsItemActive();
+                bool hovered = ImGui::IsItemHovered();
+                ImDrawList* draw_list = ImGui::GetWindowDrawList();
+                
+                if (active) {
+                    ImVec2 mouse_pos = ImGui::GetIO().MousePos;
+                    float clicked_pct = (mouse_pos.x - cursor_pos.x) / width;
+                    clicked_pct = std::max(0.0f, std::min(1.0f, clicked_pct));
+                    *val = min_val + std::round(clicked_pct * (max_val - min_val));
+                    *val = std::max(min_val, std::min(max_val, *val));
+                }
+                
+                float pct = static_cast<float>(*val - min_val) / (max_val - min_val);
+                float x0 = cursor_pos.x;
+                float x_knob = x0 + pct * width;
+                float y_center = cursor_pos.y + 4.0f + height / 2.0f;
+                
+                ImU32 col_bg = ImGui::ColorConvertFloat4ToU32(ImVec4(0.15f, 0.16f, 0.18f, 1.0f));
+                ImU32 col_bar = ImGui::ColorConvertFloat4ToU32(bar_color);
+                ImU32 col_knob = ImGui::ColorConvertFloat4ToU32(ImVec4(0.9f, 0.9f, 0.9f, 1.0f));
+                if (active) col_knob = ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 0.85f, 0.1f, 1.0f));
+                else if (hovered) col_knob = ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+                
+                draw_list->AddRectFilled(
+                    ImVec2(x0, y_center - 2.5f),
+                    ImVec2(x0 + width, y_center + 2.5f),
+                    col_bg,
+                    2.0f
+                );
+                draw_list->AddRectFilled(
+                    ImVec2(x0, y_center - 2.5f),
+                    ImVec2(x_knob, y_center + 2.5f),
+                    col_bar,
+                    2.0f
+                );
+                
+                draw_list->AddCircleFilled(
+                    ImVec2(x_knob, y_center),
+                    5.0f,
+                    col_knob
+                );
+                draw_list->AddCircle(
+                    ImVec2(x_knob, y_center),
+                    5.0f,
+                    ImGui::ColorConvertFloat4ToU32(ImVec4(0.1f, 0.1f, 0.1f, 0.8f)),
+                    0,
+                    1.0f
+                );
+                
+                ImGui::Spacing();
+            };
+
             int prev_w = state.active_config.map_width; int prev_h = state.active_config.map_height;
-            ImGui::SliderInt("Map Width (Horizontal)", &state.active_config.map_width, 10, 25);
-            ImGui::SliderInt("Map Height (Vertical)", &state.active_config.map_height, 10, 16);
+            draw_elegant_slider("Map Width (Horizontal)", &state.active_config.map_width, 10, 25, ImVec4(0.2f, 0.7f, 0.9f, 1.0f));
+            draw_elegant_slider("Map Height (Vertical)", &state.active_config.map_height, 10, 16, ImVec4(0.2f, 0.7f, 0.9f, 1.0f));
             if (state.active_config.map_width != prev_w || state.active_config.map_height != prev_h) {
                 state.active_config.custom_grid.assign(state.active_config.map_width, std::vector<Terrain>(state.active_config.map_height, Terrain::Dirt));
                 state.active_config.custom_human_pos = {1, 1};
             }
 
             ImGui::Checkbox("ACTIVATE INITIAL SPAWN SHIELD", &state.active_config.spawn_shield);
-            ImGui::Checkbox("Enable Environment Events", &state.active_config.enable_environment);
             ImGui::Checkbox("Use Custom Map Design Mode", &state.active_config.custom_map_mode);
 
             ImGui::Spacing();
@@ -325,16 +402,6 @@ int main() {
             draw_list->AddRect(ImVec2(x0, y_top), ImVec2(x4, y_bot), ImGui::ColorConvertFloat4ToU32(ImVec4(0.2f, 0.2f, 0.2f, 0.6f)), 0.0f, 0, 1.5f);
 
             ImGui::Spacing();
-            
-            auto draw_legend_item = [&](const char* label, ImVec4 color, int ratio) {
-                ImVec2 cursor = ImGui::GetCursorScreenPos();
-                ImDrawList* d = ImGui::GetWindowDrawList();
-                d->AddRectFilled(ImVec2(cursor.x, cursor.y + 3.0f), ImVec2(cursor.x + 12.0f, cursor.y + 15.0f), ImGui::ColorConvertFloat4ToU32(color));
-                d->AddRect(ImVec2(cursor.x, cursor.y + 3.0f), ImVec2(cursor.x + 12.0f, cursor.y + 15.0f), ImGui::ColorConvertFloat4ToU32(ImVec4(1,1,1,0.5f)));
-                ImGui::Dummy(ImVec2(15.0f, 18.0f));
-                ImGui::SameLine();
-                ImGui::Text("%s: %d%%", label, ratio);
-            };
 
             draw_legend_item(tr("Dirt", "Dat"), ImVec4(105/255.f, 60/255.f, 35/255.f, 1.f), temp_dirt); ImGui::SameLine(); ImGui::Dummy(ImVec2(10.0f, 1.0f)); ImGui::SameLine();
             draw_legend_item(tr("Wall", "Tuong"), ImVec4(60/255.f, 62/255.f, 66/255.f, 1.f), temp_wall); ImGui::SameLine(); ImGui::Dummy(ImVec2(10.0f, 1.0f)); ImGui::SameLine();
@@ -349,23 +416,175 @@ int main() {
 
             ImGui::Spacing();
             ImGui::TextColored(ImVec4(1, 0.8f, 0, 1), "--- HUMAN OPERATIVE STATS ---");
-            ImGui::SliderInt("Vital HP", &state.active_config.human_hp, 1, 20);
-            ImGui::SliderInt("Turn 1 Stamina", &state.active_config.initial_stamina, 1, 6);
-            ImGui::SliderInt("Pistol Ammo", &state.active_config.pistol_ammo, 0, 50);
-            ImGui::SliderInt("Shotgun Shells", &state.active_config.shotgun_ammo, 0, 30);
-            ImGui::SliderInt("Grenades", &state.active_config.grenades, 0, 10);
-            ImGui::SliderInt("Claymore Mines", &state.active_config.mines, 0, 10);
-            ImGui::SliderInt("Molotov Bombs", &state.active_config.molotovs, 0, 10);
-            ImGui::SliderInt("Operation Max Turns", &state.active_config.turn_limit, 10, 200);
+            draw_elegant_slider("Vital HP", &state.active_config.human_hp, 1, 20, ImVec4(0.9f, 0.8f, 0.4f, 1.0f));
+            draw_elegant_slider("Turn 1 Stamina", &state.active_config.initial_stamina, 1, 6, ImVec4(0.9f, 0.8f, 0.4f, 1.0f));
+            draw_elegant_slider("Pistol Ammo", &state.active_config.pistol_ammo, 0, 50, ImVec4(0.9f, 0.8f, 0.4f, 1.0f));
+            draw_elegant_slider("Shotgun Shells", &state.active_config.shotgun_ammo, 0, 30, ImVec4(0.9f, 0.8f, 0.4f, 1.0f));
+            draw_elegant_slider("Grenades", &state.active_config.grenades, 0, 10, ImVec4(0.9f, 0.8f, 0.4f, 1.0f));
+            draw_elegant_slider("Claymore Mines", &state.active_config.mines, 0, 10, ImVec4(0.9f, 0.8f, 0.4f, 1.0f));
+            draw_elegant_slider("Molotov Bombs", &state.active_config.molotovs, 0, 10, ImVec4(0.9f, 0.8f, 0.4f, 1.0f));
+            draw_elegant_slider("Operation Max Turns", &state.active_config.turn_limit, 10, 200, ImVec4(0.9f, 0.8f, 0.4f, 1.0f));
 
             ImGui::NextColumn();
 
+            ImGui::Checkbox("Enable Environment Events", &state.active_config.enable_environment);
+            if (state.active_config.enable_environment) {
+                ImGui::Indent(15.0f);
+                ImGui::TextColored(ImVec4(1, 0.8f, 0, 1), "%s", tr("ENVIRONMENT EVENT PROBABILITIES (SUM = 100%)", "XAC SUAT BIEN CO MOI TRUONG (TONG = 100%)"));
+                
+                int temp_clear = state.active_config.env_prob_clear;
+                int temp_wind = state.active_config.env_prob_wind;
+                int temp_rain = state.active_config.env_prob_rain;
+                int temp_clouds = state.active_config.env_prob_clouds;
+                int temp_light = state.active_config.env_prob_lightning;
+
+                int total_env = temp_clear + temp_wind + temp_rain + temp_clouds + temp_light;
+                if (total_env != 100) {
+                    state.active_config.env_prob_clear = 58;
+                    state.active_config.env_prob_wind = 16;
+                    state.active_config.env_prob_rain = 14;
+                    state.active_config.env_prob_clouds = 4;
+                    state.active_config.env_prob_lightning = 8;
+                    temp_clear = 58; temp_wind = 16; temp_rain = 14; temp_clouds = 4; temp_light = 8;
+                }
+
+                int ep1 = temp_clear;
+                int ep2 = ep1 + temp_wind;
+                int ep3 = ep2 + temp_rain;
+                int ep4 = ep3 + temp_clouds;
+
+                float ebar_width = ImGui::GetContentRegionAvail().x - 10.0f;
+                if (ebar_width < 100.0f) ebar_width = 360.0f;
+                float ebar_height = 20.0f;
+
+                ImVec2 ecursor_pos = ImGui::GetCursorScreenPos();
+                ImGui::InvisibleButton("##multi_env_slider_button", ImVec2(ebar_width, ebar_height + 8.0f));
+                
+                bool eactive = ImGui::IsItemActive();
+                bool ehovered = ImGui::IsItemHovered();
+                ImDrawList* edraw_list = ImGui::GetWindowDrawList();
+
+                static int eactive_knob = -1;
+                ImVec2 emouse_pos = ImGui::GetIO().MousePos;
+
+                if (eactive) {
+                    float eclicked_pct = (emouse_pos.x - ecursor_pos.x) / ebar_width * 100.0f;
+                    eclicked_pct = std::max(0.0f, std::min(100.0f, eclicked_pct));
+
+                    if (ImGui::IsMouseClicked(0)) {
+                        float ed1 = std::abs(eclicked_pct - ep1);
+                        float ed2 = std::abs(eclicked_pct - ep2);
+                        float ed3 = std::abs(eclicked_pct - ep3);
+                        float ed4 = std::abs(eclicked_pct - ep4);
+                        if (ed1 <= ed2 && ed1 <= ed3 && ed1 <= ed4) eactive_knob = 0;
+                        else if (ed2 <= ed1 && ed2 <= ed3 && ed2 <= ed4) eactive_knob = 1;
+                        else if (ed3 <= ed1 && ed3 <= ed2 && ed3 <= ed4) eactive_knob = 2;
+                        else eactive_knob = 3;
+                    }
+
+                    if (eactive_knob == 0) {
+                        ep1 = std::round(eclicked_pct);
+                        ep1 = std::max(0, std::min(ep2, ep1));
+                    } else if (eactive_knob == 1) {
+                        ep2 = std::round(eclicked_pct);
+                        ep2 = std::max(ep1, std::min(ep3, ep2));
+                    } else if (eactive_knob == 2) {
+                        ep3 = std::round(eclicked_pct);
+                        ep3 = std::max(ep2, std::min(ep4, ep3));
+                    } else if (eactive_knob == 3) {
+                        ep4 = std::round(eclicked_pct);
+                        ep4 = std::max(ep3, std::min(100, ep4));
+                    }
+                } else {
+                    eactive_knob = -1;
+                }
+
+                state.active_config.env_prob_clear = ep1;
+                state.active_config.env_prob_wind = ep2 - ep1;
+                state.active_config.env_prob_rain = ep3 - ep2;
+                state.active_config.env_prob_clouds = ep4 - ep3;
+                state.active_config.env_prob_lightning = 100 - ep4;
+
+                temp_clear = state.active_config.env_prob_clear;
+                temp_wind = state.active_config.env_prob_wind;
+                temp_rain = state.active_config.env_prob_rain;
+                temp_clouds = state.active_config.env_prob_clouds;
+                temp_light = state.active_config.env_prob_lightning;
+
+                float ex0 = ecursor_pos.x;
+                float ex1 = ex0 + ep1 * (ebar_width / 100.f);
+                float ex2 = ex0 + ep2 * (ebar_width / 100.f);
+                float ex3 = ex0 + ep3 * (ebar_width / 100.f);
+                float ex4 = ex0 + ep4 * (ebar_width / 100.f);
+                float ex5 = ex0 + ebar_width;
+
+                float ey_top = ecursor_pos.y + 4.0f;
+                float ey_bot = ey_top + ebar_height;
+
+                ImU32 col_clear = ImGui::ColorConvertFloat4ToU32(ImVec4(0.5f, 0.7f, 0.9f, 1.0f));
+                ImU32 col_wind = ImGui::ColorConvertFloat4ToU32(ImVec4(0.7f, 0.85f, 0.95f, 1.0f));
+                ImU32 col_rain = ImGui::ColorConvertFloat4ToU32(ImVec4(0.35f, 0.55f, 0.85f, 1.0f));
+                ImU32 col_clouds = ImGui::ColorConvertFloat4ToU32(ImVec4(0.3f, 0.3f, 0.35f, 1.0f));
+                ImU32 col_light = ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 0.85f, 0.2f, 1.0f));
+
+                edraw_list->AddRectFilled(ImVec2(ex0, ey_top), ImVec2(ex1, ey_bot), col_clear);
+                edraw_list->AddRectFilled(ImVec2(ex1, ey_top), ImVec2(ex2, ey_bot), col_wind);
+                edraw_list->AddRectFilled(ImVec2(ex2, ey_top), ImVec2(ex3, ey_bot), col_rain);
+                edraw_list->AddRectFilled(ImVec2(ex3, ey_top), ImVec2(ex4, ey_bot), col_clouds);
+                edraw_list->AddRectFilled(ImVec2(ex4, ey_top), ImVec2(ex5, ey_bot), col_light);
+
+                auto draw_eknob = [&](float x_center, int knob_idx) {
+                    bool knob_hovered = ehovered && std::abs(emouse_pos.x - x_center) < 10.0f;
+                    bool knob_active = (eactive_knob == knob_idx);
+                    ImU32 knob_color = ImGui::ColorConvertFloat4ToU32(ImVec4(0.9f, 0.9f, 0.9f, 1.0f));
+                    if (knob_active) knob_color = ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 0.85f, 0.1f, 1.0f));
+                    else if (knob_hovered) knob_color = ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+
+                    float knob_half_w = 3.0f;
+                    edraw_list->AddRectFilled(
+                        ImVec2(x_center - knob_half_w, ey_top - 2.0f),
+                        ImVec2(x_center + knob_half_w, ey_bot + 2.0f),
+                        knob_color,
+                        1.5f
+                    );
+                    edraw_list->AddRect(
+                        ImVec2(x_center - knob_half_w, ey_top - 2.0f),
+                        ImVec2(x_center + knob_half_w, ey_bot + 2.0f),
+                        ImGui::ColorConvertFloat4ToU32(ImVec4(0.1f, 0.1f, 0.1f, 0.8f)),
+                        1.5f
+                    );
+                };
+
+                draw_eknob(ex1, 0);
+                draw_eknob(ex2, 1);
+                draw_eknob(ex3, 2);
+                draw_eknob(ex4, 3);
+
+                edraw_list->AddRect(ImVec2(ex0, ey_top), ImVec2(ex5, ey_bot), ImGui::ColorConvertFloat4ToU32(ImVec4(0.2f, 0.2f, 0.2f, 0.6f)), 0.0f, 0, 1.5f);
+
+                ImGui::Spacing();
+
+                // Draw legend items in two rows if needed to avoid overflow
+                draw_legend_item(tr("Clear", "Troi quang"), ImVec4(0.5f, 0.7f, 0.9f, 1.0f), temp_clear); ImGui::SameLine(); ImGui::Dummy(ImVec2(10.0f, 1.0f)); ImGui::SameLine();
+                draw_legend_item(tr("Wind", "Gio lon"), ImVec4(0.7f, 0.85f, 0.95f, 1.0f), temp_wind); ImGui::SameLine(); ImGui::Dummy(ImVec2(10.0f, 1.0f)); ImGui::SameLine();
+                draw_legend_item(tr("Rain", "Mua to"), ImVec4(0.35f, 0.55f, 0.85f, 1.0f), temp_rain); 
+                
+                ImGui::Spacing();
+                
+                draw_legend_item(tr("Clouds", "May mu"), ImVec4(0.3f, 0.3f, 0.35f, 1.0f), temp_clouds); ImGui::SameLine(); ImGui::Dummy(ImVec2(10.0f, 1.0f)); ImGui::SameLine();
+                draw_legend_item(tr("Lightning", "Sam set"), ImVec4(1.0f, 0.85f, 0.2f, 1.0f), temp_light);
+                
+                ImGui::Unindent(15.0f);
+                ImGui::Spacing();
+            }
+            ImGui::Spacing();
+
             ImGui::TextColored(ImVec4(1, 0.3f, 0.3f, 1), "--- HOSTILE THREAT QUANTITIES ---");
-            ImGui::SliderInt("Normal Zombies", &state.active_config.count_normal, 0, 20);
-            ImGui::SliderInt("Fast Sprinters", &state.active_config.count_fast, 0, 15);
-            ImGui::SliderInt("Volatile Exploders", &state.active_config.count_exploding, 0, 15);
-            ImGui::SliderInt("Vampiric Draculas", &state.active_config.count_vampire, 0, 10);
-            ImGui::SliderInt("Sick Carriers", &state.active_config.count_sick, 0, 15);
+            draw_elegant_slider("Normal Zombies", &state.active_config.count_normal, 0, 20, ImVec4(0.2f, 0.8f, 0.4f, 1.0f), ImVec4(0.2f, 0.8f, 0.4f, 1.0f));
+            draw_elegant_slider("Fast Sprinters", &state.active_config.count_fast, 0, 15, ImVec4(0.35f, 0.75f, 1.0f, 1.0f), ImVec4(0.35f, 0.75f, 1.0f, 1.0f));
+            draw_elegant_slider("Volatile Exploders", &state.active_config.count_exploding, 0, 15, ImVec4(0.9f, 0.5f, 0.1f, 1.0f), ImVec4(0.9f, 0.5f, 0.1f, 1.0f));
+            draw_elegant_slider("Vampiric Draculas", &state.active_config.count_vampire, 0, 10, ImVec4(0.7f, 0.2f, 0.7f, 1.0f), ImVec4(0.7f, 0.2f, 0.7f, 1.0f));
+            draw_elegant_slider("Sick Carriers", &state.active_config.count_sick, 0, 15, ImVec4(0.85f, 0.78f, 0.3f, 1.0f), ImVec4(0.85f, 0.78f, 0.3f, 1.0f));
 
             int available_slots = state.calculate_available_spawn_cells();
             int total_zoms = state.active_config.count_normal + state.active_config.count_fast + state.active_config.count_exploding + state.active_config.count_vampire + state.active_config.count_sick;
@@ -386,7 +605,8 @@ int main() {
             if (overflow_error) ImGui::TextColored(ImVec4(1,0,0,1), "Fix error to run simulation.");
             else {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.6f, 0.15f, 1));
-                if (ImGui::Button("LAUNCH CUSTOM STRATEGY COMBAT", ImVec2(1200, 45))) { state.init_game(); state.current_scene = GameScene::Playing; view_initialized = false; }
+                float full_btn_w = ImGui::GetContentRegionAvail().x - 10.0f;
+                if (ImGui::Button("LAUNCH CUSTOM STRATEGY COMBAT", ImVec2(full_btn_w, 45))) { state.init_game(); state.current_scene = GameScene::Playing; view_initialized = false; }
                 ImGui::PopStyleColor();
             }
             ImGui::End();
@@ -413,7 +633,7 @@ int main() {
             }
 
             ImGui::SetNextWindowPos(ImVec2(mw * cellSize + boardOffset + 30.0f, 20.0f));
-            ImGui::SetNextWindowSize(ImVec2(400, 650));
+            ImGui::SetNextWindowSize(ImVec2(400, 618));
             ImGui::Begin("Map Blueprint Architect", nullptr, ImGuiWindowFlags_NoCollapse);
             ImGui::TextColored(ImVec4(1, 0.7f, 0, 1), "Brush Selection Tools:");
             if (ImGui::RadioButton("Plain Dirt Floor", state.editor_selected_terrain == Terrain::Dirt)) state.editor_selected_terrain = Terrain::Dirt;
@@ -783,12 +1003,26 @@ int main() {
                     }
                 } else if (state.active_fx.type == FXType::Wind) {
                     sf::Color windColor(180, 220, 255, alpha);
-                    for (int i = -4; i <= 20; ++i) {
-                        float sx = boardOffset + (i * 38.0f * state.active_fx.dx) + std::sin(timeSec * 8.0f + i) * 18.0f;
-                        float sy = boardOffset + (i * 30.0f * state.active_fx.dy) + std::cos(timeSec * 7.0f + i) * 18.0f;
+                    float board_dim = VIEW_CELLS * cellSize;
+                    for (int i = 0; i < 35; ++i) {
+                        float perp_offset = std::fmod(i * 37.0f, board_dim);
+                        float sweep = std::fmod(i * 71.0f + timeSec * 750.0f, board_dim);
+                        
+                        float sx, sy;
+                        if (std::abs(state.active_fx.dx) > 0.5f) { // Horizontal wind
+                            sx = boardOffset + (state.active_fx.dx > 0 ? sweep : (board_dim - sweep));
+                            sy = boardOffset + perp_offset + std::sin(timeSec * 5.0f + i) * 10.0f;
+                        } else { // Vertical wind
+                            sx = boardOffset + perp_offset + std::cos(timeSec * 5.0f + i) * 10.0f;
+                            sy = boardOffset + (state.active_fx.dy > 0 ? sweep : (board_dim - sweep));
+                        }
+                        
+                        float ex = sx + state.active_fx.dx * 120.0f;
+                        float ey = sy + state.active_fx.dy * 120.0f;
+                        
                         sf::Vertex gust[] = {
                             sf::Vertex(sf::Vector2f(sx, sy), windColor),
-                            sf::Vertex(sf::Vector2f(sx + state.active_fx.dx * state.width * cellSize, sy + state.active_fx.dy * state.height * cellSize), sf::Color(180, 220, 255, 0))
+                            sf::Vertex(sf::Vector2f(ex, ey), sf::Color(180, 220, 255, 0))
                         };
                         window.draw(gust, 2, sf::Lines);
                     }
@@ -804,11 +1038,15 @@ int main() {
                     }
                 } else if (state.active_fx.type == FXType::Rain || state.active_fx.type == FXType::DarkCloud) {
                     if (state.active_fx.type == FXType::Rain) {
+                        float board_dim = VIEW_CELLS * cellSize;
                         sf::Color rainColor(110, 170, 255, alpha);
-                        for (int i = 0; i < 90; ++i) {
-                            float x = boardOffset + std::fmod(i * 37.0f + timeSec * 260.0f, state.width * cellSize);
-                            float y = boardOffset + std::fmod(i * 53.0f + timeSec * 420.0f, state.height * cellSize);
-                            sf::Vertex drop[] = { sf::Vertex(sf::Vector2f(x, y), rainColor), sf::Vertex(sf::Vector2f(x - 7, y + 16), sf::Color(110, 170, 255, 0)) };
+                        for (int i = 0; i < 150; ++i) {
+                            float x = boardOffset + std::fmod(i * 47.0f + timeSec * 320.0f, board_dim);
+                            float y = boardOffset + std::fmod(i * 73.0f + timeSec * 480.0f, board_dim);
+                            sf::Vertex drop[] = {
+                                sf::Vertex(sf::Vector2f(x, y), rainColor),
+                                sf::Vertex(sf::Vector2f(x - 8.0f, y + 18.0f), sf::Color(110, 170, 255, 0))
+                            };
                             window.draw(drop, 2, sf::Lines);
                         }
                     } else {
@@ -818,14 +1056,53 @@ int main() {
                         window.draw(cloud);
                     }
                 } else if (state.active_fx.type == FXType::Lightning) {
-                    sf::Vector2f center = state.getCellCenter(state.active_fx.cx, state.active_fx.cy, cellSize, boardOffset);
-                    sf::Vertex bolt[] = {
-                        sf::Vertex(sf::Vector2f(center.x - 10, boardOffset), sf::Color(255, 255, 160, alpha)),
-                        sf::Vertex(sf::Vector2f(center.x + 6, center.y - 10), sf::Color(160, 230, 255, alpha)),
-                        sf::Vertex(sf::Vector2f(center.x - 4, center.y + 10), sf::Color(255, 255, 255, alpha)),
-                        sf::Vertex(sf::Vector2f(center.x + 10, center.y + cellSize / 2), sf::Color(160, 230, 255, 0))
+                    sf::Vector2f target = state.getCellCenter(state.active_fx.cx, state.active_fx.cy, cellSize, boardOffset);
+                    float startY = boardOffset;
+                    float endY = target.y + cellSize / 2.0f;
+                    
+                    std::vector<sf::Vector2f> points;
+                    points.push_back(sf::Vector2f(target.x, startY));
+                    
+                    int segments = 8;
+                    float segmentH = (endY - startY) / segments;
+                    
+                    int seed_val = static_cast<int>(timeSec * 15.0f);
+                    auto get_noise = [&](int step) -> float {
+                        int h = seed_val * 73 + step * 31;
+                        h = (h ^ 61) ^ (h >> 16);
+                        h += (h << 3);
+                        h ^= (h >> 4);
+                        h *= 0x27d4eb2d;
+                        h ^= (h >> 15);
+                        float val = (float)(std::abs(h) % 100) / 100.0f;
+                        return val * 2.0f - 1.0f;
                     };
-                    window.draw(bolt, 4, sf::LineStrip);
+                    
+                    for (int i = 1; i < segments; ++i) {
+                        float py = startY + i * segmentH;
+                        float max_drift = 35.0f * (1.0f - (float)i / segments * 0.5f);
+                        float px = target.x + get_noise(i) * max_drift;
+                        points.push_back(sf::Vector2f(px, py));
+                    }
+                    points.push_back(target);
+                    
+                    auto draw_bolt = [&](sf::Color color, float offset_range) {
+                        for (float dx_offset = -offset_range; dx_offset <= offset_range; dx_offset += 1.5f) {
+                            std::vector<sf::Vertex> vertices;
+                            for (const auto& p : points) {
+                                float alpha_mult = (color.a * alpha) / 255.f;
+                                sf::Color c = color;
+                                c.a = static_cast<sf::Uint8>(alpha_mult);
+                                vertices.push_back(sf::Vertex(sf::Vector2f(p.x + dx_offset, p.y), c));
+                            }
+                            window.draw(vertices.data(), vertices.size(), sf::LineStrip);
+                        }
+                    };
+                    
+                    draw_bolt(sf::Color(80, 200, 255, 120), 4.0f);
+                    draw_bolt(sf::Color(255, 255, 180, 180), 2.0f);
+                    draw_bolt(sf::Color(255, 255, 255, 255), 0.0f);
+                    
                     for (auto p : state.active_fx.blast_cells) {
                         sf::RectangleShape electric(sf::Vector2f(cellSize - 4.0f, cellSize - 4.0f));
                         electric.setFillColor(sf::Color(80, 220, 255, progress * 130));
@@ -875,10 +1152,11 @@ int main() {
                 }
             }
 
-            float panelX = boardOffset + VIEW_CELLS * cellSize + 28.0f;
+            float scroll_thickness = 12.0f;
+            float panelX = boardOffset + VIEW_CELLS * cellSize + 6.0f + scroll_thickness + 12.0f;
             float panelY = boardOffset;
             float panelW2 = 1400.0f - panelX - 20.0f;
-            float panelH = VIEW_CELLS * cellSize;
+            float panelH = VIEW_CELLS * cellSize + 6.0f + scroll_thickness;
             ImGui::SetNextWindowPos(ImVec2(panelX, panelY), ImGuiCond_Always);
             ImGui::SetNextWindowSize(ImVec2(panelW2, panelH), ImGuiCond_Always);
             ImGui::Begin("Tactical Control Panel", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize);
@@ -924,7 +1202,7 @@ int main() {
             ImGui::TextColored(ImVec4(1, 0.55f, 0.9f, 1), "%s", tr("Weapons:", "Vu khi:"));
             
             auto weapon_button = [&](const char* label, InputMode mode) {
-                bool disabled = state.human.is_paralyzed || state.human.stamina == 0;
+                bool disabled = state.human.is_paralyzed || state.human.stamina == 0 || state.phase != TurnPhase::HumanTurn;
                 if (disabled) { ImGui::BeginDisabled(); }
                 if (state.input_mode == mode) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.4f, 0.0f, 1));
                 else ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_Button]);
@@ -939,12 +1217,16 @@ int main() {
             
             weapon_button(("Grenade (" + std::to_string(state.human.grenades) + ")").c_str(), InputMode::TargetGrenade); ImGui::SameLine();
             weapon_button(("Molotov (" + std::to_string(state.human.molotovs) + ")").c_str(), InputMode::TargetMolotov); ImGui::SameLine();
+            
+            bool mine_disabled = state.human.is_paralyzed || state.human.stamina == 0 || state.phase != TurnPhase::HumanTurn || state.human.mines == 0;
+            if (mine_disabled) { ImGui::BeginDisabled(); }
             if (ImGui::Button(("Mine (" + std::to_string(state.human.mines) + ")").c_str())) {
-                if (state.human.stamina >= 1 && state.human.mines > 0 && state.phase == TurnPhase::HumanTurn && !state.human.is_paralyzed) {
+                if (!mine_disabled) {
                     state.mine_grid[state.human.pos.x][state.human.pos.y] = true; 
                     state.human.mines--; state.human.stamina--;
                 }
             }
+            if (mine_disabled) { ImGui::EndDisabled(); }
 
             ImGui::Separator();
             ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f), "%s: %zu", tr("Hostiles", "Zombie"), state.zombies.size());
@@ -958,8 +1240,12 @@ int main() {
             ImGui::SameLine(); ImGui::TextColored(ImVec4(0.95f, 0.2f, 0.2f, 1.0f), "B = Burned");
             ImGui::SameLine(); ImGui::TextColored(ImVec4(0.95f, 0.85f, 0.25f, 1.0f), "P = Paralyzed");
             ImGui::Text("%s:", tr("Zombie IDs", "So thu tu Zombie"));
+            float start_x = ImGui::GetCursorPosX();
             for (size_t i = 0; i < state.zombies.size(); ++i) {
-                if (i % 10 != 0) ImGui::SameLine();
+                int col = i % 10;
+                if (col > 0) ImGui::SameLine();
+                ImGui::SetCursorPosX(start_x + col * 42.0f);
+                
                 const auto& z = state.zombies[i];
                 ImVec4 idColor = ImVec4(0.45f, 0.45f, 0.45f, 1.0f);
                 if (z->hp > 0) {
@@ -969,29 +1255,107 @@ int main() {
                     else if (z->type == ZombieType::Sick) idColor = ImVec4(0.85f, 0.78f, 0.3f, 1.0f);
                     else idColor = ImVec4(0.2f, 0.8f, 0.4f, 1.0f);
                 }
-                ImGui::TextColored(idColor, "#%zu", i + 1);
+                char id_buf[32];
+                snprintf(id_buf, sizeof(id_buf), "#%2zu", i + 1);
+                ImGui::TextColored(idColor, "%s", id_buf);
             }
 
             ImGui::Separator();
             ImGui::TextColored(ImVec4(1, 0.85f, 0.25f, 1), "=== %s ===", tr("LIVE RADIO LOGS", "NHAT KY VO TUYEN"));
-            ImGui::BeginChild("LiveLogBox", ImVec2(0, 200), true);
-            for (const auto& log : state.logs) ImGui::TextColored(log.color, "%s", log.text.c_str());
+            ImGui::BeginChild("LiveLogBox", ImVec2(0, ImGui::GetContentRegionAvail().y - 5.0f), true);
+            for (const auto& log : state.logs) {
+                ImGui::PushTextWrapPos(0.0f);
+                ImGui::TextColored(log.color, "%s", log.text.c_str());
+                ImGui::PopTextWrapPos();
+            }
             if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) ImGui::SetScrollHereY(1.0f);
             ImGui::EndChild();
 
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+
             ImGui::SetNextWindowPos(ImVec2(boardOffset, boardOffset + VIEW_CELLS * cellSize + 6.0f), ImGuiCond_Always);
-            ImGui::SetNextWindowSize(ImVec2(VIEW_CELLS * cellSize, 24.0f), ImGuiCond_Always);
-            ImGui::Begin("HScroll", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
-            int maxHX = std::max(0, state.width - VIEW_CELLS);
-            ImGui::SliderInt("##hscroll", &viewX, 0, maxHX);
+            ImGui::SetNextWindowSize(ImVec2(VIEW_CELLS * cellSize, scroll_thickness), ImGuiCond_Always);
+            ImGui::Begin("HScroll", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoBackground);
+            {
+                ImVec2 h_start = ImGui::GetCursorScreenPos();
+                ImGui::InvisibleButton("##hscroll_btn", ImVec2(VIEW_CELLS * cellSize, scroll_thickness));
+                bool h_active = ImGui::IsItemActive();
+                bool h_hovered = ImGui::IsItemHovered();
+                ImDrawList* h_draw = ImGui::GetWindowDrawList();
+                
+                int maxHX = std::max(0, state.width - VIEW_CELLS);
+                float h_track_w = VIEW_CELLS * cellSize;
+                float h_thumb_w = maxHX > 0 ? ((float)VIEW_CELLS / (float)state.width) * h_track_w : h_track_w;
+                h_thumb_w = std::max(30.0f, h_thumb_w);
+                float h_max_travel = h_track_w - h_thumb_w;
+                
+                float h_thumb_x = maxHX > 0 ? ((float)viewX / (float)maxHX) * h_max_travel : 0.0f;
+                
+                if (h_active && maxHX > 0) {
+                    ImVec2 mouse_pos = ImGui::GetIO().MousePos;
+                    float pct = (mouse_pos.x - h_start.x - h_thumb_w * 0.5f) / h_max_travel;
+                    pct = std::max(0.0f, std::min(1.0f, pct));
+                    viewX = std::round(pct * maxHX);
+                }
+                
+                h_draw->AddRectFilled(h_start, ImVec2(h_start.x + h_track_w, h_start.y + scroll_thickness), ImGui::ColorConvertFloat4ToU32(ImVec4(0.15f, 0.15f, 0.15f, 0.4f)), 6.0f);
+                
+                ImVec4 thumb_col = ImVec4(0.5f, 0.5f, 0.5f, 0.6f);
+                if (h_active) thumb_col = ImVec4(0.8f, 0.8f, 0.8f, 0.9f);
+                else if (h_hovered) thumb_col = ImVec4(0.65f, 0.65f, 0.65f, 0.8f);
+                
+                h_draw->AddRectFilled(
+                    ImVec2(h_start.x + h_thumb_x, h_start.y),
+                    ImVec2(h_start.x + h_thumb_x + h_thumb_w, h_start.y + scroll_thickness),
+                    ImGui::ColorConvertFloat4ToU32(thumb_col),
+                    6.0f
+                );
+            }
             ImGui::End();
 
-            ImGui::SetNextWindowPos(ImVec2(boardOffset + VIEW_CELLS * cellSize + 2.0f, boardOffset), ImGuiCond_Always);
-            ImGui::SetNextWindowSize(ImVec2(24.0f, VIEW_CELLS * cellSize), ImGuiCond_Always);
-            ImGui::Begin("VScroll", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
-            int maxVY = std::max(0, state.height - VIEW_CELLS);
-            ImGui::VSliderInt("##vscroll", ImVec2(16.0f, VIEW_CELLS * cellSize - 8.0f), &viewY, 0, maxVY);
+            ImGui::SetNextWindowPos(ImVec2(boardOffset + VIEW_CELLS * cellSize + 6.0f, boardOffset), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(scroll_thickness, VIEW_CELLS * cellSize), ImGuiCond_Always);
+            ImGui::Begin("VScroll", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoBackground);
+            {
+                ImVec2 v_start = ImGui::GetCursorScreenPos();
+                ImGui::InvisibleButton("##vscroll_btn", ImVec2(scroll_thickness, VIEW_CELLS * cellSize));
+                bool v_active = ImGui::IsItemActive();
+                bool v_hovered = ImGui::IsItemHovered();
+                ImDrawList* v_draw = ImGui::GetWindowDrawList();
+                
+                int maxVY = std::max(0, state.height - VIEW_CELLS);
+                float v_track_h = VIEW_CELLS * cellSize;
+                float v_thumb_h = maxVY > 0 ? ((float)VIEW_CELLS / (float)state.height) * v_track_h : v_track_h;
+                v_thumb_h = std::max(30.0f, v_thumb_h);
+                float v_max_travel = v_track_h - v_thumb_h;
+                
+                float v_thumb_y = maxVY > 0 ? ((float)viewY / (float)maxVY) * v_max_travel : 0.0f;
+                
+                if (v_active && maxVY > 0) {
+                    ImVec2 mouse_pos = ImGui::GetIO().MousePos;
+                    float pct = (mouse_pos.y - v_start.y - v_thumb_h * 0.5f) / v_max_travel;
+                    pct = std::max(0.0f, std::min(1.0f, pct));
+                    viewY = std::round(pct * maxVY);
+                }
+                
+                v_draw->AddRectFilled(v_start, ImVec2(v_start.x + scroll_thickness, v_start.y + v_track_h), ImGui::ColorConvertFloat4ToU32(ImVec4(0.15f, 0.15f, 0.15f, 0.4f)), 6.0f);
+                
+                ImVec4 thumb_col = ImVec4(0.5f, 0.5f, 0.5f, 0.6f);
+                if (v_active) thumb_col = ImVec4(0.8f, 0.8f, 0.8f, 0.9f);
+                else if (v_hovered) thumb_col = ImVec4(0.65f, 0.65f, 0.65f, 0.8f);
+                
+                v_draw->AddRectFilled(
+                    ImVec2(v_start.x, v_start.y + v_thumb_y),
+                    ImVec2(v_start.x + scroll_thickness, v_start.y + v_thumb_y + v_thumb_h),
+                    ImGui::ColorConvertFloat4ToU32(thumb_col),
+                    6.0f
+                );
+            }
             ImGui::End();
+
+            ImGui::PopStyleVar(3);
 
             if (show_confirm_exit_game) ImGui::OpenPopup(tr("Exit ZomChess?", "Thoat Game ZomChess?"));
             if (ImGui::BeginPopupModal(tr("Exit ZomChess?", "Thoat Game ZomChess?"), &show_confirm_exit_game, ImGuiWindowFlags_AlwaysAutoResize)) {

@@ -24,7 +24,7 @@ int GameState::calculate_available_spawn_cells() {
             }
             if (x == h_pos.x && y == h_pos.y) continue;
             if (active_config.spawn_shield) {
-                if (std::abs(x - h_pos.x) <= 3 && std::abs(y - h_pos.y) <= 3) continue;
+                if (std::abs(x - h_pos.x) <= 2 && std::abs(y - h_pos.y) <= 2) continue;
             }
             total_allowed++;
         }
@@ -64,7 +64,7 @@ void GameState::apply_quick_difficulty(int level) {
         active_config.count_normal = 4; active_config.count_fast = 3;
         active_config.count_exploding = 2; active_config.count_vampire = 1; active_config.count_sick = 2;
     } 
-    else { 
+    else if (level == 2) { 
         active_config.human_hp = 3;
         active_config.initial_stamina = 5;
         active_config.pistol_ammo = 6;  active_config.shotgun_ammo = 3;
@@ -72,6 +72,15 @@ void GameState::apply_quick_difficulty(int level) {
         active_config.molotovs = 1;
         active_config.count_normal = 6; active_config.count_fast = 5;
         active_config.count_exploding = 4; active_config.count_vampire = 2; active_config.count_sick = 3;
+    }
+    else { // Unfair difficulty (Level 3)
+        active_config.human_hp = 1;
+        active_config.initial_stamina = 4;
+        active_config.pistol_ammo = 4;  active_config.shotgun_ammo = 2;
+        active_config.grenades = 0;     active_config.mines = 0;
+        active_config.molotovs = 0;
+        active_config.count_normal = 8; active_config.count_fast = 6;
+        active_config.count_exploding = 5; active_config.count_vampire = 3; active_config.count_sick = 4;
     }
 }
 
@@ -102,6 +111,11 @@ bool GameState::export_challenge_file(const std::string& path) {
     outFile << "RATIO_DIRT "      << active_config.ratio_dirt << "\n";
     outFile << "CUST_HUMAN_X "    << active_config.custom_human_pos.x << "\n";
     outFile << "CUST_HUMAN_Y "    << active_config.custom_human_pos.y << "\n";
+    outFile << "ENV_PROB_CLEAR "  << active_config.env_prob_clear << "\n";
+    outFile << "ENV_PROB_WIND "   << active_config.env_prob_wind << "\n";
+    outFile << "ENV_PROB_RAIN "   << active_config.env_prob_rain << "\n";
+    outFile << "ENV_PROB_CLOUDS " << active_config.env_prob_clouds << "\n";
+    outFile << "ENV_PROB_LIGHT "  << active_config.env_prob_lightning << "\n";
 
     if (active_config.custom_map_mode) {
         outFile << "GRID_DATA\n";
@@ -156,6 +170,11 @@ bool GameState::import_challenge_file(const std::string& path) {
         else if (key == "RATIO_WATER")  active_config.ratio_water = val;
         else if (key == "RATIO_GRASS")  active_config.ratio_grass = val;
         else if (key == "RATIO_DIRT")   active_config.ratio_dirt = val;
+        else if (key == "ENV_PROB_CLEAR")  active_config.env_prob_clear = val;
+        else if (key == "ENV_PROB_WIND")   active_config.env_prob_wind = val;
+        else if (key == "ENV_PROB_RAIN")   active_config.env_prob_rain = val;
+        else if (key == "ENV_PROB_CLOUDS") active_config.env_prob_clouds = val;
+        else if (key == "ENV_PROB_LIGHT")  active_config.env_prob_lightning = val;
     }
     inFile.close();
     return true;
@@ -304,7 +323,7 @@ void GameState::init_game() {
                 bool invalid_pos = false;
                 if (grid[z_pos.x][z_pos.y] == Terrain::Wall) invalid_pos = true;
                 if (z_pos == human.pos) invalid_pos = true;
-                if (active_config.spawn_shield && std::abs(z_pos.x - human.pos.x) <= 3 && std::abs(z_pos.y - human.pos.y) <= 3) invalid_pos = true;
+                if (active_config.spawn_shield && std::abs(z_pos.x - human.pos.x) <= 2 && std::abs(z_pos.y - human.pos.y) <= 2) invalid_pos = true;
                 for (const auto& z : zombies) { if (z->pos == z_pos) { invalid_pos = true; break; } }
                 if (!invalid_pos || attempts > 200) break;
                 z_pos = {dist_x(rng), dist_y(rng)};
@@ -332,6 +351,7 @@ void GameState::init_game() {
     turn_banner_fx.type = FXType::Electricity;
     turn_banner_fx.timer = 1.5f;
     turn_banner_fx.max_duration = 1.5f;
+    turn_banner_fx.banner_text = "";
 }
 
 void GameState::add_log(const std::string& text, ImVec4 color) { 
@@ -664,15 +684,21 @@ void GameState::apply_heavy_rain() {
 
     add_log("[ENV] Heavy rain floods " + std::to_string(soaked.size()) + " dirt cells and extinguishes " + std::to_string(extinguished.size()) + " fire cells.", ImVec4(0.35f, 0.65f, 1.0f, 1.0f));
 
+    int cured_count = 0;
     if (human.is_burning) {
         human.is_burning = false;
-        add_log("[FIRE] Heavy rain extinguished Human's burning status!", ImVec4(0.35f, 0.75f, 1.0f, 1.0f));
+        cured_count++;
     }
     for (auto& z : zombies) {
         if (z->hp > 0 && z->is_burning) {
             z->is_burning = false;
-            add_log("[FIRE] Heavy rain extinguished " + z->name + "'s burning status!", ImVec4(0.35f, 0.75f, 1.0f, 1.0f));
+            cured_count++;
         }
+    }
+    if (cured_count > 0) {
+        add_log(tr("[FIRE] Heavy rain extinguished burning status for " + std::to_string(cured_count) + " entities!",
+                   "[LUA] Con mua lon da dap tat trang thai burned cho " + std::to_string(cured_count) + " thuc the!"),
+                ImVec4(0.35f, 0.75f, 1.0f, 1.0f));
     }
 }
 
@@ -749,7 +775,13 @@ void GameState::apply_lightning_strike() {
 void GameState::resolve_environment_turn() {
     if (dark_cloud_active) dark_cloud_active = false;
 
-    std::discrete_distribution<int> event_dist({58, 16, 14, 4, 8});
+    std::discrete_distribution<int> event_dist({
+        static_cast<double>(active_config.env_prob_clear),
+        static_cast<double>(active_config.env_prob_wind),
+        static_cast<double>(active_config.env_prob_rain),
+        static_cast<double>(active_config.env_prob_clouds),
+        static_cast<double>(active_config.env_prob_lightning)
+    });
     int event = event_dist(rng);
     if (event == 0) {
         last_environment_event = "Clear skies";
@@ -784,6 +816,13 @@ void GameState::finish_environment_phase() {
         if (human.is_paralyzed) {
             add_log("[SHOCK] Human is paralyzed this turn and cannot act.", ImVec4(0.45f, 0.9f, 1.0f, 1.0f));
         }
+        if (human_sick_stamina_penalty) {
+            if (human.stamina > 0) {
+                human.stamina = std::max(0, human.stamina - 1);
+                add_log(tr("[INFECT] Sick Zombie bite penalty! Stamina reduced by 1.", "[LAY NHIEM] Hieu ung Zombie nhiem doc! Tru 1 stamina."), ImVec4(0.82f, 0.93f, 0.24f, 1.0f));
+            }
+            human_sick_stamina_penalty = false;
+        }
         check_fire_interactions();
     }
 
@@ -792,6 +831,7 @@ void GameState::finish_environment_phase() {
     turn_banner_fx.type = FXType::Electricity;
     turn_banner_fx.timer = 1.5f;
     turn_banner_fx.max_duration = 1.5f;
+    turn_banner_fx.banner_text = "";
     check_victory_conditions();
 }
 
@@ -1578,14 +1618,23 @@ void GameState::update_zombie_logic(float dt) {
                 atk_fx.timer = 0.5f;
                 atk_fx.max_duration = 0.5f;
 
+                bool in_water = (grid[zom->pos.x][zom->pos.y] == Terrain::Water);
                 if (dx + dy == 1) { // Orthogonal -> Bite
-                    dmg = 2;
+                    dmg = in_water ? 1 : 2;
                     atk_fx.type = FXType::Bite;
-                    add_log("-> " + zom->name + " BITES human! -2 HP.", ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
+                    if (in_water) {
+                        add_log("-> " + zom->name + " BITES human sluggishly in water! -1 HP.", ImVec4(0.9f, 0.4f, 0.4f, 1.0f));
+                    } else {
+                        add_log("-> " + zom->name + " BITES human! -2 HP.", ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
+                    }
                 } else { // Diagonal -> Scratch
-                    dmg = 1;
+                    dmg = in_water ? 0 : 1;
                     atk_fx.type = FXType::Scratch;
-                    add_log("-> " + zom->name + " SCRATCHES human! -1 HP.", ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
+                    if (in_water) {
+                        add_log("-> " + zom->name + " tries to SCRATCH human but flails harmlessly in water! 0 HP.", ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
+                    } else {
+                        add_log("-> " + zom->name + " SCRATCHES human! -1 HP.", ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
+                    }
                 }
                 
                 human.hp = std::max(0, human.hp - dmg); 
@@ -1597,16 +1646,23 @@ void GameState::update_zombie_logic(float dt) {
                     floating_texts.push_back({zom->pos, 1, 1.0f, 1.0f});
                 }
                 if (zom->type == ZombieType::Sick) {
-                    int turns_left = std::max(0, turn_limit - current_turn);
-                    int halved_left = turns_left / 2;
-                    turn_limit = current_turn + halved_left;
-                    add_log("-> Infection! Remaining turns halved (" + std::to_string(turns_left) + " -> " + std::to_string(halved_left) + ").", ImVec4(0.82f, 0.93f, 0.24f, 1.0f));
+                    if (dx + dy == 1) { // Orthogonal -> Bite (Direct bite)
+                        int turns_left = std::max(0, turn_limit - current_turn);
+                        int halved_left = turns_left / 2;
+                        turn_limit = current_turn + halved_left;
+                        add_log("-> Infection! Remaining turns halved (" + std::to_string(turns_left) + " -> " + std::to_string(halved_left) + ") & -1 Stamina next turn.", ImVec4(0.82f, 0.93f, 0.24f, 1.0f));
+                        human_sick_stamina_penalty = true;
+                    }
                 }
                 check_victory_conditions(); 
             }
         } 
         active_zombie_substep++; 
-        if (active_zombie_substep >= zom->getMovesPerTurn()) { 
+        int max_moves = zom->getMovesPerTurn();
+        if (grid[zom->pos.x][zom->pos.y] == Terrain::Water) {
+            if (max_moves > 1) max_moves = 1;
+        }
+        if (active_zombie_substep >= max_moves) { 
             active_zombie_idx++; active_zombie_substep = 0; 
         } 
     } 

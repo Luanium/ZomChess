@@ -51,6 +51,12 @@ struct GameConfig {
     bool custom_map_mode = false;  
     bool enable_environment = true;
 
+    int env_prob_clear = 58;
+    int env_prob_wind = 16;
+    int env_prob_rain = 14;
+    int env_prob_clouds = 4;
+    int env_prob_lightning = 8;
+
     Position custom_human_pos{1, 1};
     std::vector<std::vector<Terrain>> custom_grid; 
 };
