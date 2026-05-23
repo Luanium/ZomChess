@@ -1,4 +1,10 @@
 #include "GameState.h"
+#include "GameConstants.h"
+#include "AudioManager.h"
+#include "embedded/menu_theme.h"
+#include "embedded/battle_theme.h"
+#include "embedded/victory_theme.h"
+#include "embedded/defeat_theme.h"
 #include <cmath>
 #include <algorithm>
 #include <fstream>
@@ -8,6 +14,34 @@
 
 GameState::GameState() : rng(std::random_device{}()) {
     active_config.custom_grid.assign(active_config.map_width, std::vector<Terrain>(active_config.map_height, Terrain::Dirt));
+}
+
+void GameState::initAudio() {
+    AudioManager& audio = AudioManager::getInstance();
+
+    // Load nhạc từ dữ liệu nhúng trong executable — không cần file ngoài
+    audio.loadMusicFromMemory("menu",    menu_theme_ogg,    menu_theme_ogg_len);
+    audio.loadMusicFromMemory("battle",  battle_theme_ogg,  battle_theme_ogg_len);
+    audio.loadMusicFromMemory("victory", victory_theme_ogg, victory_theme_ogg_len);
+    audio.loadMusicFromMemory("defeat",  defeat_theme_ogg,  defeat_theme_ogg_len);
+
+    audio.setMusicVolume(music_volume);
+}
+
+void GameState::playBackgroundMusic(const std::string& track) {
+    if (!music_enabled) return;
+    AudioManager::getInstance().playMusic(track, true);
+}
+
+void GameState::stopBackgroundMusic() {
+    AudioManager& audio = AudioManager::getInstance();
+    audio.stopMusic();
+}
+
+void GameState::setMusicVolume(float volume) {
+    music_volume = std::max(0.0f, std::min(100.0f, volume));
+    AudioManager& audio = AudioManager::getInstance();
+    audio.setMusicVolume(music_volume);
 }
 
 int GameState::calculate_available_spawn_cells() {
@@ -24,7 +58,7 @@ int GameState::calculate_available_spawn_cells() {
             }
             if (x == h_pos.x && y == h_pos.y) continue;
             if (active_config.spawn_shield) {
-                if (std::abs(x - h_pos.x) <= 2 && std::abs(y - h_pos.y) <= 2) continue;
+                if (std::abs(x - h_pos.x) <= GameConstants::MapGen::SPAWN_SHIELD_RADIUS && std::abs(y - h_pos.y) <= GameConstants::MapGen::SPAWN_SHIELD_RADIUS) continue;
             }
             total_allowed++;
         }
@@ -47,40 +81,60 @@ void GameState::apply_quick_difficulty(int level) {
     active_config.turn_limit = 50;
 
     if (level == 0) { 
-        active_config.human_hp = 8;
-        active_config.initial_stamina = 7;
-        active_config.pistol_ammo = 20; active_config.shotgun_ammo = 10;
-        active_config.grenades = 5;     active_config.mines = 4;
-        active_config.molotovs = 4;
-        active_config.count_normal = 3; active_config.count_fast = 1;
-        active_config.count_exploding = 1; active_config.count_vampire = 0; active_config.count_sick = 1;
+        active_config.human_hp = GameConstants::Difficulty::Easy::HUMAN_HP;
+        active_config.initial_stamina = GameConstants::Difficulty::Easy::INITIAL_STAMINA;
+        active_config.pistol_ammo = GameConstants::Difficulty::Easy::PISTOL_AMMO; 
+        active_config.shotgun_ammo = GameConstants::Difficulty::Easy::SHOTGUN_AMMO;
+        active_config.grenades = GameConstants::Difficulty::Easy::GRENADES;     
+        active_config.mines = GameConstants::Difficulty::Easy::MINES;
+        active_config.molotovs = GameConstants::Difficulty::Easy::MOLOTOVS;
+        active_config.count_normal = GameConstants::Difficulty::Easy::COUNT_NORMAL; 
+        active_config.count_fast = GameConstants::Difficulty::Easy::COUNT_FAST;
+        active_config.count_exploding = GameConstants::Difficulty::Easy::COUNT_EXPLODING; 
+        active_config.count_vampire = GameConstants::Difficulty::Easy::COUNT_VAMPIRE; 
+        active_config.count_sick = GameConstants::Difficulty::Easy::COUNT_SICK;
     } 
     else if (level == 1) { 
-        active_config.human_hp = 5;
-        active_config.initial_stamina = 6;
-        active_config.pistol_ammo = 12; active_config.shotgun_ammo = 6;
-        active_config.grenades = 3;     active_config.mines = 2;
-        active_config.molotovs = 3;
-        active_config.count_normal = 4; active_config.count_fast = 3;
-        active_config.count_exploding = 2; active_config.count_vampire = 1; active_config.count_sick = 2;
+        active_config.human_hp = GameConstants::Difficulty::Medium::HUMAN_HP;
+        active_config.initial_stamina = GameConstants::Difficulty::Medium::INITIAL_STAMINA;
+        active_config.pistol_ammo = GameConstants::Difficulty::Medium::PISTOL_AMMO; 
+        active_config.shotgun_ammo = GameConstants::Difficulty::Medium::SHOTGUN_AMMO;
+        active_config.grenades = GameConstants::Difficulty::Medium::GRENADES;     
+        active_config.mines = GameConstants::Difficulty::Medium::MINES;
+        active_config.molotovs = GameConstants::Difficulty::Medium::MOLOTOVS;
+        active_config.count_normal = GameConstants::Difficulty::Medium::COUNT_NORMAL; 
+        active_config.count_fast = GameConstants::Difficulty::Medium::COUNT_FAST;
+        active_config.count_exploding = GameConstants::Difficulty::Medium::COUNT_EXPLODING; 
+        active_config.count_vampire = GameConstants::Difficulty::Medium::COUNT_VAMPIRE; 
+        active_config.count_sick = GameConstants::Difficulty::Medium::COUNT_SICK;
     } 
     else if (level == 2) { 
-        active_config.human_hp = 3;
-        active_config.initial_stamina = 5;
-        active_config.pistol_ammo = 6;  active_config.shotgun_ammo = 3;
-        active_config.grenades = 1;     active_config.mines = 1;
-        active_config.molotovs = 1;
-        active_config.count_normal = 6; active_config.count_fast = 5;
-        active_config.count_exploding = 4; active_config.count_vampire = 2; active_config.count_sick = 3;
+        active_config.human_hp = GameConstants::Difficulty::Hard::HUMAN_HP;
+        active_config.initial_stamina = GameConstants::Difficulty::Hard::INITIAL_STAMINA;
+        active_config.pistol_ammo = GameConstants::Difficulty::Hard::PISTOL_AMMO;  
+        active_config.shotgun_ammo = GameConstants::Difficulty::Hard::SHOTGUN_AMMO;
+        active_config.grenades = GameConstants::Difficulty::Hard::GRENADES;     
+        active_config.mines = GameConstants::Difficulty::Hard::MINES;
+        active_config.molotovs = GameConstants::Difficulty::Hard::MOLOTOVS;
+        active_config.count_normal = GameConstants::Difficulty::Hard::COUNT_NORMAL; 
+        active_config.count_fast = GameConstants::Difficulty::Hard::COUNT_FAST;
+        active_config.count_exploding = GameConstants::Difficulty::Hard::COUNT_EXPLODING; 
+        active_config.count_vampire = GameConstants::Difficulty::Hard::COUNT_VAMPIRE; 
+        active_config.count_sick = GameConstants::Difficulty::Hard::COUNT_SICK;
     }
     else { // Unfair difficulty (Level 3)
-        active_config.human_hp = 1;
-        active_config.initial_stamina = 4;
-        active_config.pistol_ammo = 4;  active_config.shotgun_ammo = 2;
-        active_config.grenades = 0;     active_config.mines = 0;
-        active_config.molotovs = 0;
-        active_config.count_normal = 8; active_config.count_fast = 6;
-        active_config.count_exploding = 5; active_config.count_vampire = 3; active_config.count_sick = 4;
+        active_config.human_hp = GameConstants::Difficulty::Unfair::HUMAN_HP;
+        active_config.initial_stamina = GameConstants::Difficulty::Unfair::INITIAL_STAMINA;
+        active_config.pistol_ammo = GameConstants::Difficulty::Unfair::PISTOL_AMMO;  
+        active_config.shotgun_ammo = GameConstants::Difficulty::Unfair::SHOTGUN_AMMO;
+        active_config.grenades = GameConstants::Difficulty::Unfair::GRENADES;     
+        active_config.mines = GameConstants::Difficulty::Unfair::MINES;
+        active_config.molotovs = GameConstants::Difficulty::Unfair::MOLOTOVS;
+        active_config.count_normal = GameConstants::Difficulty::Unfair::COUNT_NORMAL; 
+        active_config.count_fast = GameConstants::Difficulty::Unfair::COUNT_FAST;
+        active_config.count_exploding = GameConstants::Difficulty::Unfair::COUNT_EXPLODING; 
+        active_config.count_vampire = GameConstants::Difficulty::Unfair::COUNT_VAMPIRE; 
+        active_config.count_sick = GameConstants::Difficulty::Unfair::COUNT_SICK;
     }
 }
 
@@ -294,9 +348,9 @@ void GameState::init_game() {
             }
         };
 
-        grow_terrain(Terrain::Water, target_water, 0.55f);
-        grow_terrain(Terrain::Forest, target_forest, 0.55f);
-        grow_terrain(Terrain::Wall, target_wall, 0.25f);
+        grow_terrain(Terrain::Water, target_water, GameConstants::MapGen::CLUSTER_PROB_WATER);
+        grow_terrain(Terrain::Forest, target_forest, GameConstants::MapGen::CLUSTER_PROB_FOREST);
+        grow_terrain(Terrain::Wall, target_wall, GameConstants::MapGen::CLUSTER_PROB_WALL);
 
         std::uniform_int_distribution<int> dist_x(0, width - 1);
         std::uniform_int_distribution<int> dist_y(0, height - 1);
@@ -323,7 +377,7 @@ void GameState::init_game() {
                 bool invalid_pos = false;
                 if (grid[z_pos.x][z_pos.y] == Terrain::Wall) invalid_pos = true;
                 if (z_pos == human.pos) invalid_pos = true;
-                if (active_config.spawn_shield && std::abs(z_pos.x - human.pos.x) <= 2 && std::abs(z_pos.y - human.pos.y) <= 2) invalid_pos = true;
+                if (active_config.spawn_shield && std::abs(z_pos.x - human.pos.x) <= GameConstants::MapGen::SPAWN_SHIELD_RADIUS && std::abs(z_pos.y - human.pos.y) <= GameConstants::MapGen::SPAWN_SHIELD_RADIUS) invalid_pos = true;
                 for (const auto& z : zombies) { if (z->pos == z_pos) { invalid_pos = true; break; } }
                 if (!invalid_pos || attempts > 200) break;
                 z_pos = {dist_x(rng), dist_y(rng)};
@@ -340,11 +394,11 @@ void GameState::init_game() {
         }
     };
 
-    spawn_zombie_lambda(ZombieType::Normal, active_config.count_normal, "Normal Zom", 2);
-    spawn_zombie_lambda(ZombieType::Fast, active_config.count_fast, "Fast Sprinter", 2);
-    spawn_zombie_lambda(ZombieType::Exploding, active_config.count_exploding, "Exploder", 3);
-    spawn_zombie_lambda(ZombieType::Vampire, active_config.count_vampire, "Vampire Dracula", 4);
-    spawn_zombie_lambda(ZombieType::Sick, active_config.count_sick, "Sick Carrier", 2);
+    spawn_zombie_lambda(ZombieType::Normal, active_config.count_normal, "Normal Zom", GameConstants::Zombies::BASE_HP_NORMAL);
+    spawn_zombie_lambda(ZombieType::Fast, active_config.count_fast, "Fast Sprinter", GameConstants::Zombies::BASE_HP_FAST);
+    spawn_zombie_lambda(ZombieType::Exploding, active_config.count_exploding, "Exploder", GameConstants::Zombies::BASE_HP_EXPLODING);
+    spawn_zombie_lambda(ZombieType::Vampire, active_config.count_vampire, "Vampire Dracula", GameConstants::Zombies::BASE_HP_VAMPIRE);
+    spawn_zombie_lambda(ZombieType::Sick, active_config.count_sick, "Sick Carrier", GameConstants::Zombies::BASE_HP_SICK);
 
     add_log("Tactical Battleground initialized with dynamic safety boundaries!", ImVec4(0, 1, 1, 1));
     add_log("=== HUMAN TURN " + std::to_string(current_turn) + " START ===", ImVec4(1.0f, 0.95f, 0.25f, 1.0f));
@@ -656,7 +710,7 @@ void GameState::apply_heavy_rain() {
                     break;
                 }
             }
-            float threshold = next_to_water ? 0.35f : 0.08f;
+            float threshold = next_to_water ? GameConstants::Environment::RAIN_FLOOD_THRESHOLD_WATER_ADJACENT : GameConstants::Environment::RAIN_FLOOD_THRESHOLD_ISOLATED;
             if (chance(rng) < threshold) soaked.push_back({x, y});
         }
     }
@@ -720,9 +774,9 @@ void GameState::apply_lightning_strike() {
             if (is_blocking_cell(x, y)) continue;
             Position p{x, y};
             bool entity = has_living_entity_at(p);
-            double w = 1.0;
-            if (grid[x][y] == Terrain::Water) w *= 4.0;
-            if (entity) w *= 2.0;
+            double w = GameConstants::Environment::LIGHTNING_WEIGHT_DEFAULT;
+            if (grid[x][y] == Terrain::Water) w *= GameConstants::Environment::LIGHTNING_WEIGHT_WATER;
+            if (entity) w *= GameConstants::Environment::LIGHTNING_WEIGHT_ENTITY;
             cells.push_back(p);
             weights.push_back(w);
         }
@@ -747,15 +801,15 @@ void GameState::apply_lightning_strike() {
     }
 
     if (human.hp > 0 && human.pos == strike) {
-        human.hp = std::max(0, human.hp - 1);
-        floating_texts.push_back({human.pos, -1, 1.0f, 1.0f});
-        add_log("-> Human is struck by lightning! -1 HP.", ImVec4(1.0f, 0.25f, 0.25f, 1.0f));
+        human.hp = std::max(0, human.hp - GameConstants::Environment::LIGHTNING_HP_DAMAGE);
+        floating_texts.push_back({human.pos, -GameConstants::Environment::LIGHTNING_HP_DAMAGE, 1.0f, 1.0f});
+        add_log("-> Human is struck by lightning! -" + std::to_string(GameConstants::Environment::LIGHTNING_HP_DAMAGE) + " HP.", ImVec4(1.0f, 0.25f, 0.25f, 1.0f));
     }
     for (auto& z : zombies) {
         if (z->hp > 0 && z->pos == strike) {
-            z->hp -= 1;
-            floating_texts.push_back({z->pos, -1, 1.0f, 1.0f});
-            add_log("-> " + z->name + " is struck by lightning! -1 HP.", ImVec4(1.0f, 0.75f, 0.2f, 1.0f));
+            z->hp -= GameConstants::Environment::LIGHTNING_HP_DAMAGE;
+            floating_texts.push_back({z->pos, -GameConstants::Environment::LIGHTNING_HP_DAMAGE, 1.0f, 1.0f});
+            add_log("-> " + z->name + " is struck by lightning! -" + std::to_string(GameConstants::Environment::LIGHTNING_HP_DAMAGE) + " HP.", ImVec4(1.0f, 0.75f, 0.2f, 1.0f));
             if (z->hp <= 0 && z->type == ZombieType::Exploding) trigger_explosion(z->pos.x, z->pos.y, true);
         }
     }
@@ -1105,7 +1159,7 @@ void GameState::zombie_single_step(size_t idx) {
     if (game_over || game_won) return; 
     auto& zom = zombies[idx]; 
     if (zom->is_paralyzed) return;
-    double lambda = 1.2; 
+    double lambda = GameConstants::Zombies::AI_LAMBDA; 
     int current_dist = distance(zom->pos, human.pos); 
     std::vector<Position> valid_moves; 
     std::vector<double> weights; 
@@ -1130,8 +1184,8 @@ void GameState::zombie_single_step(size_t idx) {
 
                 int new_dist = distance(target, human.pos); 
                 double w = std::exp(-new_dist / lambda); 
-                if (new_dist > current_dist) w *= 0.05; 
-                else if (new_dist == current_dist && (dx != 0 || dy != 0)) w *= 0.3; 
+                if (new_dist > current_dist) w *= GameConstants::Zombies::AI_AWAY_WEIGHT; 
+                else if (new_dist == current_dist && (dx != 0 || dy != 0)) w *= GameConstants::Zombies::AI_PERPENDICULAR_WEIGHT; 
                 valid_moves.push_back(target); 
                 weights.push_back(w); 
             } 
@@ -1160,12 +1214,12 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
     sf::Vector2f tCenter = getCellCenter(tx, ty, cellSize, boardOffset); 
 
     if (input_mode == InputMode::TargetKnife) { 
-        if (distance(human.pos, target) <= 1) { 
+        if (distance(human.pos, target) <= GameConstants::Weapons::KNIFE_RANGE) { 
             for (size_t i = 0; i < zombies.size(); ++i) { 
                 if (zombies[i]->hp > 0 && zombies[i]->pos == target) { 
-                    zombies[i]->hp -= 1; 
-                    floating_texts.push_back({zombies[i]->pos, -1, 1.0f, 1.0f});
-                    human.stamina -= 1; 
+                    zombies[i]->hp -= GameConstants::Weapons::KNIFE_DAMAGE; 
+                    floating_texts.push_back({zombies[i]->pos, -GameConstants::Weapons::KNIFE_DAMAGE, 1.0f, 1.0f});
+                    human.stamina -= GameConstants::Weapons::KNIFE_STAMINA_COST; 
                     add_log("[RADIO] Blade connects with Zombie #" + std::to_string(i + 1) + ".", ImVec4(0.35f, 1.0f, 0.7f, 1.0f));
                     active_fx.type = FXType::Knife; 
                     active_fx.timer = 0.35f; 
@@ -1184,11 +1238,11 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
         auto [vx, vy] = get_8_direction(tx - human.pos.x, ty - human.pos.y); 
         if (vx == 0 && vy == 0) return; 
         human.pistol_ammo -= 1; 
-        human.stamina -= 1; 
+        human.stamina -= GameConstants::Weapons::PISTOL_STAMINA_COST; 
         Position hit_pos = human.pos; 
         bool hit_something = false; 
 
-        for (int step = 1; step <= 5; ++step) { 
+        for (int step = 1; step <= GameConstants::Weapons::PISTOL_RANGE; ++step) { 
             int cx = human.pos.x + vx * step; 
             int cy = human.pos.y + vy * step; 
             if (cx < 0 || cx >= width || cy < 0 || cy >= height) { 
@@ -1218,11 +1272,11 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
             if (zombies[i]->hp > 0 && zombies[i]->pos == hit_pos) { 
                 any_target = true;
                 int dist = distance(human.pos, hit_pos); 
-                double chance = (dist <= 2) ? 1.0 : (dist == 3 ? 0.7 : (dist == 4 ? 0.4 : 0.0)); 
+                double chance = std::exp(-((double)(dist - 1) / GameConstants::Weapons::PISTOL_ACCURACY_LAMBDA));
                 std::uniform_real_distribution<double> dist_chance(0.0, 1.0); 
                 if (dist_chance(rng) <= chance) { 
-                    zombies[i]->hp -= 1; 
-                    floating_texts.push_back({zombies[i]->pos, -1, 1.0f, 1.0f});
+                    zombies[i]->hp -= GameConstants::Weapons::PISTOL_DAMAGE; 
+                    floating_texts.push_back({zombies[i]->pos, -GameConstants::Weapons::PISTOL_DAMAGE, 1.0f, 1.0f});
                     add_log("[RADIO] Pistol round lands on Zombie #" + std::to_string(i + 1) + ".", ImVec4(1.0f, 0.95f, 0.35f, 1.0f));
                     if (zombies[i]->hp <= 0 && zombies[i]->type == ZombieType::Exploding) trigger_explosion(hit_pos.x, hit_pos.y, true); 
                 } else {
@@ -1623,20 +1677,20 @@ void GameState::update_zombie_logic(float dt) {
 
                 bool in_water = (grid[zom->pos.x][zom->pos.y] == Terrain::Water);
                 if (dx + dy == 1) { // Orthogonal -> Bite
-                    dmg = in_water ? 1 : 2;
+                    dmg = in_water ? GameConstants::Zombies::BITE_WATER_DAMAGE : GameConstants::Zombies::BITE_DAMAGE;
                     atk_fx.type = FXType::Bite;
                     if (in_water) {
-                        add_log("-> " + zom->name + " BITES human sluggishly in water! -1 HP.", ImVec4(0.9f, 0.4f, 0.4f, 1.0f));
+                        add_log("-> " + zom->name + " BITES human sluggishly in water! -" + std::to_string(GameConstants::Zombies::BITE_WATER_DAMAGE) + " HP.", ImVec4(0.9f, 0.4f, 0.4f, 1.0f));
                     } else {
-                        add_log("-> " + zom->name + " BITES human! -2 HP.", ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
+                        add_log("-> " + zom->name + " BITES human! -" + std::to_string(GameConstants::Zombies::BITE_DAMAGE) + " HP.", ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
                     }
                 } else { // Diagonal -> Scratch
-                    dmg = in_water ? 0 : 1;
+                    dmg = in_water ? GameConstants::Zombies::SCRATCH_WATER_DAMAGE : GameConstants::Zombies::SCRATCH_DAMAGE;
                     atk_fx.type = FXType::Scratch;
                     if (in_water) {
-                        add_log("-> " + zom->name + " tries to SCRATCH human but flails harmlessly in water! 0 HP.", ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
+                        add_log("-> " + zom->name + " tries to SCRATCH human but flails harmlessly in water! " + std::to_string(GameConstants::Zombies::SCRATCH_WATER_DAMAGE) + " HP.", ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
                     } else {
-                        add_log("-> " + zom->name + " SCRATCHES human! -1 HP.", ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
+                        add_log("-> " + zom->name + " SCRATCHES human! -" + std::to_string(GameConstants::Zombies::SCRATCH_DAMAGE) + " HP.", ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
                     }
                 }
                 
@@ -1645,8 +1699,8 @@ void GameState::update_zombie_logic(float dt) {
                 attack_animations.push_back(atk_fx);
 
                 if (zom->type == ZombieType::Vampire) { 
-                    zom->hp += 1; 
-                    floating_texts.push_back({zom->pos, 1, 1.0f, 1.0f});
+                    zom->hp += GameConstants::Zombies::VAMPIRE_HEAL_ON_HIT; 
+                    floating_texts.push_back({zom->pos, GameConstants::Zombies::VAMPIRE_HEAL_ON_HIT, 1.0f, 1.0f});
                 }
                 if (zom->type == ZombieType::Sick) {
                     if (dx + dy == 1) { // Orthogonal -> Bite (Direct bite)
@@ -1663,7 +1717,7 @@ void GameState::update_zombie_logic(float dt) {
         active_zombie_substep++; 
         int max_moves = zom->getMovesPerTurn();
         if (grid[zom->pos.x][zom->pos.y] == Terrain::Water) {
-            if (max_moves > 1) max_moves = 1;
+            if (max_moves > GameConstants::TerrainPenalties::WATER_MOVES_MAX_SPRINTER) max_moves = GameConstants::TerrainPenalties::WATER_MOVES_MAX_SPRINTER;
         }
         if (active_zombie_substep >= max_moves) { 
             active_zombie_idx++; active_zombie_substep = 0; 

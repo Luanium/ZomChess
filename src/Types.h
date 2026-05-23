@@ -6,6 +6,8 @@
 #include <imgui.h>
 #include <SFML/System/Vector2.hpp>
 
+#include "GameConstants.h"
+
 enum class Terrain { Dirt, Water, Wall, Fire, Forest };
 enum class InputMode { MoveMode, TargetKnife, TargetPistol, TargetShotgun, TargetGrenade, TargetMolotov };
 enum class ZombieType { Normal, Fast, Exploding, Vampire, Sick };
@@ -32,20 +34,20 @@ struct GameConfig {
     int ratio_forest = 20;
     int ratio_dirt = 60;
 
-    int human_hp = 5;
-    int initial_stamina = 6;
-    int pistol_ammo = 12;
-    int shotgun_ammo = 6;
-    int grenades = 3;
-    int mines = 2;
-    int molotovs = 3; 
+    int human_hp = GameConstants::Difficulty::Medium::HUMAN_HP;
+    int initial_stamina = GameConstants::Difficulty::Medium::INITIAL_STAMINA;
+    int pistol_ammo = GameConstants::Difficulty::Medium::PISTOL_AMMO;
+    int shotgun_ammo = GameConstants::Difficulty::Medium::SHOTGUN_AMMO;
+    int grenades = GameConstants::Difficulty::Medium::GRENADES;
+    int mines = GameConstants::Difficulty::Medium::MINES;
+    int molotovs = GameConstants::Difficulty::Medium::MOLOTOVS; 
     int turn_limit = 50;
 
-    int count_normal = 3;
-    int count_fast = 2;
-    int count_exploding = 2;
-    int count_vampire = 1;
-    int count_sick = 1;
+    int count_normal = GameConstants::Difficulty::Medium::COUNT_NORMAL;
+    int count_fast = GameConstants::Difficulty::Medium::COUNT_FAST;
+    int count_exploding = GameConstants::Difficulty::Medium::COUNT_EXPLODING;
+    int count_vampire = GameConstants::Difficulty::Medium::COUNT_VAMPIRE;
+    int count_sick = GameConstants::Difficulty::Medium::COUNT_SICK;
 
     bool spawn_shield = true;      
     bool custom_map_mode = false;  

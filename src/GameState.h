@@ -7,6 +7,9 @@
 #include <memory>
 #include <random>
 
+// Forward declaration for AudioManager
+class AudioManager;
+
 class GameState {
 public:
     GameScene current_scene = GameScene::MainMenu;
@@ -55,6 +58,10 @@ public:
     std::mt19937 rng;
     Terrain editor_selected_terrain = Terrain::Wall;
 
+    // Audio management
+    bool music_enabled = true;
+    float music_volume = 50.0f;
+
     GameState();
 
     void init_game();
@@ -90,6 +97,12 @@ public:
     void apply_heavy_rain();
     void apply_dark_clouds();
     void apply_lightning_strike();
+
+    // Audio methods
+    void initAudio();
+    void playBackgroundMusic(const std::string& track);
+    void stopBackgroundMusic();
+    void setMusicVolume(float volume);
 
     bool export_challenge_file(const std::string& path);
     bool import_challenge_file(const std::string& path);

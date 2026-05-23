@@ -4,6 +4,7 @@
 
 #include "GameState.h"
 #include "UI.h"
+#include "AudioManager.h"
 #include <cmath>
 
 int main() {
@@ -28,6 +29,9 @@ int main() {
     }
 
     GameState state;
+    state.initAudio();
+    state.playBackgroundMusic("menu");
+    
     sf::Clock deltaClock;
     sf::Clock animationClock; 
 
@@ -186,13 +190,13 @@ int main() {
             ImGui::SameLine();
             if (ImGui::RadioButton("VI", ui_lang == Lang::VI)) ui_lang = Lang::VI;
             ImGui::SameLine();
-            if (ImGui::Button(tr("EASY", "DE"), ImVec2(120, 30))) { state.apply_quick_difficulty(0); state.init_game(); state.current_scene = GameScene::Playing; view_initialized = false; }
+            if (ImGui::Button(tr("EASY", "DE"), ImVec2(120, 30))) { state.apply_quick_difficulty(0); state.init_game(); state.current_scene = GameScene::Playing; state.playBackgroundMusic("battle"); view_initialized = false; }
             ImGui::SameLine();
-            if (ImGui::Button(tr("MEDIUM", "TRUNG BINH"), ImVec2(120, 30))) { state.apply_quick_difficulty(1); state.init_game(); state.current_scene = GameScene::Playing; view_initialized = false; }
+            if (ImGui::Button(tr("MEDIUM", "TRUNG BINH"), ImVec2(120, 30))) { state.apply_quick_difficulty(1); state.init_game(); state.current_scene = GameScene::Playing; state.playBackgroundMusic("battle"); view_initialized = false; }
             ImGui::SameLine();
-            if (ImGui::Button(tr("HARD", "KHO"), ImVec2(120, 30))) { state.apply_quick_difficulty(2); state.init_game(); state.current_scene = GameScene::Playing; view_initialized = false; }
+            if (ImGui::Button(tr("HARD", "KHO"), ImVec2(120, 30))) { state.apply_quick_difficulty(2); state.init_game(); state.current_scene = GameScene::Playing; state.playBackgroundMusic("battle"); view_initialized = false; }
             ImGui::SameLine();
-            if (ImGui::Button(tr("UNFAIR", "SIEU KHO"), ImVec2(120, 30))) { state.apply_quick_difficulty(3); state.init_game(); state.current_scene = GameScene::Playing; view_initialized = false; }
+            if (ImGui::Button(tr("UNFAIR", "SIEU KHO"), ImVec2(120, 30))) { state.apply_quick_difficulty(3); state.init_game(); state.current_scene = GameScene::Playing; state.playBackgroundMusic("battle"); view_initialized = false; }
 
             ImGui::Separator(); ImGui::Spacing();
             ImGui::Columns(2, "menu_split", false); ImGui::SetColumnWidth(0, 690);
@@ -606,7 +610,7 @@ int main() {
             else {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.6f, 0.15f, 1));
                 float full_btn_w = ImGui::GetContentRegionAvail().x - 10.0f;
-                if (ImGui::Button("LAUNCH CUSTOM STRATEGY COMBAT", ImVec2(full_btn_w, 45))) { state.init_game(); state.current_scene = GameScene::Playing; view_initialized = false; }
+                if (ImGui::Button("LAUNCH CUSTOM STRATEGY COMBAT", ImVec2(full_btn_w, 45))) { state.init_game(); state.current_scene = GameScene::Playing; state.playBackgroundMusic("battle"); view_initialized = false; }
                 ImGui::PopStyleColor();
             }
             ImGui::End();
@@ -1388,7 +1392,9 @@ int main() {
                 
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.72f, 0.14f, 0.14f, 1.0f));
                 if (ImGui::Button(tr("Yes, Exit Match", "Co, Thoat Tran"), ImVec2(180, 30))) {
+                    state.stopBackgroundMusic();
                     state.current_scene = GameScene::MainMenu;
+                    state.playBackgroundMusic("menu");
                     show_confirm_return_hub = false;
                     ImGui::CloseCurrentPopup();
                 }
@@ -1447,10 +1453,19 @@ int main() {
             }
 
             if (state.game_over || state.game_won) {
-                ImGui::OpenPopup("EndGameModal");
-                if (ImGui::BeginPopupModal("EndGameModal", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                ImGui::OpenPopup("End Game");
+                // Chuyển nhạc ngay khi kết quả xác định (chỉ chuyển 1 lần nhờ logic trong playMusic)
+                if (state.game_won)  state.playBackgroundMusic("victory");
+                else                 state.playBackgroundMusic("defeat");
+
+                if (ImGui::BeginPopupModal("End Game", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
                     ImGui::Text(state.game_over ? "OPERATION FAILED! YOU DIED." : "MISSION ACCOMPLISHED! DISPATCH SECTOR CLEAN.");
-                    if (ImGui::Button("Return to HQ", ImVec2(180, 30))) { ImGui::CloseCurrentPopup(); state.current_scene = GameScene::MainMenu; }
+                    if (ImGui::Button(tr("Return to HUB", "Tro Ve Tru So"), ImVec2(180, 30))) {
+                        ImGui::CloseCurrentPopup();
+                        state.stopBackgroundMusic();
+                        state.current_scene = GameScene::MainMenu;
+                        state.playBackgroundMusic("menu");
+                    }
                     ImGui::EndPopup();
                 }
             }

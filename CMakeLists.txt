@@ -37,14 +37,24 @@ FetchContent_MakeAvailable(imgui-sfml)
 add_executable(ZomChess 
     src/main.cpp 
     src/GameState.cpp
+    src/AudioManager.cpp
 )
 
 target_include_directories(ZomChess PRIVATE src)
 
-# 6. Explicitly link SFML and ImGui-SFML
+# 7. Link SFML audio component for music and sound effects
 target_link_libraries(ZomChess PRIVATE 
     sfml-graphics 
     sfml-window 
     sfml-system 
+    sfml-audio
     ImGui-SFML::ImGui-SFML
+)
+
+# 8. Copy assets folder to build directory after build
+add_custom_command(TARGET ZomChess POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/assets
+        $<TARGET_FILE_DIR:ZomChess>/assets
+    COMMENT "Copying assets to build directory"
 )
