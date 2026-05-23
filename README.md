@@ -1,4 +1,4 @@
-# 🧟 ZomChess Tactical Engine v2.1
+# 🧟 ZomChess: A light 2D turn-based tactical game
 
 Một trò chơi chiến thuật sinh tồn theo lượt (Turn-based Tactical Survival) độc đáo được phát triển bằng **C++**, kết hợp đồ họa **SFML** và giao diện quản lý **ImGui**. Trò chơi mô phỏng một bàn cờ sinh tử, nơi bạn phải vận dụng tư duy chiến thuật đỉnh cao để điều khiển nhân vật sống sót trước làn sóng Zombie khát máu.
 
