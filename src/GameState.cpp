@@ -1,6 +1,7 @@
 #include "GameState.h"
 #include "GameConstants.h"
 #include "AudioManager.h"
+#include "SoundSynth.h"
 #include "embedded/menu_theme.h"
 #include "embedded/battle_theme.h"
 #include "embedded/victory_theme.h"
@@ -19,13 +20,15 @@ GameState::GameState() : rng(std::random_device{}()) {
 void GameState::initAudio() {
     AudioManager& audio = AudioManager::getInstance();
 
-    // Load nhạc từ dữ liệu nhúng trong executable — không cần file ngoài
+    // Load nhạc từ dữ liệu nhúng trong executable
     audio.loadMusicFromMemory("menu",    menu_theme_ogg,    menu_theme_ogg_len);
     audio.loadMusicFromMemory("battle",  battle_theme_ogg,  battle_theme_ogg_len);
     audio.loadMusicFromMemory("victory", victory_theme_ogg, victory_theme_ogg_len);
     audio.loadMusicFromMemory("defeat",  defeat_theme_ogg,  defeat_theme_ogg_len);
-
     audio.setMusicVolume(music_volume);
+
+    // Tổng hợp tất cả sound effects từ code — không cần file ngoài
+    SoundSynth::registerAll(audio);
 }
 
 void GameState::playBackgroundMusic(const std::string& track) {
@@ -34,14 +37,17 @@ void GameState::playBackgroundMusic(const std::string& track) {
 }
 
 void GameState::stopBackgroundMusic() {
-    AudioManager& audio = AudioManager::getInstance();
-    audio.stopMusic();
+    AudioManager::getInstance().stopMusic();
 }
 
 void GameState::setMusicVolume(float volume) {
     music_volume = std::max(0.0f, std::min(100.0f, volume));
-    AudioManager& audio = AudioManager::getInstance();
-    audio.setMusicVolume(music_volume);
+    AudioManager::getInstance().setMusicVolume(music_volume);
+}
+
+// Shorthand helper used throughout GameState
+static inline void sfx(const std::string& name) {
+    AudioManager::getInstance().playSound(name);
 }
 
 int GameState::calculate_available_spawn_cells() {
@@ -571,7 +577,6 @@ void GameState::check_mine_interactions() {
     }
 }
 
-
 bool GameState::is_blocking_cell(int x, int y) const {
     if (x < 0 || x >= width || y < 0 || y >= height) return true;
     return grid[x][y] == Terrain::Wall ;
@@ -618,6 +623,7 @@ std::vector<Position> GameState::get_conductive_cluster(Position start) const {
 
 void GameState::apply_windstorm(int dx, int dy) {
     last_environment_event = "Windstorm";
+    sfx("wind");
     active_fx.type = FXType::Wind;
     active_fx.timer = 3.2f;
     active_fx.max_duration = 3.2f;
@@ -690,6 +696,7 @@ void GameState::apply_windstorm(int dx, int dy) {
 
 void GameState::apply_heavy_rain() {
     last_environment_event = "Heavy rain";
+    sfx("rain");
     active_fx.type = FXType::Rain;
     active_fx.timer = 3.2f;
     active_fx.max_duration = 3.2f;
@@ -767,6 +774,7 @@ void GameState::apply_dark_clouds() {
 
 void GameState::apply_lightning_strike() {
     last_environment_event = "Lightning";
+    sfx("lightning");
     std::vector<Position> cells;
     std::vector<double> weights;
     for (int x = 0; x < width; ++x) {
@@ -821,6 +829,7 @@ void GameState::apply_lightning_strike() {
         }
     }
     if (!conductive_cluster.empty()) {
+        sfx("electricity");
         add_log("-> Electricity spreads through " + std::to_string(conductive_cluster.size()) + " conductive cells; occupants are paralyzed next action.", ImVec4(0.45f, 0.9f, 1.0f, 1.0f));
     }
     check_victory_conditions();
@@ -922,7 +931,8 @@ void GameState::update_environment_logic(float dt) {
 }
 
 void GameState::trigger_explosion(int cx, int cy, bool is_zombie_exploding) { 
-    add_log("[EXPLOSION] Detonated at (" + std::to_string(cx) + ", " + std::to_string(cy) + ")!", ImVec4(1.0f, 0.4f, 0.0f, 1.0f)); 
+    add_log("[EXPLOSION] Detonated at (" + std::to_string(cx) + ", " + std::to_string(cy) + ")!", ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
+    sfx("explosion");
     
     Terrain center_t = grid[cx][cy];
     int radius = is_zombie_exploding ? 1 : 2;
@@ -1200,8 +1210,7 @@ void GameState::zombie_single_step(size_t idx) {
             add_log("[RADIO] Zombie #" + std::to_string(idx + 1) + " stepped on a mine. Stand by for detonation!", ImVec4(1.0f, 0.38f, 0.22f, 1.0f));
             trigger_explosion(zom->pos.x, zom->pos.y); 
         } 
-    } 
-    check_fire_interactions();
+    }     check_fire_interactions();
 }
 
 void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardOffset) { 
@@ -1221,6 +1230,7 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
                     floating_texts.push_back({zombies[i]->pos, -GameConstants::Weapons::KNIFE_DAMAGE, 1.0f, 1.0f});
                     human.stamina -= GameConstants::Weapons::KNIFE_STAMINA_COST; 
                     add_log("[RADIO] Blade connects with Zombie #" + std::to_string(i + 1) + ".", ImVec4(0.35f, 1.0f, 0.7f, 1.0f));
+                    sfx("knife");
                     active_fx.type = FXType::Knife; 
                     active_fx.timer = 0.35f; 
                     active_fx.max_duration = 0.35f; 
@@ -1239,6 +1249,7 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
         if (vx == 0 && vy == 0) return; 
         human.pistol_ammo -= 1; 
         human.stamina -= GameConstants::Weapons::PISTOL_STAMINA_COST; 
+        sfx("pistol");
         Position hit_pos = human.pos; 
         bool hit_something = false; 
 
@@ -1292,6 +1303,7 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
         if (vx == 0 && vy == 0) return; 
         human.shotgun_ammo -= 1; 
         human.stamina -= 1; 
+        sfx("shotgun");
         active_fx.type = FXType::Shotgun; 
         active_fx.timer = 0.65f; 
         active_fx.max_duration = 0.65f; 
@@ -1469,6 +1481,7 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
         if (vx == 0 && vy == 0) return; 
         human.grenades -= 1; 
         human.stamina -= 1; 
+        sfx("grenade_land");
         std::uniform_int_distribution<int> dist_steps(1, 6); 
         int total_steps = dist_steps(rng); 
         
@@ -1513,6 +1526,7 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
         if (vx == 0 && vy == 0) return; 
         
         human.molotovs -= 1; human.stamina -= 1;
+        sfx("molotov");
         std::uniform_int_distribution<int> dist_steps(1, 6); 
         int max_steps = dist_steps(rng); 
         
@@ -1679,6 +1693,7 @@ void GameState::update_zombie_logic(float dt) {
                 if (dx + dy == 1) { // Orthogonal -> Bite
                     dmg = in_water ? GameConstants::Zombies::BITE_WATER_DAMAGE : GameConstants::Zombies::BITE_DAMAGE;
                     atk_fx.type = FXType::Bite;
+                    sfx("zombie_bite");
                     if (in_water) {
                         add_log("-> " + zom->name + " BITES human sluggishly in water! -" + std::to_string(GameConstants::Zombies::BITE_WATER_DAMAGE) + " HP.", ImVec4(0.9f, 0.4f, 0.4f, 1.0f));
                     } else {
@@ -1687,6 +1702,7 @@ void GameState::update_zombie_logic(float dt) {
                 } else { // Diagonal -> Scratch
                     dmg = in_water ? GameConstants::Zombies::SCRATCH_WATER_DAMAGE : GameConstants::Zombies::SCRATCH_DAMAGE;
                     atk_fx.type = FXType::Scratch;
+                    sfx("zombie_scratch");
                     if (in_water) {
                         add_log("-> " + zom->name + " tries to SCRATCH human but flails harmlessly in water! " + std::to_string(GameConstants::Zombies::SCRATCH_WATER_DAMAGE) + " HP.", ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
                     } else {
@@ -1809,6 +1825,7 @@ void GameState::set_cell_on_fire(int x, int y) {
         }
         if (!exists) {
             fire_cells.push_back({Position{x, y}, 2});
+            sfx("fire");
         }
         check_fire_interactions();
     }

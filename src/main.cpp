@@ -7,6 +7,11 @@
 #include "AudioManager.h"
 #include <cmath>
 
+// Shorthand helper for sound effects
+static inline void sfx(const std::string& name) {
+    AudioManager::getInstance().playSound(name);
+}
+
 int main() {
     enum class Lang { EN, VI };
     static Lang ui_lang = Lang::EN;
@@ -84,6 +89,7 @@ int main() {
                                         if (state.human.stamina >= cost) {
                                             state.human.pos = {tx, ty};
                                             state.human.stamina -= cost;
+                                            sfx("footstep");
                                             state.check_fire_interactions();
                                             state.check_mine_interactions();
                                         } else {
