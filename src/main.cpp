@@ -5,6 +5,7 @@
 #include "GameState.h"
 #include "UI.h"
 #include "AudioManager.h"
+#include "SplashScreen.h"
 #include <cmath>
 
 // Shorthand helper for sound effects
@@ -32,6 +33,30 @@ int main() {
     for (const char* fp : fontCandidates) {
         if (boardFont.loadFromFile(fp)) { hasFont = true; break; }
     }
+
+    // ── Splash Screen ──────────────────────────────────────────────────
+    {
+        SplashScreen splash;
+        splash.init(window.getSize().x, window.getSize().y);
+        sf::Clock splashClock;
+
+        while (window.isOpen()) {
+            sf::Event ev;
+            while (window.pollEvent(ev)) {
+                if (ev.type == sf::Event::Closed) { window.close(); return 0; }
+                splash.handle_event(ev);
+            }
+
+            float dt = splashClock.restart().asSeconds();
+            if (!splash.update(dt)) break; // splash finished
+
+            window.clear(sf::Color(10, 11, 14));
+            if (hasFont) splash.draw(window, boardFont);
+            window.display();
+        }
+    }
+    if (!window.isOpen()) return 0;
+    // ──────────────────────────────────────────────────────────────────
 
     GameState state;
     state.initAudio();
@@ -254,6 +279,12 @@ int main() {
                 if (ImGui::Checkbox(tr("SFX", "Am thanh"), &sfx_on)) {
                     state.setSfxEnabled(sfx_on);
                 }
+                ImGui::SameLine(); ImGui::Dummy(ImVec2(12, 1)); ImGui::SameLine();
+                ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.15f, 0.35f, 0.55f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.20f, 0.50f, 0.75f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.10f, 0.28f, 0.45f, 1.0f));
+                if (ImGui::Button(tr("Game Guide", "Huong Dan"), ImVec2(130, 30))) show_guide_popup = true;
+                ImGui::PopStyleColor(3);
             }
 
             ImGui::Separator(); ImGui::Spacing();
@@ -722,6 +753,52 @@ int main() {
                 if (ImGui::Button("LAUNCH CUSTOM STRATEGY COMBAT", ImVec2(full_btn_w, 45))) { state.init_game(); state.current_scene = GameScene::Playing; state.playBackgroundMusic("battle"); view_initialized = false; }
                 ImGui::PopStyleColor();
             }
+
+            // ── Game Guide popup (accessible from menu hub) ────────────────
+            if (show_guide_popup) ImGui::OpenPopup(tr("Game Guide##menu", "Cam Nang Tro Choi##menu"));
+            if (ImGui::BeginPopupModal(tr("Game Guide##menu", "Cam Nang Tro Choi##menu"), &show_guide_popup, ImGuiWindowFlags_AlwaysAutoResize)) {
+                ImGui::SetNextWindowSizeConstraints(ImVec2(700, 0), ImVec2(700, 580));
+                ImGui::BeginChild("##guide_scroll_menu", ImVec2(680, 520), false, ImGuiWindowFlags_HorizontalScrollbar);
+                ImGui::TextColored(ImVec4(0.95f, 0.9f, 0.35f, 1.0f), "%s", tr("ZOMCHESS — GAME WIKI", "ZOMCHESS — CAM NANG TRO CHOI"));
+                ImGui::Spacing();
+                ImGui::TextWrapped("%s", tr(
+                    "Open this guide in-game for the full interactive reference. Below is a quick overview.",
+                    "Mo huong dan nay trong game de xem tai lieu day du. Duoi day la tom tat nhanh."
+                ));
+                ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.6f, 1.0f, 0.8f, 1.0f), "%s", tr("Turn Structure", "Cau Truc Luot"));
+                ImGui::BulletText("%s", tr("Human acts first, then Zombies, then Environment.", "Human hanh dong truoc, sau do Zombie, roi Moi Truong."));
+                ImGui::BulletText("%s", tr("Win: eliminate all zombies. Lose: HP = 0 or turn limit exceeded.", "Thang: diet het zombie. Thua: HP = 0 hoac het luot."));
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.6f, 1.0f, 0.8f, 1.0f), "%s", tr("Stamina", "The Luc"));
+                ImGui::BulletText("%s", tr("Rolled 1-6 each turn. Move = 1 (Water = 2). Each weapon use = 1.", "Tung 1-6 moi luot. Di chuyen = 1 (Nuoc = 2). Moi vu khi = 1."));
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.6f, 1.0f, 0.8f, 1.0f), "%s", tr("Weapons", "Vu Khi"));
+                ImGui::BulletText("%s", tr("Knife: melee, 1 dmg. Pistol: ranged, accuracy drops with distance.", "Dao: can chien, 1 sat thuong. Sung luc: xa, do chinh xac giam theo khoang cach."));
+                ImGui::BulletText("%s", tr("Shotgun: 3-tile line, hits all. Grenade: 1-turn fuse, AoE blast.", "Sung hoa mai: 3 o thang hang, ban tat ca. Luu dan: no sau 1 luot, sat thuong vung."));
+                ImGui::BulletText("%s", tr("Molotov: throws fire 1-6 tiles. Mine: placed trap, 1-tile blast.", "Bom xang: nem lua 1-6 o. Min: bay dat san, no 1 o."));
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.6f, 1.0f, 0.8f, 1.0f), "%s", tr("Zombie Types", "Loai Zombie"));
+                ImGui::BulletText("%s", tr("Normal: 1 move/turn. Fast: 2 moves/turn. Exploding: detonates on death.", "Binh thuong: 1 buoc/luot. Nhanh: 2 buoc/luot. No: phat no khi chet."));
+                ImGui::BulletText("%s", tr("Vampire: heals on hit. Sick: infects — reduces your stamina next turn.", "Ma ca rong: hoi phuc khi tan cong. Benh: lay nhiem — giam the luc luot sau."));
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.6f, 1.0f, 0.8f, 1.0f), "%s", tr("Terrain", "Dia Hinh"));
+                ImGui::BulletText("%s", tr("Dirt: normal. Wall: blocks movement & shots. Water: costs 2 stamina.", "Dat: binh thuong. Tuong: chan di chuyen & dan. Nuoc: ton 2 the luc."));
+                ImGui::BulletText("%s", tr("Forest: blocks line-of-sight. Fire: damages on entry. Ice: may slide.", "Rung: chan tam nhin. Lua: gay sat thuong khi buoc vao. Bang: co the truot."));
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.6f, 1.0f, 0.8f, 1.0f), "%s", tr("Environment Events", "Bien Co Moi Truong"));
+                ImGui::BulletText("%s", tr("Wind, Rain, Lightning, Heatwave, Blizzard — each reshapes the battlefield.", "Gio, Mua, Set, Nang Nong, Bao Tuyet — moi su kien thay doi chien truong."));
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "%s", tr("Tip: Start with EASY to learn the mechanics!", "Meo: Bat dau voi DE de hoc co che tro choi!"));
+                ImGui::EndChild();
+                ImGui::Separator();
+                if (ImGui::Button(tr("Close", "Dong"), ImVec2(160, 34))) {
+                    show_guide_popup = false;
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
+            }
+
             ImGui::End();
         }
         else if (state.current_scene == GameScene::MapEditor) {
@@ -747,8 +824,8 @@ int main() {
             }
 
             ImGui::SetNextWindowPos(ImVec2(mw * cellSize + boardOffset + 30.0f, 20.0f));
-            ImGui::SetNextWindowSize(ImVec2(400, 618));
-            ImGui::Begin("Map Blueprint Architect", nullptr, ImGuiWindowFlags_NoCollapse);
+            ImGui::SetNextWindowSize(ImVec2(600, 618));
+            ImGui::Begin("To set Human's initial position, choose Dirt then Shift+Click", nullptr, ImGuiWindowFlags_NoCollapse);
             ImGui::TextColored(ImVec4(1, 0.7f, 0, 1), "Brush Selection Tools:");
             if (ImGui::RadioButton("Plain Dirt Floor", state.editor_selected_terrain == Terrain::Dirt)) state.editor_selected_terrain = Terrain::Dirt;
             if (ImGui::RadioButton("Reinforced Wall", state.editor_selected_terrain == Terrain::Wall)) state.editor_selected_terrain = Terrain::Wall;
@@ -1725,7 +1802,7 @@ int main() {
                     ImGui::TextColored(ImVec4(0.6f, 1.0f, 0.8f, 1.0f), "%s", tr("In-Game Panel", "Bang Thong Tin In-Game"));
                     ImGui::BulletText("%s", tr("Top bar: current turn / turn limit, HP bar, stamina bar.", "Thanh tren: luot hien tai / gioi han luot, thanh HP, thanh the luc."));
                     ImGui::BulletText("%s", tr("Weapon buttons show remaining ammo/count. Greyed out = unavailable.", "Cac nut vu khi hien so dan/so luong con lai. Mo nhat = khong the dung."));
-                    ImGui::BulletText("%s", tr("Status icons (B/P/F/S) appear next to HP when active.", "Bieu tuong trang thai (B/P/F/S) hien ben canh HP khi kich hoat."));
+                    ImGui::BulletText("%s", tr("Info list about the hostiles, dead ones are greyed out.", "Bieu tuong trang thai (B/P/F/S) hien ben canh HP khi kich hoat."));
                     ImGui::BulletText("%s", tr("Combat log on the right shows all events in real time.", "Nhat ky chien dau ben phai hien tat ca su kien theo thoi gian thuc."));
                     ImGui::BulletText("%s", tr("Music and SFX toggles are in the top-right of the panel.", "Nut bat/tat nhac va am thanh o goc tren phai cua bang."));
                 }
@@ -1737,7 +1814,7 @@ int main() {
                     ImGui::BulletText("%s", tr("Moves 1 tile per turn (8-directional, weighted toward Human).", "Di chuyen 1 o moi luot (8 huong, uu tien huong Human)."));
                     ImGui::BulletText("%s", tr("Orthogonal attack: Bite -2 HP. Diagonal attack: Scratch -1 HP.", "Tan cong ngang/doc: Can -2 HP. Tan cong cheo: Cao -1 HP."));
                     ImGui::BulletText("%s", tr("In Water: Bite deals only -1 HP; Scratch deals 0 HP.", "Trong Nuoc: Can chi gay -1 HP; Cao gay 0 HP."));
-                    ImGui::BulletText("%s", tr("AI uses exponential weighting (lambda=1.2) — mostly advances, rarely retreats.", "AI dung trong so mu (lambda=1.2) — chu yeu tien, hiem khi lui."));
+                    //ImGui::BulletText("%s", tr("AI uses exponential weighting (lambda=1.2) — mostly advances, rarely retreats.", "AI dung trong so mu (lambda=1.2) — chu yeu tien, hiem khi lui."));
                     ImGui::Spacing();
                     ImGui::TextColored(ImVec4(0.35f, 0.75f, 1.0f, 1.0f), "%s", tr("Fast Sprinter  [HP: 2]", "Zombie Nhanh  [HP: 2]"));
                     ImGui::BulletText("%s", tr("Takes 2 move+attack actions per turn instead of 1.", "Co 2 hanh dong di chuyen+tan cong moi luot thay vi 1."));
@@ -1746,8 +1823,8 @@ int main() {
                     ImGui::Spacing();
                     ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.1f, 1.0f), "%s", tr("Exploding Zombie  [HP: 3]", "Zombie No  [HP: 3]"));
                     ImGui::BulletText("%s", tr("On death (any cause): triggers explosion radius 1 — center 3 dmg, ring 2 dmg.", "Khi chet (bat ky nguyen nhan): kich no ban kinh 1 — tam 3 sat thuong, vong ngoai 2 sat thuong."));
-                    ImGui::BulletText("%s", tr("Chain reaction: if another Exploder is in blast range, it also detonates.", "Phan ung day chuyen: neu Zombie No khac trong vung no, no cung phat no."));
-                    ImGui::BulletText("%s", tr("Explosion radius reduced by 1 if standing on Water or Ice.", "Ban kinh no giam 1 neu dang dung tren Nuoc hoac Bang."));
+                    //ImGui::BulletText("%s", tr("Chain reaction: if another Exploder is in blast range, it also detonates.", "Phan ung day chuyen: neu Zombie No khac trong vung no, no cung phat no."));
+                    //ImGui::BulletText("%s", tr("Explosion radius reduced by 1 if standing on Water or Ice.", "Ban kinh no giam 1 neu dang dung tren Nuoc hoac Bang."));
                     ImGui::BulletText("%s", tr("Blast destroys Walls, melts Ice into Water, and destroys loot drops.", "Vu no pha Tuong, tan Bang thanh Nuoc, va pha huy loot drop."));
                     ImGui::Spacing();
                     ImGui::TextColored(ImVec4(0.75f, 0.2f, 0.75f, 1.0f), "%s", tr("Vampire Zombie  [HP: 4]", "Zombie Hut Mau  [HP: 4]"));
@@ -1757,7 +1834,7 @@ int main() {
                     ImGui::TextColored(ImVec4(0.85f, 0.9f, 0.2f, 1.0f), "%s", tr("Sick Zombie  [HP: 2]", "Zombie Benh  [HP: 2]"));
                     ImGui::BulletText("%s", tr("On orthogonal Bite: halves remaining turns AND inflicts -1 stamina next turn.", "Khi Can ngang/doc: giam nua so luot con lai VA tru -1 stamina luot sau."));
                     ImGui::BulletText("%s", tr("Diagonal Scratch does NOT trigger infection — only direct Bite does.", "Cao cheo KHONG gay nhiem — chi Can truc tiep moi gay nhiem."));
-                    ImGui::BulletText("%s", tr("Multiple bites stack: each halves the remaining turns again.", "Nhieu lan can chong chong: moi lan lai giam nua so luot con lai."));
+                    //ImGui::BulletText("%s", tr("Multiple bites stack: each halves the remaining turns again.", "Nhieu lan can chong chong: moi lan lai giam nua so luot con lai."));
                 }
                 ImGui::Spacing();
 
@@ -1769,14 +1846,14 @@ int main() {
                     ImGui::Spacing();
                     ImGui::TextColored(ImVec4(1.0f, 0.95f, 0.35f, 1.0f), "%s", tr("Pistol  [Cost: 1 stamina + 1 ammo]", "Sung Luc  [Chi phi: 1 the luc + 1 dan]"));
                     ImGui::BulletText("%s", tr("Fires in 8 directions, range up to 20 tiles. Deals -1 HP on hit.", "Ban theo 8 huong, tam toi da 20 o. Gay -1 HP khi trung."));
-                    ImGui::BulletText("%s", tr("Accuracy: exponential decay with distance (lambda=4.32). Point-blank ~100%%, long range ~10%%.", "Do chinh xac: giam mu theo khoang cach (lambda=4.32). Gan ~100%%, xa ~10%%."));
+                    ImGui::BulletText("%s", tr("Accuracy: exponential decay with distance. Point-blank ~100%%, long range ~10%%.", "Do chinh xac: giam mu theo khoang cach (lambda=4.32). Gan ~100%%, xa ~10%%."));
                     ImGui::BulletText("%s", tr("Bullet stops at first zombie hit or Wall. Passes through empty tiles.", "Dan dung lai o zombie dau tien trung hoac Tuong. Xuyen qua o trong."));
                     ImGui::Spacing();
                     ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", tr("Shotgun  [Cost: 1 stamina + 1 shell]", "Sung Hoa Mai  [Chi phi: 1 the luc + 1 vien]"));
-                    ImGui::BulletText("%s", tr("Straight shot: expanding cone 3 steps deep (up to 9 cells). Diagonal: triangular area.", "Ban thang: hinh non mo rong 3 buoc (toi da 9 o). Cheo: vung tam giac."));
-                    ImGui::BulletText("%s", tr("Each zombie in cone takes -1 HP, then pushed 1 tile in fire direction.", "Moi zombie trong vung chiu -1 HP, sau do bi day 1 o theo huong ban."));
+                    ImGui::BulletText("%s", tr("Straight shot: expanding cone 3 steps deep (9 cells). Diagonal: triangular area (10 cells).", "Ban thang: hinh non mo rong 3 buoc (toi da 9 o). Cheo: vung tam giac."));
+                    ImGui::BulletText("%s", tr("Each zombie in cone takes -1 HP, then pushed back 1 tile in fire direction.", "Moi zombie trong vung chiu -1 HP, sau do bi day 1 o theo huong ban."));
                     ImGui::BulletText("%s", tr("If pushed into Wall or another zombie: +1 collision damage to both.", "Neu bi day vao Tuong hoac zombie khac: +1 sat thuong va cham cho ca hai."));
-                    ImGui::BulletText("%s", tr("Recoil: Human pushed 1 tile backward. If blocked by Wall: Wall destroyed, Human -1 HP.", "Giat lui: Human bi day 1 o ra sau. Neu bi chan boi Tuong: Tuong bi pha, Human -1 HP."));
+                    //ImGui::BulletText("%s", tr("Recoil: Human pushed 1 tile backward. If blocked by Wall: Wall destroyed, Human -1 HP.", "Giat lui: Human bi day 1 o ra sau. Neu bi chan boi Tuong: Tuong bi pha, Human -1 HP."));
                     ImGui::BulletText("%s", tr("Shotgun blast destroys loot drops in its cone area.", "Dan shotgun pha huy loot drop trong vung ban."));
                     ImGui::Spacing();
                     ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "%s", tr("Grenade  [Cost: 1 stamina + 1 grenade]", "Luu Dan  [Chi phi: 1 the luc + 1 qua]"));
@@ -1915,10 +1992,161 @@ int main() {
                 }
                 ImGui::Spacing();
 
+                // ── PHYSICAL MECHANISMS ────────────────────────────────────────────────────────
+                if (ImGui::CollapsingHeader(tr("Physical Mechanisms", "Co Che Vat Ly"))) {
+
+                    // Shotgun Recoil
+                    ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "%s", tr("Shotgun Recoil", "Giat Lui Sung Hoa Mai"));
+                    ImGui::BulletText("%s", tr(
+                        "Firing the shotgun pushes the Human 1 tile in the opposite direction of the shot if there is obstacle right before the shooting direction.",
+                        "Ban sung hoa mai day lui Human 1 o theo huong nguoc lai voi huong ban neu co vat can ngay truoc huong ban."));
+                    ImGui::BulletText("%s", tr(
+                        "If the tile behind is free (no wall, no zombie), Human slides back safely.",
+                        "Neu o phia sau trong (khong tuong, khong zombie), Human truot lui an toan."));
+                    //ImGui::BulletText("%s", tr(
+                    //    "If blocked by a wall: the wall is destroyed AND Human loses 1 HP (impact damage).",
+                    //    "Neu bi chan boi tuong: tuong bi pha huy VA Human mat 1 HP (sat thuong va dap)."));
+                    ImGui::BulletText("%s", tr(
+                        "If blocked by a zombie: the zombie takes 1 impact damage, Human stays in place.",
+                        "Neu bi chan boi zombie: zombie nhan 1 sat thuong va dap, Human dung yen."));
+                    ImGui::Spacing();
+
+                    // Explosion Push
+                    ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "%s", tr("Explosion Knockback", "Day Lui Do Vu No"));
+                    ImGui::BulletText("%s", tr(
+                        "Entities within 1 tile of an explosion center are pushed 1 tile away from the blast.",
+                        "Thuc the trong vong 1 o tu tam vu no bi day lui 1 o ra xa tam no."));
+                    ImGui::BulletText("%s", tr(
+                        "If the push destination is blocked (wall or entity), the pushed entity takes +1 bonus impact damage.",
+                        "Neu dich den bi chan (tuong hoac thuc the khac), thuc the bi day nhan them +1 sat thuong va dap."));
+                    ImGui::BulletText("%s", tr(
+                        "The blocking entity also takes 1 impact damage from the collision.",
+                        "Thuc the dang chan cung nhan 1 sat thuong va dap tu su va cham."));
+                    ImGui::BulletText("%s", tr(
+                        "Walls adjacent to the blast center are destroyed by the explosion.",
+                        "Tuong ke sat tam vu no bi pha huy boi vu no."));
+                    ImGui::Spacing();
+
+                    // Zombie-Zombie Collision
+                    ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "%s", tr("Entity Collision", "Va Cham Thuc The"));
+                    ImGui::BulletText("%s", tr(
+                        "When a zombie is pushed into another zombie (or the Human), both take 1 collision damage.",
+                        "Khi mot zombie bi day vao zombie khac (hoac Human), ca hai nhan 1 sat thuong va cham."));
+                    ImGui::BulletText("%s", tr(
+                        "Collision damage is applied after the push resolves — an Exploding Zombie can chain-detonate.",
+                        "Sat thuong va cham duoc ap dung sau khi day lui hoan tat — Zombie No co the kich no day chuyen."));
+                    ImGui::Spacing();
+
+                    // Line-of-Sight Blocking
+                    ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "%s", tr("Cover & Line-of-Sight", "Che Chan & Tam Nhin"));
+                    ImGui::BulletText("%s", tr(
+                        "Walls block all ranged attacks (pistol, shotgun cone, grenade throw path).",
+                        "Tuong chan tat ca tan cong tam xa (sung luc, vung shotgun, duong nem luu dan)."));
+                    //ImGui::BulletText("%s", tr(
+                    //    "Forest tiles block line-of-sight: pistol shots cannot pass through Forest.",
+                    //    "O Rung chan tam nhin: dan sung luc khong the xuyen qua Rung."));
+                    ImGui::BulletText("%s", tr(
+                        "Shotgun fires in a straight 3-tile line; the first wall hit stops the blast and is destroyed.",
+                        "Sung hoa mai ban thang 3 o; tuong dau tien bi trung se dung lai va bi pha huy."));
+                    ImGui::BulletText("%s", tr(
+                        "Grenades are thrown in a straight line and can be blocked mid-air by walls.",
+                        "Luu dan duoc nem theo duong thang va co the bi chan giua chung boi tuong."));
+                    ImGui::Spacing();
+
+                    // Ice Slide
+                    ImGui::TextColored(ImVec4(0.5f, 0.85f, 1.0f, 1.0f), "%s", tr("Ice Slide", "Truot Bang"));
+                    ImGui::BulletText("%s", tr(
+                        "Trigger: entering an Ice tile when 4+ consecutive Ice cells lie ahead in the movement direction.",
+                        "Kich hoat: buoc vao o Bang khi co 4+ o Bang lien tiep phia truoc theo huong di chuyen."));
+                    ImGui::BulletText("%s", tr(
+                        "Base slide chance: 50%%. Each additional step has a 25%% lower probability (exponential decay).",
+                        "Xac suat truot co ban: 50%%. Moi buoc them co xac suat thap hon 25%% (giam mu)."));
+                    ImGui::BulletText("%s", tr(
+                        "The entity slides until: the ice ends, a wall/entity blocks the path, or the probability roll fails.",
+                        "Thuc the truot cho den khi: het bang, tuong/thuc the chan duong, hoac xac suat that bai."));
+                    ImGui::BulletText("%s", tr(
+                        "Slamming into an obstacle at the end of a slide inflicts STUN: the entity loses all remaining actions that turn.",
+                        "Truot vao vat can o cuoi duong truot gay CHOANG: thuc the mat toan bo hanh dong con lai trong luot do."));
+                    ImGui::BulletText("%s", tr(
+                        "Applies to both Human and Zombies. Fire/Mine interactions are checked at the final slide position.",
+                        "Ap dung cho ca Human va Zombie. Tuong tac Lua/Min duoc kiem tra tai vi tri truot cuoi cung."));
+                    ImGui::Spacing();
+
+                    // Electricity Conduction
+                    ImGui::TextColored(ImVec4(0.45f, 0.9f, 1.0f, 1.0f), "%s", tr("Electricity Conduction", "Lan Truyen Dien"));
+                    ImGui::BulletText("%s", tr(
+                        "Lightning strikes a weighted-random cell (Water/Ice cells and cells with entities are 2-4x more likely).",
+                        "Set danh vao o ngau nhien co trong so (o Nuoc/Bang va o co thuc the co xac suat cao hon 2-4 lan)."));
+                    ImGui::BulletText("%s", tr(
+                        "Conductive cells: Water, Ice, and any cell occupied by a living entity.",
+                        "O dan dien: Nuoc, Bang, va bat ky o nao co thuc the dang song."));
+                    ImGui::BulletText("%s", tr(
+                        "Electricity spreads via BFS through all connected conductive cells (4-directional adjacency).",
+                        "Dien lan truyen qua BFS qua tat ca o dan dien lien ket (ke canh 4 huong)."));
+                    ImGui::BulletText("%s", tr(
+                        "All entities in the conductive cluster are PARALYZED for their next action (cannot act for 1 turn).",
+                        "Tat ca thuc the trong cum dan dien bi TE LIET cho hanh dong tiep theo (khong the hanh dong 1 luot)."));
+                    ImGui::BulletText("%s", tr(
+                        "Direct strike cell: entity takes 1 HP damage AND is unfrozen if frozen. Spread cells: paralysis only.",
+                        "O bi set danh truc tiep: thuc the mat 1 HP VA duoc giai bang neu dang bi dong. O lan truyen: chi te liet."));
+                    ImGui::Spacing();
+
+                    // Fire Spread
+                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.1f, 1.0f), "%s", tr("Fire Spread", "Lan Lua"));
+                    ImGui::BulletText("%s", tr(
+                        "Fire spreads to adjacent Forest tiles (4-directional) at the end of each phase: after Human turn, after Zombie phase, and after Environment phase.",
+                        "Lua lan sang o Rung ke canh (4 huong) vao cuoi moi pha: sau luot Human, sau pha Zombie, va sau pha Moi Truong."));
+                    ImGui::BulletText("%s", tr(
+                        "Fire does NOT spread to Dirt, Water, Wall, or Ice directly — only Forest ignites.",
+                        "Lua KHONG lan sang Dat, Nuoc, Tuong, hoac Bang truc tiep — chi Rung moi bat lua."));
+                    ImGui::BulletText("%s", tr(
+                        "Each Fire cell has a duration counter (default 2 turns). When it expires, the cell becomes Dirt.",
+                        "Moi o Lua co bo dem thoi gian (mac dinh 2 luot). Khi het, o do chuyen thanh Dat."));
+                    ImGui::BulletText("%s", tr(
+                        "Entities entering or standing on a Fire cell take 1 HP damage per interaction check.",
+                        "Thuc the buoc vao hoac dung tren o Lua nhan 1 sat thuong moi lan kiem tra tuong tac."));
+                    ImGui::BulletText("%s", tr(
+                        "Human standing in water while burning is extinguished automatically.",
+                        "Human dang chay khi dung trong nuoc se tu dong tat lua."));
+                    ImGui::Spacing();
+
+                    // Heat Transfer (Ice Melting)
+                    ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.15f, 1.0f), "%s", tr("Heat Transfer (Ice Melting)", "Truyen Nhiet (Tan Bang)"));
+                    ImGui::BulletText("%s", tr(
+                        "Any heat source (Fire cell, Molotov landing, Heatwave event) melts all 8 adjacent Ice tiles immediately.",
+                        "Bat ky nguon nhiet nao (o Lua, Molotov roi xuong, su kien Nang Nong) lam tan tat ca 8 o Bang ke canh ngay lap tuc."));
+                    ImGui::BulletText("%s", tr(
+                        "Melted Ice becomes Water. Entities frozen on that cell are automatically unfrozen.",
+                        "Bang tan chuyen thanh Nuoc. Thuc the bi dong tren o do duoc tu dong giai bang."));
+                    ImGui::BulletText("%s", tr(
+                        "Fire spread also melts adjacent Ice (4-directional) during the propagation step.",
+                        "Lan lua cung lam tan Bang ke canh (4 huong) trong buoc lan truyen."));
+                    ImGui::BulletText("%s", tr(
+                        "Heatwave: all isolated Water cells (no adjacent Water neighbor) evaporate to Dirt (100%% chance). Forest cells have a 15%% drought chance.",
+                        "Nang Nong: tat ca o Nuoc bi co lap (khong co o Nuoc ke canh) boc hoi thanh Dat (100%%). O Rung co 15%% kha nang han han."));
+                    ImGui::Spacing();
+
+                    // Blizzard Freezing
+                    ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "%s", tr("Blizzard & Freezing", "Bao Tuyet & Dong Cung"));
+                    ImGui::BulletText("%s", tr(
+                        "Blizzard: each Water cell has a 25%% chance to freeze. Freezing is flood-filled — the entire connected Water body freezes together.",
+                        "Bao Tuyet: moi o Nuoc co 25%% kha nang dong bang. Dong bang lan theo flood-fill — toan bo vung Nuoc lien ket dong cung nhau."));
+                    ImGui::BulletText("%s", tr(
+                        "Entities standing on a cell that freezes become FROZEN: they cannot move until they spend 2 stamina to break free.",
+                        "Thuc the dang dung tren o bi dong bang tro nen BI DONG CUNG: khong the di chuyen cho den khi tieu 2 the luc de tu giai."));
+                    ImGui::BulletText("%s", tr(
+                        "Frozen Zombies skip their movement each turn (frozen_turns counts down). They are still damaged normally.",
+                        "Zombie bi dong cung bo qua di chuyen moi luot (frozen_turns dem nguoc). Chung van nhan sat thuong binh thuong."));
+                    ImGui::BulletText("%s", tr(
+                        "Ice cells are conductive — a frozen entity on Ice can be paralyzed by a subsequent lightning strike.",
+                        "O Bang dan dien — thuc the bi dong cung tren Bang co the bi te liet boi tia set tiep theo."));
+                }
+                ImGui::Spacing();
+
                 // ── LOOT DROPS ────────────────────────────────────────────────────────
                 if (ImGui::CollapsingHeader(tr("Loot Drops", "Loot Drop"))) {
                     ImGui::TextWrapped("%s", tr("Every zombie leaves a '?' loot drop on death. Walk onto it to collect.", "Moi zombie de lai loot drop '?' khi chet. Di chuyen vao o do de nhat."));
-                    ImGui::BulletText("%s", tr("55%% Junk (useless). 45%% useful items split by rarity.", "55%% Rac (vo dung). 45%% do huu ich phan chia theo do hiem."));
+                    ImGui::BulletText("%s", tr("75%% Junk (useless). 25%% useful items split by rarity.", "75%% Rac (vo dung). 25%% do huu ich phan chia theo do hiem."));
                     ImGui::BulletText("%s", tr("Items: Health Potion +2 HP, Stamina Potion (restore to 6), Pistol Ammo +3, Shotgun Shell +1, Grenade +1, Molotov +1, Mine +1.", "Do: Binh Mau +2 HP, Binh The Luc (phuc hoi ve 6), Dan Luc +3, Dan Hoa Mai +1, Luu Dan +1, Bom Xang +1, Min +1."));
                     ImGui::BulletText("%s", tr("Cannot pick up on Water or Ice tiles. Pickup resumes when tile changes to Dirt/Forest.", "Khong the nhat tren o Nuoc hoac Bang. Co the nhat khi o chuyen thanh Dat/Rung."));
                     ImGui::BulletText("%s", tr("Destroyed by: explosion blast, shotgun cone, lightning direct hit, tile becoming Fire, or Wind blowing it into Fire.", "Bi pha huy boi: vu no, vung shotgun, set danh truc tiep, o chuyen thanh Lua, hoac Gio thoi vao Lua."));
@@ -1932,7 +2160,7 @@ int main() {
                     ImGui::BulletText("%s", tr("4 presets: Easy / Medium / Hard / Unfair. Each sets HP, stamina, ammo, zombie counts, terrain ratios, and weather probabilities.", "4 che do: De / Trung Binh / Kho / Bat Cong. Moi che do thiet lap HP, the luc, dan, so luong zombie, ti le dia hinh va xac suat thoi tiet."));
                     ImGui::Spacing();
                     ImGui::TextColored(ImVec4(0.6f, 1.0f, 0.8f, 1.0f), "%s", tr("Custom Setup", "Thiet Lap Tuy Chinh"));
-                    ImGui::BulletText("%s", tr("Adjust map size (up to 25x25), all terrain ratios, weather probabilities, zombie counts, and Human stats.", "Chinh kich thuoc ban do (toi da 25x25), ti le dia hinh, xac suat thoi tiet, so luong zombie va chi so Human."));
+                    ImGui::BulletText("%s", tr("Adjust map size, all terrain ratios, weather probabilities, zombie counts, and Human stats.", "Chinh kich thuoc ban do (toi da 25x25), ti le dia hinh, xac suat thoi tiet, so luong zombie va chi so Human."));
                     ImGui::BulletText("%s", tr("Map Editor: paint terrain tile-by-tile and place Human spawn manually.", "Trinh chinh sua ban do: to mau dia hinh tung o va dat vi tri xuat hien Human thu cong."));
                     ImGui::BulletText("%s", tr("Spawn Shield: protects a 5x5 area around Human spawn from zombie spawns.", "Khien Xuat Hien: bao ve vung 5x5 quanh vi tri xuat hien Human khoi zombie."));
                     ImGui::Spacing();
@@ -1946,7 +2174,7 @@ int main() {
                 // ── CREDITS ───────────────────────────────────────────────────────────
                 if (ImGui::CollapsingHeader(tr("Credits", "Tin Chi"))) {
                     ImGui::TextColored(ImVec4(0.95f, 0.9f, 0.35f, 1.0f), "ZomChess v1.0");
-                    ImGui::BulletText("%s", tr("Design & Programming: Luan Nguyen", "Thiet ke & Lap trinh: Nguyen Luan"));
+                    ImGui::BulletText("%s", tr("Design & Programming: Phan Anh Luan + AIs", "Thiet ke & Lap trinh: Phan Anh Luan + AI"));
                     ImGui::BulletText("%s", tr("Music: 'Ancient Rite', 'Discovery Hit', 'Impending Boom', 'The Ice Giants' — licensed for use.", "Nhac nen: 'Ancient Rite', 'Discovery Hit', 'Impending Boom', 'The Ice Giants' — duoc cap phep su dung."));
                     ImGui::BulletText("%s", tr("Built with: C++, SFML, Dear ImGui, ImGui-SFML.", "Xay dung bang: C++, SFML, Dear ImGui, ImGui-SFML."));
                     ImGui::BulletText("%s", tr("Sound effects synthesized procedurally in-engine.", "Hieu ung am thanh duoc tong hop thu tuc trong engine."));
