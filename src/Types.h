@@ -127,4 +127,21 @@ struct FloatingText {
     float max_duration = 1.0f;
 };
 
+enum class LootType {
+    Junk,         // Vô dụng
+    HealthPotion, // +2 HP
+    StaminaPotion,// Stamina về 6
+    PistolAmmo,   // +3 đạn pistol
+    ShotgunAmmo,  // +1 đạn shotgun
+    Grenade,      // +1 lựu đạn
+    Molotov,      // +1 bom xăng
+    Mine          // +1 mìn
+};
+
+struct LootDrop {
+    Position pos;
+    LootType type;
+    float blink_timer = 0.0f; // Dùng để nhấp nháy "?"
+};
+
 #endif // TYPES_H

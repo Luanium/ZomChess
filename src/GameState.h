@@ -60,6 +60,8 @@ public:
     std::mt19937 rng;
     Terrain editor_selected_terrain = Terrain::Wall;
 
+    std::vector<LootDrop> loot_drops; // Loot rơi khi zombie chết
+
     // Audio management
     bool music_enabled = true;
     bool sfx_enabled = true;
@@ -105,6 +107,15 @@ public:
 
     // Melt all ice cells adjacent (8-dir) to a given cell due to heat transfer
     void melt_adjacent_ice(int cx, int cy);
+
+    // Loot drop system
+    void spawn_loot_at(Position pos);
+    void check_loot_pickup();
+    void spawn_loot_for_newly_dead(); // Gọi sau check_victory_conditions
+    // Hủy loot tại các ô trong danh sách (do nổ, sét, lửa, shotgun)
+    void destroy_loot_at_cells(const std::vector<Position>& cells);
+    // Kiểm tra và hủy loot nếu ô của nó bị chuyển thành lửa
+    void check_loot_on_fire();
 
     // Ice terrain helpers
     // Returns true if entity slid (and turn should end immediately for that entity)

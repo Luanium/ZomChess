@@ -98,6 +98,7 @@ int main() {
                                                 sfx("footstep");
                                                 state.check_fire_interactions();
                                                 state.check_mine_interactions();
+                                                state.check_loot_pickup();
                                                 // Ice slide check — try_ice_slide also calls check_fire/mine internally
                                                 if (state.human.hp > 0 && state.grid[state.human.pos.x][state.human.pos.y] == Terrain::Ice) {
                                                     state.try_ice_slide(true, 0, move_dx, move_dy);
@@ -206,6 +207,10 @@ int main() {
                 it->timer -= dtSeconds;
                 if (it->timer <= 0.0f) it = state.floating_texts.erase(it);
                 else ++it;
+            }
+            // Update loot blink timers
+            for (auto& ld : state.loot_drops) {
+                ld.blink_timer += dtSeconds;
             }
             state.update_zombie_logic(dtSeconds);
             state.update_environment_logic(dtSeconds);
@@ -902,14 +907,56 @@ int main() {
                 }
             }
 
+            // Draw loot drops as blinking "?" icons
+            if (hasFont) {
+                for (const auto& ld : state.loot_drops) {
+                    int llx = ld.pos.x - viewX + padX;
+                    int lly = ld.pos.y - viewY + padY;
+                    if (llx < 0 || llx >= VIEW_CELLS || lly < 0 || lly >= VIEW_CELLS) continue;
+
+                    // Blinking background
+                    float blink = std::sin(ld.blink_timer * 4.0f) * 0.5f + 0.5f; // 0..1
+                    sf::Uint8 bgAlpha = static_cast<sf::Uint8>(120 + blink * 80);
+                    sf::RectangleShape lootBg(sf::Vector2f(cellSize - 8.0f, cellSize - 8.0f));
+                    lootBg.setPosition(llx * cellSize + boardOffset + 4.0f, lly * cellSize + boardOffset + 4.0f);
+                    lootBg.setFillColor(sf::Color(80, 60, 20, bgAlpha));
+                    lootBg.setOutlineThickness(1.5f);
+                    lootBg.setOutlineColor(sf::Color(220, 180, 60, bgAlpha));
+                    window.draw(lootBg);
+
+                    // "?" text
+                    sf::Uint8 txtAlpha = static_cast<sf::Uint8>(180 + blink * 75);
+                    sf::Text qMark;
+                    qMark.setFont(boardFont);
+                    qMark.setString("?");
+                    qMark.setCharacterSize(static_cast<unsigned int>(cellSize * 0.55f));
+                    qMark.setFillColor(sf::Color(255, 220, 60, txtAlpha));
+                    sf::FloatRect qBounds = qMark.getLocalBounds();
+                    qMark.setOrigin(qBounds.left + qBounds.width / 2.0f, qBounds.top + qBounds.height / 2.0f);
+                    qMark.setPosition(llx * cellSize + boardOffset + cellSize / 2.0f,
+                                      lly * cellSize + boardOffset + cellSize / 2.0f);
+                    window.draw(qMark);
+                }
+            }
+
             for (size_t i = 0; i < state.zombies.size(); ++i) {
                 const auto& z = state.zombies[i];
                 int zlx = z->pos.x - viewX + padX;
                 int zly = z->pos.y - viewY + padY;
                 if (zlx < 0 || zlx >= VIEW_CELLS || zly < 0 || zly >= VIEW_CELLS) continue;
                 if (z->hp <= 0) {
-                    sf::RectangleShape deadZ(sf::Vector2f(cellSize - 8.0f, cellSize - 8.0f)); deadZ.setFillColor(sf::Color(15, 15, 15, 160));
-                    deadZ.setPosition(zlx * cellSize + boardOffset + 4.0f, zly * cellSize + boardOffset + 4.0f); window.draw(deadZ); continue;
+                    // Nếu có loot ở đây thì không vẽ ô đen (loot "?" đã được vẽ ở layer trước)
+                    bool has_loot = false;
+                    for (const auto& ld : state.loot_drops) {
+                        if (ld.pos == z->pos) { has_loot = true; break; }
+                    }
+                    if (!has_loot) {
+                        sf::RectangleShape deadZ(sf::Vector2f(cellSize - 8.0f, cellSize - 8.0f));
+                        deadZ.setFillColor(sf::Color(15, 15, 15, 160));
+                        deadZ.setPosition(zlx * cellSize + boardOffset + 4.0f, zly * cellSize + boardOffset + 4.0f);
+                        window.draw(deadZ);
+                    }
+                    continue;
                 }
                 
                 float drawX = zlx * cellSize + boardOffset + 3.0f;

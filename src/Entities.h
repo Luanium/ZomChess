@@ -33,6 +33,7 @@ public:
     bool is_stunned = false;   // Stun from ice slide collision
     bool is_frozen = false;    // Frozen: standing on water when it freezes
     int frozen_turns = 0;      // Turns remaining frozen (counts down each turn)
+    bool loot_spawned = false; // Đã spawn loot khi chết chưa
 
     Zombie(Position p, int h, std::string n, ZombieType t) 
         : pos(p), hp(h), max_hp(h), name(n), type(t) {}

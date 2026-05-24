@@ -315,6 +315,7 @@ void GameState::init_game() {
     zombies.clear(); 
     logs.clear();
     fire_cells.clear();
+    loot_drops.clear();
     floating_texts.clear();
     attack_animations.clear();
     active_grenades.clear();
@@ -955,12 +956,27 @@ void GameState::apply_windstorm(int dx, int dy) {
         }
     }
 
+    // Gió thổi loot drops (cơ chế giống grenade)
+    int loots_blown = 0;
+    for (auto& ld : loot_drops) {
+        Position l_target{ld.pos.x + dx, ld.pos.y + dy};
+        if (!is_blocking_cell(l_target.x, l_target.y)) {
+            ld.pos = l_target;
+            loots_blown++;
+        }
+    }
+
     std::string wind_log = "[ENV] Windstorm blows " + std::to_string(dx) + "," + std::to_string(dy) + " and pushes " + std::to_string(moved) + " entities";
     if (grenades_blown > 0) {
         wind_log += " and " + std::to_string(grenades_blown) + " grenade(s)";
     }
+    if (loots_blown > 0) {
+        wind_log += " and " + std::to_string(loots_blown) + " loot drop(s)";
+    }
     wind_log += ".";
     add_log(wind_log, ImVec4(0.65f, 0.85f, 1.0f, 1.0f));
+    // Sau khi gió thổi, kiểm tra loot có rơi vào ô lửa không
+    check_loot_on_fire();
     check_fire_interactions();
 }
 
@@ -1129,6 +1145,9 @@ void GameState::apply_lightning_strike() {
 
     add_log("[ENV] Lightning strikes (" + std::to_string(strike.x) + ", " + std::to_string(strike.y) + ")!", ImVec4(1.0f, 1.0f, 0.35f, 1.0f));
 
+    // Hủy loot tại ô bị sét đánh trực tiếp
+    destroy_loot_at_cells({strike});
+
     if (grid[strike.x][strike.y] == Terrain::Forest) {
         // Only ignite if no living entity is standing on the cell
         if (!has_living_entity_at(strike)) {
@@ -1284,6 +1303,8 @@ void GameState::apply_heatwave() {
     if (!evaporated.empty()) log += " Evaporated " + std::to_string(evaporated.size()) + " water cells.";
     if (!dried_forest.empty()) log += " Drought killed " + std::to_string(dried_forest.size()) + " forest cells.";
     add_log(tr(log, "[MT] Nang nong gay gat! Bang tan, nuoc boc hoi, rung kho het."), ImVec4(1.0f, 0.7f, 0.2f, 1.0f));
+    // Nếu ô nước/băng dưới loot chuyển thành đất, human có thể nhặt ngay
+    check_loot_pickup();
 }
 
 void GameState::apply_blizzard() {
@@ -1501,6 +1522,9 @@ void GameState::trigger_explosion(int cx, int cy, bool is_zombie_exploding) {
             }
         }
     }
+
+    // Hủy loot trong vùng nổ
+    destroy_loot_at_cells(active_fx.blast_cells);
 
     auto get_entity_at = [&](Position p) -> std::pair<std::string, void*> {
         if (human.hp > 0 && human.pos == p) return {"human", &human};
@@ -1981,6 +2005,9 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
                 } 
             }
         } 
+
+        // Hủy loot trong vùng đạn shotgun
+        destroy_loot_at_cells(active_fx.blast_cells);
 
         struct HitZombie {
             size_t index;
@@ -2472,7 +2499,9 @@ void GameState::check_victory_conditions() {
         bool all_dead = true; 
         for (const auto& z : zombies) { if (z->hp > 0) { all_dead = false; break; } } 
         if (all_dead) game_won = true; 
-    } 
+    }
+    // Spawn loot for any zombie that just died
+    spawn_loot_for_newly_dead();
 }
 
 void GameState::propagate_gradual_forest_fire() {
@@ -2555,6 +2584,8 @@ void GameState::propagate_gradual_forest_fire() {
                 }
             }
         }
+        // Hủy loot tại các ô rừng vừa bốc lửa
+        destroy_loot_at_cells(to_catch_fire);
         check_fire_interactions();
     }
 }
@@ -2574,6 +2605,142 @@ void GameState::set_cell_on_fire(int x, int y) {
             fire_cells.push_back({Position{x, y}, 2});
             sfx("fire");
         }
+        // Hủy loot tại ô vừa bốc lửa
+        destroy_loot_at_cells({{x, y}});
         check_fire_interactions();
+    }
+}
+
+void GameState::destroy_loot_at_cells(const std::vector<Position>& cells) {
+    int destroyed = 0;
+    loot_drops.erase(std::remove_if(loot_drops.begin(), loot_drops.end(),
+        [&](const LootDrop& ld) {
+            for (const auto& p : cells) {
+                if (ld.pos == p) { destroyed++; return true; }
+            }
+            return false;
+        }), loot_drops.end());
+    if (destroyed > 0) {
+        add_log(tr("[LOOT] " + std::to_string(destroyed) + " loot drop(s) destroyed!",
+                   "[LOOT] " + std::to_string(destroyed) + " goi do bi pha huy!"),
+                ImVec4(0.6f, 0.4f, 0.1f, 1.0f));
+    }
+}
+
+void GameState::check_loot_on_fire() {
+    std::vector<Position> fire_positions;
+    for (int x = 0; x < width; ++x)
+        for (int y = 0; y < height; ++y)
+            if (grid[x][y] == Terrain::Fire)
+                fire_positions.push_back({x, y});
+    if (!fire_positions.empty())
+        destroy_loot_at_cells(fire_positions);
+}
+
+void GameState::spawn_loot_for_newly_dead() {
+    for (auto& z : zombies) {
+        if (z->hp <= 0 && !z->loot_spawned) {
+            z->loot_spawned = true;
+            spawn_loot_at(z->pos);
+        }
+    }
+}
+
+void GameState::spawn_loot_at(Position pos) {
+    // Xác suất loot: 55% junk, 45% item hữu ích
+    // Trong 45% item: phân bổ theo độ hiếm
+    std::uniform_int_distribution<int> roll(0, 99);
+    int r = roll(rng);
+
+    LootType type;
+    if (r < 75) {
+        type = LootType::Junk;
+    } else if (r < 80) {
+        type = LootType::PistolAmmo;   // 5%
+    } else if (r < 85) {
+        type = LootType::StaminaPotion;// 4%
+    } else if (r < 89) {
+        type = LootType::HealthPotion; // 4%
+    } else if (r < 93) {
+        type = LootType::ShotgunAmmo;  // 3%
+    } else if (r < 96) {
+        type = LootType::Grenade;      // 2%
+    } else if (r < 98) {
+        type = LootType::Molotov;      // 2%
+    } else {
+        type = LootType::Mine;         // 2%
+    }
+
+    // Xóa loot cũ ở cùng vị trí nếu có
+    loot_drops.erase(std::remove_if(loot_drops.begin(), loot_drops.end(),
+        [&](const LootDrop& ld) { return ld.pos == pos; }), loot_drops.end());
+
+    loot_drops.push_back({pos, type, 0.0f});
+}
+
+void GameState::check_loot_pickup() {
+    if (human.hp <= 0) return;
+
+    // Không thể nhặt loot trên ô nước hoặc băng
+    Terrain cur = grid[human.pos.x][human.pos.y];
+    if (cur == Terrain::Water || cur == Terrain::Ice) return;
+
+    for (auto it = loot_drops.begin(); it != loot_drops.end(); ) {
+        if (it->pos == human.pos) {
+            switch (it->type) {
+                case LootType::Junk:
+                    sfx("footstep"); // âm thanh nhặt đồ vô dụng
+                    add_log(tr("[LOOT] You found... a zombie's old sock. Useless.",
+                               "[LOOT] Ban nhat duoc... chiec tat cu cua zombie. Vo dung."),
+                            ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
+                    break;
+                case LootType::HealthPotion:
+                    human.hp = std::min(human.hp + 2, 20); // cap tối đa 20
+                    floating_texts.push_back({human.pos, +2, 1.0f, 1.0f});
+                    sfx("heal");
+                    add_log(tr("[LOOT] Health Potion! +2 HP.", "[LOOT] Binh mau! +2 HP."),
+                            ImVec4(0.2f, 1.0f, 0.4f, 1.0f));
+                    break;
+                case LootType::StaminaPotion:
+                    human.stamina = 6;
+                    sfx("heal");
+                    add_log(tr("[LOOT] Stamina Potion! Stamina restored to 6.", "[LOOT] Binh the luc! Stamina phuc hoi ve 6."),
+                            ImVec4(0.4f, 0.8f, 1.0f, 1.0f));
+                    break;
+                case LootType::PistolAmmo:
+                    human.pistol_ammo += 3;
+                    sfx("footstep");
+                    add_log(tr("[LOOT] Pistol Ammo! +3 rounds.", "[LOOT] Dan luc! +3 vien."),
+                            ImVec4(1.0f, 0.95f, 0.35f, 1.0f));
+                    break;
+                case LootType::ShotgunAmmo:
+                    human.shotgun_ammo += 1;
+                    sfx("footstep");
+                    add_log(tr("[LOOT] Shotgun Shell! +1 shell.", "[LOOT] Dan shotgun! +1 vien."),
+                            ImVec4(1.0f, 0.7f, 0.2f, 1.0f));
+                    break;
+                case LootType::Grenade:
+                    human.grenades += 1;
+                    sfx("footstep");
+                    add_log(tr("[LOOT] Grenade! +1 grenade.", "[LOOT] Luu dan! +1 qua."),
+                            ImVec4(0.3f, 1.0f, 0.3f, 1.0f));
+                    break;
+                case LootType::Molotov:
+                    human.molotovs += 1;
+                    sfx("footstep");
+                    add_log(tr("[LOOT] Molotov Cocktail! +1 molotov.", "[LOOT] Bom xang! +1 chai."),
+                            ImVec4(1.0f, 0.45f, 0.1f, 1.0f));
+                    break;
+                case LootType::Mine:
+                    human.mines += 1;
+                    sfx("footstep");
+                    add_log(tr("[LOOT] Land Mine! +1 mine.", "[LOOT] Min! +1 qua."),
+                            ImVec4(0.9f, 0.9f, 0.2f, 1.0f));
+                    break;
+            }
+            it = loot_drops.erase(it);
+        } else {
+            ++it;
+        }
     }
 }
