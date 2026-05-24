@@ -54,12 +54,15 @@ public:
     VisualFX turn_banner_fx;
     std::vector<VisualFX> attack_animations; 
     std::vector<FloatingText> floating_texts;
+    IceSlideAnimation ice_slide_animation;
+    std::vector<TerrainTransitionAnimation> terrain_transitions;
 
     std::mt19937 rng;
     Terrain editor_selected_terrain = Terrain::Wall;
 
     // Audio management
     bool music_enabled = true;
+    bool sfx_enabled = true;
     float music_volume = 50.0f;
 
     GameState();
@@ -97,12 +100,22 @@ public:
     void apply_heavy_rain();
     void apply_dark_clouds();
     void apply_lightning_strike();
+    void apply_heatwave();   // Nắng nóng gay gắt
+    void apply_blizzard();   // Băng giá
+
+    // Melt all ice cells adjacent (8-dir) to a given cell due to heat transfer
+    void melt_adjacent_ice(int cx, int cy);
+
+    // Ice terrain helpers
+    // Returns true if entity slid (and turn should end immediately for that entity)
+    bool try_ice_slide(bool is_human, size_t zombie_idx, int move_dx, int move_dy);
 
     // Audio methods
     void initAudio();
     void playBackgroundMusic(const std::string& track);
     void stopBackgroundMusic();
     void setMusicVolume(float volume);
+    void setSfxEnabled(bool enabled);
 
     bool export_challenge_file(const std::string& path);
     bool import_challenge_file(const std::string& path);

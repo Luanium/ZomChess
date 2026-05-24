@@ -32,7 +32,10 @@ void GameState::initAudio() {
 }
 
 void GameState::playBackgroundMusic(const std::string& track) {
-    if (!music_enabled) return;
+    if (!music_enabled) {
+        AudioManager::getInstance().stopMusic();
+        return;
+    }
     AudioManager::getInstance().playMusic(track, true);
 }
 
@@ -43,6 +46,11 @@ void GameState::stopBackgroundMusic() {
 void GameState::setMusicVolume(float volume) {
     music_volume = std::max(0.0f, std::min(100.0f, volume));
     AudioManager::getInstance().setMusicVolume(music_volume);
+}
+
+void GameState::setSfxEnabled(bool enabled) {
+    sfx_enabled = enabled;
+    AudioManager::getInstance().setSoundVolume(enabled ? 70.0f : 0.0f);
 }
 
 // Shorthand helper used throughout GameState
@@ -85,8 +93,9 @@ void GameState::apply_quick_difficulty(int level) {
     active_config.map_width = 15;
     active_config.map_height = 15;
     active_config.turn_limit = 50;
+    active_config.enable_environment = true;
 
-    if (level == 0) { 
+    if (level == 0) { // Easy — open map, mild weather, lots of room to maneuver
         active_config.human_hp = GameConstants::Difficulty::Easy::HUMAN_HP;
         active_config.initial_stamina = GameConstants::Difficulty::Easy::INITIAL_STAMINA;
         active_config.pistol_ammo = GameConstants::Difficulty::Easy::PISTOL_AMMO; 
@@ -99,8 +108,22 @@ void GameState::apply_quick_difficulty(int level) {
         active_config.count_exploding = GameConstants::Difficulty::Easy::COUNT_EXPLODING; 
         active_config.count_vampire = GameConstants::Difficulty::Easy::COUNT_VAMPIRE; 
         active_config.count_sick = GameConstants::Difficulty::Easy::COUNT_SICK;
+        // Terrain: mostly open dirt, light obstacles, small water/forest patches, no ice
+        active_config.ratio_dirt = 60;
+        active_config.ratio_wall = 8;
+        active_config.ratio_water = 10;
+        active_config.ratio_forest = 18;
+        active_config.ratio_ice = 4;
+        // Weather: mostly clear, light wind/rain, rare extremes
+        active_config.env_prob_clear = 60;
+        active_config.env_prob_wind = 14;
+        active_config.env_prob_rain = 12;
+        active_config.env_prob_clouds = 4;
+        active_config.env_prob_lightning = 4;
+        active_config.env_prob_heatwave = 3;
+        active_config.env_prob_blizzard = 3;
     } 
-    else if (level == 1) { 
+    else if (level == 1) { // Medium — balanced terrain, varied weather
         active_config.human_hp = GameConstants::Difficulty::Medium::HUMAN_HP;
         active_config.initial_stamina = GameConstants::Difficulty::Medium::INITIAL_STAMINA;
         active_config.pistol_ammo = GameConstants::Difficulty::Medium::PISTOL_AMMO; 
@@ -113,8 +136,22 @@ void GameState::apply_quick_difficulty(int level) {
         active_config.count_exploding = GameConstants::Difficulty::Medium::COUNT_EXPLODING; 
         active_config.count_vampire = GameConstants::Difficulty::Medium::COUNT_VAMPIRE; 
         active_config.count_sick = GameConstants::Difficulty::Medium::COUNT_SICK;
+        // Terrain: balanced mix with moderate hazards
+        active_config.ratio_dirt = 52;
+        active_config.ratio_wall = 10;
+        active_config.ratio_water = 12;
+        active_config.ratio_forest = 18;
+        active_config.ratio_ice = 8;
+        // Weather: balanced, all events possible
+        active_config.env_prob_clear = 50;
+        active_config.env_prob_wind = 14;
+        active_config.env_prob_rain = 12;
+        active_config.env_prob_clouds = 4;
+        active_config.env_prob_lightning = 8;
+        active_config.env_prob_heatwave = 6;
+        active_config.env_prob_blizzard = 6;
     } 
-    else if (level == 2) { 
+    else if (level == 2) { // Hard — dense terrain, hostile weather
         active_config.human_hp = GameConstants::Difficulty::Hard::HUMAN_HP;
         active_config.initial_stamina = GameConstants::Difficulty::Hard::INITIAL_STAMINA;
         active_config.pistol_ammo = GameConstants::Difficulty::Hard::PISTOL_AMMO;  
@@ -127,8 +164,22 @@ void GameState::apply_quick_difficulty(int level) {
         active_config.count_exploding = GameConstants::Difficulty::Hard::COUNT_EXPLODING; 
         active_config.count_vampire = GameConstants::Difficulty::Hard::COUNT_VAMPIRE; 
         active_config.count_sick = GameConstants::Difficulty::Hard::COUNT_SICK;
+        // Terrain: more walls/water/ice, less open space
+        active_config.ratio_dirt = 42;
+        active_config.ratio_wall = 13;
+        active_config.ratio_water = 14;
+        active_config.ratio_forest = 16;
+        active_config.ratio_ice = 15;
+        // Weather: less clear, more dangerous events
+        active_config.env_prob_clear = 38;
+        active_config.env_prob_wind = 14;
+        active_config.env_prob_rain = 12;
+        active_config.env_prob_clouds = 6;
+        active_config.env_prob_lightning = 12;
+        active_config.env_prob_heatwave = 9;
+        active_config.env_prob_blizzard = 9;
     }
-    else { // Unfair difficulty (Level 3)
+    else { // Unfair — chaotic terrain, extreme weather
         active_config.human_hp = GameConstants::Difficulty::Unfair::HUMAN_HP;
         active_config.initial_stamina = GameConstants::Difficulty::Unfair::INITIAL_STAMINA;
         active_config.pistol_ammo = GameConstants::Difficulty::Unfair::PISTOL_AMMO;  
@@ -141,6 +192,20 @@ void GameState::apply_quick_difficulty(int level) {
         active_config.count_exploding = GameConstants::Difficulty::Unfair::COUNT_EXPLODING; 
         active_config.count_vampire = GameConstants::Difficulty::Unfair::COUNT_VAMPIRE; 
         active_config.count_sick = GameConstants::Difficulty::Unfair::COUNT_SICK;
+        // Terrain: heavily obstructed, lots of ice and water hazards
+        active_config.ratio_dirt = 32;
+        active_config.ratio_wall = 15;
+        active_config.ratio_water = 16;
+        active_config.ratio_forest = 14;
+        active_config.ratio_ice = 23;
+        // Weather: rarely clear, frequent extreme events
+        active_config.env_prob_clear = 22;
+        active_config.env_prob_wind = 14;
+        active_config.env_prob_rain = 12;
+        active_config.env_prob_clouds = 6;
+        active_config.env_prob_lightning = 16;
+        active_config.env_prob_heatwave = 15;
+        active_config.env_prob_blizzard = 15;
     }
 }
 
@@ -169,6 +234,7 @@ bool GameState::export_challenge_file(const std::string& path) {
     outFile << "RATIO_WATER "     << active_config.ratio_water << "\n";
     outFile << "RATIO_FOREST "    << active_config.ratio_forest << "\n";
     outFile << "RATIO_DIRT "      << active_config.ratio_dirt << "\n";
+    outFile << "RATIO_ICE "       << active_config.ratio_ice << "\n";
     outFile << "CUST_HUMAN_X "    << active_config.custom_human_pos.x << "\n";
     outFile << "CUST_HUMAN_Y "    << active_config.custom_human_pos.y << "\n";
     outFile << "ENV_PROB_CLEAR "  << active_config.env_prob_clear << "\n";
@@ -176,6 +242,8 @@ bool GameState::export_challenge_file(const std::string& path) {
     outFile << "ENV_PROB_RAIN "   << active_config.env_prob_rain << "\n";
     outFile << "ENV_PROB_CLOUDS " << active_config.env_prob_clouds << "\n";
     outFile << "ENV_PROB_LIGHT "  << active_config.env_prob_lightning << "\n";
+    outFile << "ENV_PROB_HEAT "   << active_config.env_prob_heatwave << "\n";
+    outFile << "ENV_PROB_BLIZ "   << active_config.env_prob_blizzard << "\n";
 
     if (active_config.custom_map_mode) {
         outFile << "GRID_DATA\n";
@@ -230,11 +298,14 @@ bool GameState::import_challenge_file(const std::string& path) {
         else if (key == "RATIO_WATER")  active_config.ratio_water = val;
         else if (key == "RATIO_FOREST") active_config.ratio_forest = val;
         else if (key == "RATIO_DIRT")   active_config.ratio_dirt = val;
+        else if (key == "RATIO_ICE")    active_config.ratio_ice = val;
         else if (key == "ENV_PROB_CLEAR")  active_config.env_prob_clear = val;
         else if (key == "ENV_PROB_WIND")   active_config.env_prob_wind = val;
         else if (key == "ENV_PROB_RAIN")   active_config.env_prob_rain = val;
         else if (key == "ENV_PROB_CLOUDS") active_config.env_prob_clouds = val;
         else if (key == "ENV_PROB_LIGHT")  active_config.env_prob_lightning = val;
+        else if (key == "ENV_PROB_HEAT")   active_config.env_prob_heatwave = val;
+        else if (key == "ENV_PROB_BLIZ")   active_config.env_prob_blizzard = val;
     }
     inFile.close();
     return true;
@@ -287,12 +358,13 @@ void GameState::init_game() {
     else {
         grid.assign(width, std::vector<Terrain>(height, Terrain::Dirt));
         
-        float total_ratio = active_config.ratio_wall + active_config.ratio_water + active_config.ratio_forest + active_config.ratio_dirt;
+        float total_ratio = active_config.ratio_wall + active_config.ratio_water + active_config.ratio_forest + active_config.ratio_dirt + active_config.ratio_ice;
         if (total_ratio <= 0.0f) {
             active_config.ratio_wall = 10;
             active_config.ratio_water = 10;
             active_config.ratio_forest = 20;
             active_config.ratio_dirt = 60;
+            active_config.ratio_ice = 0;
             total_ratio = 100.0f;
         }
 
@@ -300,6 +372,7 @@ void GameState::init_game() {
         int target_wall = std::round(total_cells * (active_config.ratio_wall / total_ratio));
         int target_water = std::round(total_cells * (active_config.ratio_water / total_ratio));
         int target_forest = std::round(total_cells * (active_config.ratio_forest / total_ratio));
+        int target_ice = std::round(total_cells * (active_config.ratio_ice / total_ratio));
 
         auto grow_terrain = [&](Terrain t, int target_count, float cluster_prob) {
             int current_count = 0;
@@ -357,6 +430,7 @@ void GameState::init_game() {
         grow_terrain(Terrain::Water, target_water, GameConstants::MapGen::CLUSTER_PROB_WATER);
         grow_terrain(Terrain::Forest, target_forest, GameConstants::MapGen::CLUSTER_PROB_FOREST);
         grow_terrain(Terrain::Wall, target_wall, GameConstants::MapGen::CLUSTER_PROB_WALL);
+        grow_terrain(Terrain::Ice, target_ice, GameConstants::MapGen::CLUSTER_PROB_WATER); // Ice clusters like water
 
         std::uniform_int_distribution<int> dist_x(0, width - 1);
         std::uniform_int_distribution<int> dist_y(0, height - 1);
@@ -577,6 +651,168 @@ void GameState::check_mine_interactions() {
     }
 }
 
+// Ice slide logic:
+// Called after an entity steps onto an Ice cell.
+// Counts consecutive ice cells ahead in the move direction.
+// If >= SLIDE_TRIGGER_LENGTH, rolls for a slide.
+// On slide: entity moves to the last ice cell in the run.
+// If the cell after the last ice cell is a blocker, entity is stunned (turn ends immediately).
+// Returns true if a slide occurred (caller should end the entity's turn).
+bool GameState::try_ice_slide(bool is_human, size_t zombie_idx, int move_dx, int move_dy) {
+    // Guard: zero direction means no movement, nothing to do
+    if (move_dx == 0 && move_dy == 0) return false;
+    // Guard: zombie index out of range
+    if (!is_human && zombie_idx >= zombies.size()) return false;
+
+    Position& pos = is_human ? human.pos : zombies[zombie_idx]->pos;
+
+    // Count consecutive ice cells starting from current position (inclusive)
+    int ice_run = 0;
+    for (int step = 0; step < GameConstants::Ice::SLIDE_TRIGGER_LENGTH; ++step) {
+        int nx = pos.x + move_dx * step;
+        int ny = pos.y + move_dy * step;
+        if (nx < 0 || nx >= width || ny < 0 || ny >= height) break;
+        if (grid[nx][ny] == Terrain::Ice) ice_run++;
+        else break;
+    }
+
+    if (ice_run < GameConstants::Ice::SLIDE_TRIGGER_LENGTH) return false;
+
+    // Exponential probability: each additional step has decreasing chance.
+    // Base chance for the minimum slide (SLIDE_TRIGGER_LENGTH cells) = SLIDE_CHANCE.
+    // Each extra step beyond that multiplies by SLIDE_DECAY.
+    std::uniform_real_distribution<float> roll(0.0f, 1.0f);
+    const float SLIDE_DECAY = 0.75f; // probability multiplier per extra step (increased from 0.55f for longer slides)
+
+    // Find how far the entity can slide, rolling per step
+    int max_steps = width + height;
+    Position slide_dest = pos;
+    bool has_blocker_after = false;
+
+    for (int step = 1; step <= max_steps; ++step) {
+        int nx = pos.x + move_dx * step;
+        int ny = pos.y + move_dy * step;
+
+        // Hit map boundary
+        if (nx < 0 || nx >= width || ny < 0 || ny >= height) {
+            has_blocker_after = true;
+            break;
+        }
+
+        // Hit non-ice terrain
+        if (grid[nx][ny] != Terrain::Ice) {
+            if (grid[nx][ny] == Terrain::Wall) has_blocker_after = true;
+            break;
+        }
+
+        // Check entity blocker
+        bool blocked_by_entity = false;
+        if (is_human) {
+            for (const auto& z : zombies) {
+                if (z->hp > 0 && z->pos == Position{nx, ny}) { blocked_by_entity = true; break; }
+            }
+        } else {
+            if (human.hp > 0 && human.pos == Position{nx, ny}) blocked_by_entity = true;
+            if (!blocked_by_entity) {
+                for (size_t k = 0; k < zombies.size(); ++k) {
+                    if (k != zombie_idx && zombies[k]->hp > 0 && zombies[k]->pos == Position{nx, ny}) {
+                        blocked_by_entity = true; break;
+                    }
+                }
+            }
+        }
+        if (blocked_by_entity) {
+            has_blocker_after = true;
+            break;
+        }
+
+        // Exponential probability: first step uses SLIDE_CHANCE, each extra step decays
+        // Using higher SLIDE_DECAY (0.75) to increase probability of longer slides
+        float step_prob = GameConstants::Ice::SLIDE_CHANCE * std::pow(SLIDE_DECAY, step - 1);
+        if (roll(rng) >= step_prob) break; // Stop here — didn't slide this far
+
+        slide_dest = {nx, ny};
+    }
+
+    if (slide_dest == pos) return false; // No actual movement
+
+    // Check blocker right after final destination (for stun)
+    if (!has_blocker_after) {
+        int after_x = slide_dest.x + move_dx;
+        int after_y = slide_dest.y + move_dy;
+        if (after_x < 0 || after_x >= width || after_y < 0 || after_y >= height) {
+            has_blocker_after = true;
+        } else if (grid[after_x][after_y] == Terrain::Wall) {
+            has_blocker_after = true;
+        } else {
+            if (is_human) {
+                for (const auto& z : zombies) {
+                    if (z->hp > 0 && z->pos == Position{after_x, after_y}) { has_blocker_after = true; break; }
+                }
+            } else {
+                if (human.hp > 0 && human.pos == Position{after_x, after_y}) has_blocker_after = true;
+                if (!has_blocker_after) {
+                    for (size_t k = 0; k < zombies.size(); ++k) {
+                        if (k != zombie_idx && zombies[k]->hp > 0 && zombies[k]->pos == Position{after_x, after_y}) {
+                            has_blocker_after = true; break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    std::string entity_name = is_human ? "Human" : zombies[zombie_idx]->name;
+    add_log(tr("[ICE] " + entity_name + " slides on ice to (" + std::to_string(slide_dest.x + 1) + ", " + std::to_string(slide_dest.y + 1) + ")!",
+               "[BANG] " + entity_name + " truot bang den (" + std::to_string(slide_dest.x + 1) + ", " + std::to_string(slide_dest.y + 1) + ")!"),
+            ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+
+    // Build visual animation path (bounded)
+    ice_slide_animation.active = true;
+    ice_slide_animation.is_human = is_human;
+    ice_slide_animation.zombie_idx = zombie_idx;
+    ice_slide_animation.path.clear();
+    ice_slide_animation.current_step = 0;
+    ice_slide_animation.step_timer = 0.0f;
+    {
+        Position cur = pos;
+        int steps_built = 0;
+        while (cur != slide_dest && steps_built < max_steps) {
+            ice_slide_animation.path.push_back(cur);
+            cur.x += move_dx;
+            cur.y += move_dy;
+            steps_built++;
+        }
+        ice_slide_animation.path.push_back(slide_dest);
+    }
+
+    // Move entity to final destination immediately (logical position).
+    // Animation path is purely visual.
+    pos = slide_dest;
+
+    // Apply stun BEFORE check_fire_interactions
+    if (has_blocker_after) {
+        if (is_human) {
+            human.is_stunned = true;
+            human.stamina = 0;
+            add_log(tr("[ICE] Human slammed into an obstacle! STUNNED — turn ends immediately.",
+                       "[BANG] Human truot vao vat can! CHOANG — ket thuc luot ngay lap tuc."),
+                    ImVec4(0.6f, 0.85f, 1.0f, 1.0f));
+        } else {
+            zombies[zombie_idx]->is_stunned = true;
+            add_log(tr("[ICE] " + entity_name + " slammed into an obstacle! STUNNED — action ends.",
+                       "[BANG] " + entity_name + " truot vao vat can! CHOANG — ket thuc hanh dong."),
+                    ImVec4(0.6f, 0.85f, 1.0f, 1.0f));
+        }
+    }
+
+    // Run terrain interactions LAST — these can trigger explosions/kills
+    check_fire_interactions();
+    check_mine_interactions();
+
+    return true; // Slide occurred
+}
+
 bool GameState::is_blocking_cell(int x, int y) const {
     if (x < 0 || x >= width || y < 0 || y >= height) return true;
     return grid[x][y] == Terrain::Wall ;
@@ -592,7 +828,8 @@ bool GameState::has_living_entity_at(Position p) const {
 
 bool GameState::is_conductive_cell(Position p) const {
     if (p.x < 0 || p.x >= width || p.y < 0 || p.y >= height) return false;
-    return grid[p.x][p.y] == Terrain::Water || has_living_entity_at(p);
+    // Water and Ice are both conductive; entities standing on any terrain also conduct
+    return grid[p.x][p.y] == Terrain::Water || grid[p.x][p.y] == Terrain::Ice || has_living_entity_at(p);
 }
 
 std::vector<Position> GameState::get_conductive_cluster(Position start) const {
@@ -619,6 +856,35 @@ std::vector<Position> GameState::get_conductive_cluster(Position start) const {
         }
     }
     return cluster;
+}
+
+void GameState::melt_adjacent_ice(int cx, int cy) {
+    const int dirs[8][2] = {{1,0},{-1,0},{0,1},{0,-1},{1,1},{1,-1},{-1,1},{-1,-1}};
+    for (const auto& d : dirs) {
+        int nx = cx + d[0], ny = cy + d[1];
+        if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+        if (grid[nx][ny] != Terrain::Ice) continue;
+        grid[nx][ny] = Terrain::Water;
+        terrain_transitions.push_back({Position{nx, ny}, Terrain::Ice, Terrain::Water, 0.0f, 0.8f});
+        add_log(tr("[ICE] Heat transfer melted ice at (" + std::to_string(nx + 1) + ", " + std::to_string(ny + 1) + ")!",
+                   "[BANG] Truyen nhiet lam tan bang tai (" + std::to_string(nx + 1) + ", " + std::to_string(ny + 1) + ")!"),
+                ImVec4(0.5f, 0.85f, 1.0f, 1.0f));
+        // Unfreeze any entity standing on the melted cell
+        if (human.hp > 0 && human.pos == Position{nx, ny} && human.is_frozen) {
+            human.is_frozen = false;
+            add_log(tr("[ICE] Ice melted under Human! Unfrozen.", "[BANG] Bang tan duoi chan Nguoi! Giai bang."),
+                    ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+        }
+        for (auto& z : zombies) {
+            if (z->hp > 0 && z->pos == Position{nx, ny} && z->is_frozen) {
+                z->is_frozen = false;
+                z->frozen_turns = 0;
+                add_log(tr("[ICE] Ice melted under " + z->name + "! Unfrozen.",
+                           "[BANG] Bang tan duoi chan " + z->name + "! Giai bang."),
+                        ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+            }
+        }
+    }
 }
 
 void GameState::apply_windstorm(int dx, int dy) {
@@ -659,6 +925,10 @@ void GameState::apply_windstorm(int dx, int dy) {
 
     int moved = 0;
     for (const auto& ref : refs) {
+        // Frozen entities cannot be pushed by wind
+        if (ref.human && human.is_frozen) continue;
+        if (!ref.human && zombies[ref.idx]->is_frozen) continue;
+
         Position current = ref.human ? human.pos : zombies[ref.idx]->pos;
         Position original = ref.pos;
         Position back{original.x - dx, original.y - dy};
@@ -710,19 +980,72 @@ void GameState::apply_heavy_rain() {
         for (int y = 0; y < height; ++y) {
             if (grid[x][y] != Terrain::Dirt) continue;
             bool next_to_water = false;
+            bool next_to_forest = false;
             for (const auto& d : dirs) {
                 int nx = x + d[0], ny = y + d[1];
-                if (nx >= 0 && nx < width && ny >= 0 && ny < height && grid[nx][ny] == Terrain::Water) {
-                    next_to_water = true;
-                    break;
+                if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                    if (grid[nx][ny] == Terrain::Water) next_to_water = true;
+                    if (grid[nx][ny] == Terrain::Forest) next_to_forest = true;
                 }
             }
             float threshold = next_to_water ? GameConstants::Environment::RAIN_FLOOD_THRESHOLD_WATER_ADJACENT : GameConstants::Environment::RAIN_FLOOD_THRESHOLD_ISOLATED;
-            if (chance(rng) < threshold) soaked.push_back({x, y});
+            if (chance(rng) < threshold) {
+                soaked.push_back({x, y});
+            } else if (next_to_forest && chance(rng) < GameConstants::Environment::RAIN_FOREST_SPREAD_CHANCE) {
+                // Dirt adjacent to forest may grow into forest during heavy rain
+                soaked.push_back({x, y}); // will be overridden below — use separate list
+            }
         }
     }
-    for (const auto& p : soaked) grid[p.x][p.y] = Terrain::Water;
-    active_fx.blast_cells = soaked;
+
+    // Separate: forest spread (dirt adjacent to forest -> forest)
+    std::vector<Position> new_forest;
+    for (int x = 0; x < width; ++x) {
+        for (int y = 0; y < height; ++y) {
+            if (grid[x][y] != Terrain::Dirt) continue;
+            bool next_to_forest = false;
+            for (const auto& d : dirs) {
+                int nx = x + d[0], ny = y + d[1];
+                if (nx >= 0 && nx < width && ny >= 0 && ny < height && grid[nx][ny] == Terrain::Forest) {
+                    next_to_forest = true; break;
+                }
+            }
+            if (next_to_forest && chance(rng) < GameConstants::Environment::RAIN_FOREST_SPREAD_CHANCE) {
+                new_forest.push_back({x, y});
+            }
+        }
+    }
+
+    // Flood: dirt -> water (re-compute cleanly, not mixing with forest spread)
+    std::vector<Position> flooded;
+    for (int x = 0; x < width; ++x) {
+        for (int y = 0; y < height; ++y) {
+            if (grid[x][y] != Terrain::Dirt) continue;
+            // Skip cells that will become forest
+            bool will_forest = false;
+            for (const auto& p : new_forest) { if (p.x == x && p.y == y) { will_forest = true; break; } }
+            if (will_forest) continue;
+            bool next_to_water = false;
+            for (const auto& d : dirs) {
+                int nx = x + d[0], ny = y + d[1];
+                if (nx >= 0 && nx < width && ny >= 0 && ny < height && grid[nx][ny] == Terrain::Water) {
+                    next_to_water = true; break;
+                }
+            }
+            float threshold = next_to_water ? GameConstants::Environment::RAIN_FLOOD_THRESHOLD_WATER_ADJACENT : GameConstants::Environment::RAIN_FLOOD_THRESHOLD_ISOLATED;
+            if (chance(rng) < threshold) flooded.push_back({x, y});
+        }
+    }
+
+    for (const auto& p : flooded) {
+        grid[p.x][p.y] = Terrain::Water;
+        terrain_transitions.push_back({p, Terrain::Dirt, Terrain::Water, 0.0f, 0.8f});
+    }
+    for (const auto& p : new_forest) {
+        grid[p.x][p.y] = Terrain::Forest;
+        terrain_transitions.push_back({p, Terrain::Dirt, Terrain::Forest, 0.0f, 0.8f});
+    }
+    active_fx.blast_cells = flooded;
 
     std::vector<Position> extinguished;
     for (int x = 0; x < width; ++x) {
@@ -743,7 +1066,10 @@ void GameState::apply_heavy_rain() {
 
     active_fx.extinguished_cells = extinguished;
 
-    add_log("[ENV] Heavy rain floods " + std::to_string(soaked.size()) + " dirt cells and extinguishes " + std::to_string(extinguished.size()) + " fire cells.", ImVec4(0.35f, 0.65f, 1.0f, 1.0f));
+    std::string rain_log = "[ENV] Heavy rain floods " + std::to_string(flooded.size()) + " dirt cells";
+    if (!new_forest.empty()) rain_log += ", grows " + std::to_string(new_forest.size()) + " new forest cells";
+    rain_log += ", extinguishes " + std::to_string(extinguished.size()) + " fire cells.";
+    add_log(rain_log, ImVec4(0.35f, 0.65f, 1.0f, 1.0f));
 
     int cured_count = 0;
     if (human.is_burning) {
@@ -804,28 +1130,52 @@ void GameState::apply_lightning_strike() {
     add_log("[ENV] Lightning strikes (" + std::to_string(strike.x) + ", " + std::to_string(strike.y) + ")!", ImVec4(1.0f, 1.0f, 0.35f, 1.0f));
 
     if (grid[strike.x][strike.y] == Terrain::Forest) {
-        add_log("[ENV] Lightning set the forest at (" + std::to_string(strike.x + 1) + ", " + std::to_string(strike.y + 1) + ") on fire!", ImVec4(1.0f, 0.45f, 0.0f, 1.0f));
-        set_cell_on_fire(strike.x, strike.y);
+        // Only ignite if no living entity is standing on the cell
+        if (!has_living_entity_at(strike)) {
+            add_log("[ENV] Lightning set the forest at (" + std::to_string(strike.x + 1) + ", " + std::to_string(strike.y + 1) + ") on fire!", ImVec4(1.0f, 0.45f, 0.0f, 1.0f));
+            set_cell_on_fire(strike.x, strike.y);
+        } else {
+            add_log("[ENV] Lightning struck the forest at (" + std::to_string(strike.x + 1) + ", " + std::to_string(strike.y + 1) + ") — entity present, fire suppressed!", ImVec4(1.0f, 0.85f, 0.2f, 1.0f));
+        }
     }
 
     if (human.hp > 0 && human.pos == strike) {
         human.hp = std::max(0, human.hp - GameConstants::Environment::LIGHTNING_HP_DAMAGE);
         floating_texts.push_back({human.pos, -GameConstants::Environment::LIGHTNING_HP_DAMAGE, 1.0f, 1.0f});
         add_log("-> Human is struck by lightning! -" + std::to_string(GameConstants::Environment::LIGHTNING_HP_DAMAGE) + " HP.", ImVec4(1.0f, 0.25f, 0.25f, 1.0f));
+        // Direct strike on the struck cell unfreezes the entity
+        if (human.is_frozen) {
+            human.is_frozen = false;
+            add_log(tr("[ICE] Lightning shattered the ice! Human unfrozen.",
+                       "[BANG] Set danh vo bang! Nguoi duoc giai bang."), ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+        }
     }
     for (auto& z : zombies) {
         if (z->hp > 0 && z->pos == strike) {
             z->hp -= GameConstants::Environment::LIGHTNING_HP_DAMAGE;
             floating_texts.push_back({z->pos, -GameConstants::Environment::LIGHTNING_HP_DAMAGE, 1.0f, 1.0f});
             add_log("-> " + z->name + " is struck by lightning! -" + std::to_string(GameConstants::Environment::LIGHTNING_HP_DAMAGE) + " HP.", ImVec4(1.0f, 0.75f, 0.2f, 1.0f));
+            // Direct strike on the struck cell unfreezes the entity
+            if (z->is_frozen) {
+                z->is_frozen = false;
+                z->frozen_turns = 0;
+                add_log(tr("[ICE] Lightning shattered the ice! " + z->name + " unfrozen.",
+                           "[BANG] Set danh vo bang! " + z->name + " duoc giai bang."), ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+            }
             if (z->hp <= 0 && z->type == ZombieType::Exploding) trigger_explosion(z->pos.x, z->pos.y, true);
         }
     }
 
     for (const auto& p : conductive_cluster) {
-        if (human.hp > 0 && human.pos == p) human.is_paralyzed = true;
+        if (human.hp > 0 && human.pos == p) {
+            human.is_paralyzed = true;
+            // Conductive spread does NOT unfreeze — only direct strike does
+        }
         for (auto& z : zombies) {
-            if (z->hp > 0 && z->pos == p) z->is_paralyzed = true;
+            if (z->hp > 0 && z->pos == p) {
+                z->is_paralyzed = true;
+                // Conductive spread does NOT unfreeze — only direct strike does
+            }
         }
     }
     if (!conductive_cluster.empty()) {
@@ -833,6 +1183,186 @@ void GameState::apply_lightning_strike() {
         add_log("-> Electricity spreads through " + std::to_string(conductive_cluster.size()) + " conductive cells; occupants are paralyzed next action.", ImVec4(0.45f, 0.9f, 1.0f, 1.0f));
     }
     check_victory_conditions();
+}
+
+void GameState::apply_heatwave() {
+    last_environment_event = "Heatwave";
+    active_fx.type = FXType::Heatwave;  // Use Heatwave FX type
+    active_fx.timer = 3.2f;
+    active_fx.max_duration = 3.2f;
+    active_fx.overlay_intensity = 0.0f;
+    active_fx.blast_cells.clear();
+    active_fx.extinguished_cells.clear();
+
+    std::uniform_real_distribution<float> chance(0.0f, 1.0f);
+    const int all_dirs[8][2] = {{1,0},{-1,0},{0,1},{0,-1},{1,1},{1,-1},{-1,1},{-1,-1}};
+
+    // Step 1: All ice cells melt into water
+    std::vector<Position> melted_ice;
+    for (int x = 0; x < width; ++x) {
+        for (int y = 0; y < height; ++y) {
+            if (grid[x][y] == Terrain::Ice) {
+                grid[x][y] = Terrain::Water;
+                melted_ice.push_back({x, y});
+                terrain_transitions.push_back({Position{x, y}, Terrain::Ice, Terrain::Water, 0.0f, 0.8f});
+            }
+        }
+    }
+
+    // Unfreeze any entities that were standing on now-melted ice
+    if (!melted_ice.empty()) {
+        if (human.hp > 0 && human.is_frozen) {
+            for (const auto& p : melted_ice) {
+                if (human.pos == p) {
+                    human.is_frozen = false;
+                    add_log(tr("[RADIO] Human thawed out! Ice melted beneath them.",
+                               "[RADIO] Nguoi duoc giai bang! Bang tan duoi chan."),
+                            ImVec4(1.0f, 0.8f, 0.5f, 1.0f));
+                    break;
+                }
+            }
+        }
+        for (auto& z : zombies) {
+            if (z->hp > 0 && z->is_frozen) {
+                for (const auto& p : melted_ice) {
+                    if (z->pos == p) {
+                        z->is_frozen = false;
+                        z->frozen_turns = 0;
+                        add_log(tr("[RADIO] " + z->name + " thawed out! Ice melted beneath them.",
+                                   "[RADIO] " + z->name + " duoc giai bang! Bang tan duoi chan."),
+                                ImVec4(1.0f, 0.8f, 0.5f, 1.0f));
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // Step 2: Water cells may evaporate. Probability decreases linearly with number of adjacent water cells.
+    // 0 water neighbors -> 100% evaporate; 8 water neighbors -> 0% evaporate
+    std::vector<Position> evaporated;
+    // Snapshot water cells before evaporation
+    std::vector<std::vector<bool>> is_water(width, std::vector<bool>(height, false));
+    for (int x = 0; x < width; ++x)
+        for (int y = 0; y < height; ++y)
+            is_water[x][y] = (grid[x][y] == Terrain::Water);
+
+    for (int x = 0; x < width; ++x) {
+        for (int y = 0; y < height; ++y) {
+            if (!is_water[x][y]) continue;
+            int water_neighbors = 0;
+            for (const auto& d : all_dirs) {
+                int nx = x + d[0], ny = y + d[1];
+                if (nx >= 0 && nx < width && ny >= 0 && ny < height && is_water[nx][ny])
+                    water_neighbors++;
+            }
+            // Linear: 0 neighbors -> 1.0 chance, 8 neighbors -> 0.0 chance
+            float evap_chance = 1.0f - (water_neighbors / 8.0f);
+            if (chance(rng) < evap_chance) {
+                evaporated.push_back({x, y});
+                terrain_transitions.push_back({Position{x, y}, Terrain::Water, Terrain::Dirt, 0.0f, 0.8f});
+            }
+        }
+    }
+    for (const auto& p : evaporated) grid[p.x][p.y] = Terrain::Dirt;
+    active_fx.extinguished_cells = evaporated; // reuse for visual
+
+    // Step 3: Forest cells may die from drought
+    std::vector<Position> dried_forest;
+    for (int x = 0; x < width; ++x) {
+        for (int y = 0; y < height; ++y) {
+            if (grid[x][y] == Terrain::Forest && chance(rng) < GameConstants::Environment::HEATWAVE_FOREST_DROUGHT_CHANCE) {
+                dried_forest.push_back({x, y});
+                terrain_transitions.push_back({Position{x, y}, Terrain::Forest, Terrain::Dirt, 0.0f, 0.8f});
+            }
+        }
+    }
+    for (const auto& p : dried_forest) grid[p.x][p.y] = Terrain::Dirt;
+
+    std::string log = "[ENV] Heatwave!";
+    if (!melted_ice.empty()) log += " Melted " + std::to_string(melted_ice.size()) + " ice cells.";
+    if (!evaporated.empty()) log += " Evaporated " + std::to_string(evaporated.size()) + " water cells.";
+    if (!dried_forest.empty()) log += " Drought killed " + std::to_string(dried_forest.size()) + " forest cells.";
+    add_log(tr(log, "[MT] Nang nong gay gat! Bang tan, nuoc boc hoi, rung kho het."), ImVec4(1.0f, 0.7f, 0.2f, 1.0f));
+}
+
+void GameState::apply_blizzard() {
+    last_environment_event = "Blizzard";
+    active_fx.type = FXType::Blizzard;  // Use Blizzard FX type
+    active_fx.timer = 3.2f;
+    active_fx.max_duration = 3.2f;
+    active_fx.overlay_intensity = 0.0f;
+    active_fx.blast_cells.clear();
+    active_fx.extinguished_cells.clear();
+
+    std::uniform_real_distribution<float> chance(0.0f, 1.0f);
+    const int orth_dirs[4][2] = {{1,0},{-1,0},{0,1},{0,-1}};
+
+    // Find all water cells; randomly pick seed cells to freeze
+    // When a seed freezes, its entire orthogonally-connected water cluster also freezes
+    std::vector<std::vector<bool>> visited(width, std::vector<bool>(height, false));
+    std::vector<Position> frozen_cells;
+
+    for (int x = 0; x < width; ++x) {
+        for (int y = 0; y < height; ++y) {
+            if (grid[x][y] != Terrain::Water || visited[x][y]) continue;
+            // Roll for this cell to be a freeze seed
+            if (chance(rng) >= GameConstants::Environment::BLIZZARD_FREEZE_CHANCE) continue;
+
+            // BFS: freeze entire connected water cluster
+            std::queue<Position> q;
+            q.push({x, y});
+            visited[x][y] = true;
+            while (!q.empty()) {
+                Position cur = q.front(); q.pop();
+                frozen_cells.push_back(cur);
+                terrain_transitions.push_back({cur, Terrain::Water, Terrain::Ice, 0.0f, 0.8f});
+                for (const auto& d : orth_dirs) {
+                    int nx = cur.x + d[0], ny = cur.y + d[1];
+                    if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+                    if (visited[nx][ny] || grid[nx][ny] != Terrain::Water) continue;
+                    visited[nx][ny] = true;
+                    q.push({nx, ny});
+                }
+            }
+        }
+    }
+
+    for (const auto& p : frozen_cells) grid[p.x][p.y] = Terrain::Ice;
+    active_fx.blast_cells = frozen_cells;
+
+    // Apply frozen effect to entities standing on newly frozen cells
+    if (human.hp > 0) {
+        for (const auto& p : frozen_cells) {
+            if (human.pos == p) {
+                human.is_frozen = true;
+                add_log(tr("[RADIO] Human frozen! Cannot act next turn.",
+                           "[RADIO] Nguoi bi dong bang! Khong the hanh dong luot toi."),
+                        ImVec4(0.6f, 0.8f, 1.0f, 1.0f));
+                break;
+            }
+        }
+    }
+
+    for (auto& z : zombies) {
+        if (z->hp > 0) {
+            for (const auto& p : frozen_cells) {
+                if (z->pos == p) {
+                    z->is_frozen = true;
+                    // Sprinters thaw faster (1 turn), others need 2 turns
+                    z->frozen_turns = (z->type == ZombieType::Fast) ? 1 : 2;
+                    add_log(tr("[RADIO] " + z->name + " frozen for " + std::to_string(z->frozen_turns) + " turn(s)!",
+                               "[RADIO] " + z->name + " bi dong bang " + std::to_string(z->frozen_turns) + " luot!"),
+                            ImVec4(0.6f, 0.8f, 1.0f, 1.0f));
+                    break;
+                }
+            }
+        }
+    }
+
+    add_log(tr("[ENV] Blizzard! " + std::to_string(frozen_cells.size()) + " water cell(s) frozen into ice.",
+               "[MT] Bao tuyet! " + std::to_string(frozen_cells.size()) + " o nuoc dong bang thanh bang."),
+            ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
 }
 
 void GameState::resolve_environment_turn() {
@@ -843,7 +1373,9 @@ void GameState::resolve_environment_turn() {
         static_cast<double>(active_config.env_prob_wind),
         static_cast<double>(active_config.env_prob_rain),
         static_cast<double>(active_config.env_prob_clouds),
-        static_cast<double>(active_config.env_prob_lightning)
+        static_cast<double>(active_config.env_prob_lightning),
+        static_cast<double>(active_config.env_prob_heatwave),
+        static_cast<double>(active_config.env_prob_blizzard)
     });
     int event = event_dist(rng);
     if (event == 0) {
@@ -859,8 +1391,12 @@ void GameState::resolve_environment_turn() {
         apply_heavy_rain();
     } else if (event == 3) {
         apply_dark_clouds();
-    } else {
+    } else if (event == 4) {
         apply_lightning_strike();
+    } else if (event == 5) {
+        apply_heatwave();
+    } else {
+        apply_blizzard();
     }
 }
 
@@ -895,12 +1431,23 @@ void GameState::finish_environment_phase() {
     turn_banner_fx.timer = 1.5f;
     turn_banner_fx.max_duration = 1.5f;
     turn_banner_fx.banner_text = "";
+    // Fire spreads once after environment phase ends
     propagate_gradual_forest_fire();
     check_victory_conditions();
 }
 
 void GameState::update_environment_logic(float dt) {
     if (phase != TurnPhase::EnvironmentAnimating) return;
+    
+    // Update terrain transitions
+    for (auto it = terrain_transitions.begin(); it != terrain_transitions.end();) {
+        it->timer += dt;
+        if (it->timer >= it->max_duration) {
+            it = terrain_transitions.erase(it);
+        } else {
+            ++it;
+        }
+    }
     
     // Simply wait for the active environment FX animation to finish!
     if (active_fx.type != FXType::None) {
@@ -936,7 +1483,7 @@ void GameState::trigger_explosion(int cx, int cy, bool is_zombie_exploding) {
     
     Terrain center_t = grid[cx][cy];
     int radius = is_zombie_exploding ? 1 : 2;
-    if (center_t == Terrain::Water) {
+    if (center_t == Terrain::Water || center_t == Terrain::Ice) {
         radius = std::max(0, radius - 1);
     }
 
@@ -1158,6 +1705,34 @@ void GameState::trigger_explosion(int cx, int cy, bool is_zombie_exploding) {
         }
     }
 
+    // Ice cells in blast radius melt into water; unfreeze any entities standing on them
+    int ice_melted = 0;
+    for (const auto& cell : active_fx.blast_cells) {
+        if (grid[cell.x][cell.y] == Terrain::Ice) {
+            grid[cell.x][cell.y] = Terrain::Water;
+            ice_melted++;
+            // Unfreeze entities on this cell
+            if (human.hp > 0 && human.pos == cell && human.is_frozen) {
+                human.is_frozen = false;
+                add_log(tr("[ICE] Explosion melted ice under Human! Unfrozen.",
+                           "[BANG] Vu no lam tan bang duoi chan Nguoi! Giai bang."), ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+            }
+            for (auto& z : zombies) {
+                if (z->hp > 0 && z->pos == cell && z->is_frozen) {
+                    z->is_frozen = false;
+                    z->frozen_turns = 0;
+                    add_log(tr("[ICE] Explosion melted ice under " + z->name + "! Unfrozen.",
+                               "[BANG] Vu no lam tan bang duoi chan " + z->name + "! Giai bang."), ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+                }
+            }
+        }
+    }
+    if (ice_melted > 0) {
+        add_log(tr("[ICE] Explosion melted " + std::to_string(ice_melted) + " ice cell(s) into water!",
+                   "[BANG] Vu no lam tan chay " + std::to_string(ice_melted) + " o bang thanh nuoc!"),
+                ImVec4(0.4f, 0.8f, 1.0f, 1.0f));
+    }
+
     check_victory_conditions(); 
 
     for (auto pos : chain_reactions) {
@@ -1169,6 +1744,8 @@ void GameState::zombie_single_step(size_t idx) {
     if (game_over || game_won) return; 
     auto& zom = zombies[idx]; 
     if (zom->is_paralyzed) return;
+    // Frozen: skip action — handled by update_zombie_logic which counts down turns
+    if (zom->is_frozen) return;
     double lambda = GameConstants::Zombies::AI_LAMBDA; 
     int current_dist = distance(zom->pos, human.pos); 
     std::vector<Position> valid_moves; 
@@ -1204,13 +1781,25 @@ void GameState::zombie_single_step(size_t idx) {
 
         if (!valid_moves.empty()) { 
         std::discrete_distribution<int> dist(weights.begin(), weights.end()); 
+        Position old_pos = zom->pos;
         zom->pos = valid_moves[dist(rng)]; 
         if (mine_grid[zom->pos.x][zom->pos.y]) { 
             mine_grid[zom->pos.x][zom->pos.y] = false; 
             add_log("[RADIO] Zombie #" + std::to_string(idx + 1) + " stepped on a mine. Stand by for detonation!", ImVec4(1.0f, 0.38f, 0.22f, 1.0f));
             trigger_explosion(zom->pos.x, zom->pos.y); 
-        } 
-    }     check_fire_interactions();
+        }
+        // Ice slide check for zombie — only if it actually moved and is still alive
+        if (zom->hp > 0 && grid[zom->pos.x][zom->pos.y] == Terrain::Ice) {
+            int move_dx = zom->pos.x - old_pos.x;
+            int move_dy = zom->pos.y - old_pos.y;
+            if (move_dx != 0 || move_dy != 0) {
+                try_ice_slide(false, idx, move_dx, move_dy);
+                // try_ice_slide already calls check_fire_interactions + check_mine_interactions
+                return;
+            }
+        }
+    }
+    check_fire_interactions();
 }
 
 void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardOffset) { 
@@ -1428,6 +2017,15 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
             floating_texts.push_back({zombies[i]->pos, -1, 1.0f, 1.0f});
             add_log("[RADIO] Shotgun blast rips through Zombie #" + std::to_string(i + 1) + ".", ImVec4(1.0f, 0.8f, 0.35f, 1.0f));
 
+            // Shotgun blast unfreezes frozen zombies
+            if (zombies[i]->is_frozen) {
+                zombies[i]->is_frozen = false;
+                zombies[i]->frozen_turns = 0;
+                add_log(tr("[ICE] Shotgun blast shattered the ice! Zombie #" + std::to_string(i + 1) + " unfrozen.",
+                           "[BANG] Dan shotgun vo bang! Zombie #" + std::to_string(i + 1) + " duoc giai bang."),
+                        ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+            }
+
             if (zombies[i]->hp <= 0) {
                 if (zombies[i]->type == ZombieType::Exploding) {
                     trigger_explosion(zombies[i]->pos.x, zombies[i]->pos.y, true);
@@ -1549,10 +2147,21 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
                 if (zombies[i]->hp > 0 && zombies[i]->pos == Position{cx, cy}) { 
                     landing_pos = {cx, cy};
                     all_walls = false;
-                    zombies[i]->is_burning = true;
-                    add_log("-> Molotov hit " + zombies[i]->name + " directly! Target ignited.", ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
-                    hit_zombie = true;
-                    current_zombie_hit = true;
+                    // Frozen entity hit by molotov: unfreeze instead of ignite, no fire spread
+                    if (zombies[i]->is_frozen) {
+                        zombies[i]->is_frozen = false;
+                        zombies[i]->frozen_turns = 0;
+                        add_log(tr("-> Molotov hit frozen " + zombies[i]->name + "! Ice melted — unfrozen but not ignited. No fire spread.",
+                                   "-> Bom xang trung " + zombies[i]->name + " dang dong bang! Bang tan — giai bang nhung khong chay. Khong lan lua."),
+                                ImVec4(0.4f, 0.8f, 1.0f, 1.0f));
+                        hit_zombie = true;
+                        current_zombie_hit = true;
+                    } else {
+                        zombies[i]->is_burning = true;
+                        add_log("-> Molotov hit " + zombies[i]->name + " directly! Target ignited.", ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
+                        hit_zombie = true;
+                        current_zombie_hit = true;
+                    }
                     break; 
                 } 
             } 
@@ -1572,10 +2181,60 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
         }
         
         if (grid[hit_pos.x][hit_pos.y] == Terrain::Water) {
+            // Molotov fizzles in water — no heat transfer, no ice melting
             add_log("-> Molotov landed in water. Fizzled out!", ImVec4(0.4f, 0.6f, 1.0f, 1.0f));
+        } else if (grid[hit_pos.x][hit_pos.y] == Terrain::Ice) {
+            grid[hit_pos.x][hit_pos.y] = Terrain::Water;
+            terrain_transitions.push_back({hit_pos, Terrain::Ice, Terrain::Water, 0.0f, 0.8f});
+            add_log(tr("[ICE] Molotov melted the ice at (" + std::to_string(hit_pos.x + 1) + ", " + std::to_string(hit_pos.y + 1) + ")! Ice -> Water.",
+                       "[BANG] Bom xang lam tan chay bang tai (" + std::to_string(hit_pos.x + 1) + ", " + std::to_string(hit_pos.y + 1) + ")! Bang -> Nuoc."),
+                    ImVec4(0.4f, 0.8f, 1.0f, 1.0f));
+            // Unfreeze any entity standing on the now-melted cell
+            if (human.hp > 0 && human.pos == hit_pos && human.is_frozen) {
+                human.is_frozen = false;
+                add_log(tr("[ICE] Molotov melted ice under Human! Unfrozen.",
+                           "[BANG] Bom xang tan bang duoi chan Nguoi! Giai bang."), ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+            }
+            for (auto& z : zombies) {
+                if (z->hp > 0 && z->pos == hit_pos && z->is_frozen) {
+                    z->is_frozen = false;
+                    z->frozen_turns = 0;
+                    add_log(tr("[ICE] Molotov melted ice under " + z->name + "! Unfrozen.",
+                               "[BANG] Bom xang tan bang duoi chan " + z->name + "! Giai bang."), ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+                }
+            }
+            // Heat also melts adjacent ice cells
+            melt_adjacent_ice(hit_pos.x, hit_pos.y);
         } else if (grid[hit_pos.x][hit_pos.y] == Terrain::Dirt || grid[hit_pos.x][hit_pos.y] == Terrain::Forest) {
-            set_cell_on_fire(hit_pos.x, hit_pos.y);
-            add_log("[RADIO] Fire spreads at (" + std::to_string(hit_pos.x + 1) + ", " + std::to_string(hit_pos.y + 1) + "). Keep distance!", ImVec4(1.0f, 0.45f, 0.1f, 1.0f));
+            // Check if a frozen entity is on the landing cell — if so, no fire spread
+            bool frozen_entity_on_cell = false;
+            if (human.hp > 0 && human.pos == hit_pos && human.is_frozen) frozen_entity_on_cell = true;
+            if (!frozen_entity_on_cell) {
+                for (const auto& z : zombies) {
+                    if (z->hp > 0 && z->pos == hit_pos && z->is_frozen) { frozen_entity_on_cell = true; break; }
+                }
+            }
+            if (frozen_entity_on_cell) {
+                // Unfreeze the entity but no fire
+                if (human.hp > 0 && human.pos == hit_pos && human.is_frozen) {
+                    human.is_frozen = false;
+                    add_log(tr("[ICE] Molotov heat melted the ice around Human! Unfrozen, no fire spread.",
+                               "[BANG] Nhiet bom xang tan bang quanh Nguoi! Giai bang, khong lan lua."), ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+                }
+                for (auto& z : zombies) {
+                    if (z->hp > 0 && z->pos == hit_pos && z->is_frozen) {
+                        z->is_frozen = false;
+                        z->frozen_turns = 0;
+                        add_log(tr("[ICE] Molotov heat melted the ice around " + z->name + "! Unfrozen, no fire spread.",
+                                   "[BANG] Nhiet bom xang tan bang quanh " + z->name + "! Giai bang, khong lan lua."), ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+                    }
+                }
+            } else {
+                set_cell_on_fire(hit_pos.x, hit_pos.y);
+                add_log("[RADIO] Fire spreads at (" + std::to_string(hit_pos.x + 1) + ", " + std::to_string(hit_pos.y + 1) + "). Keep distance!", ImVec4(1.0f, 0.45f, 0.1f, 1.0f));
+            }
+            // Heat from fire/molotov melts adjacent ice cells regardless
+            melt_adjacent_ice(hit_pos.x, hit_pos.y);
         }
         check_fire_interactions();
     }
@@ -1610,15 +2269,41 @@ void GameState::start_zombie_phase() {
     check_victory_conditions();
     if (game_over || game_won) return;
     
+    // Fire spreads once at the START of zombie phase (after human turn ends)
+    propagate_gradual_forest_fire();
+
     phase = TurnPhase::ZombieAnimating; 
     active_zombie_idx = 0; 
     active_zombie_substep = 0; 
     zombie_action_timer = 0.0f;
-    propagate_gradual_forest_fire(); 
 }
 
 void GameState::update_zombie_logic(float dt) { 
-    if (phase != TurnPhase::ZombieAnimating || active_fx.type != FXType::None || !attack_animations.empty()) return; 
+    // Update terrain transitions (purely visual, always runs)
+    for (auto it = terrain_transitions.begin(); it != terrain_transitions.end();) {
+        it->timer += dt;
+        if (it->timer >= it->max_duration) {
+            it = terrain_transitions.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    
+    // Update ice slide animation (purely visual — logical position already at destination)
+    if (ice_slide_animation.active) {
+        ice_slide_animation.step_timer += dt;
+        if (ice_slide_animation.step_timer >= ice_slide_animation.step_duration) {
+            ice_slide_animation.step_timer = 0.0f;
+            ice_slide_animation.current_step++;
+            if (ice_slide_animation.current_step >= (int)ice_slide_animation.path.size()) {
+                ice_slide_animation.active = false;
+            }
+        }
+        // Don't return — let zombie phase logic continue normally
+        // The visual position is overridden in rendering based on ice_slide_animation
+    }
+
+    if (phase != TurnPhase::ZombieAnimating || active_fx.type != FXType::None || !attack_animations.empty() || ice_slide_animation.active) return; 
     
     if (active_zombie_idx >= zombies.size()) { 
         if (active_zombie_substep == 0) {
@@ -1632,6 +2317,9 @@ void GameState::update_zombie_logic(float dt) {
                 }
             }
             
+            // Fire spreads once after ALL zombies have finished their turns
+            propagate_gradual_forest_fire();
+
             if (!active_config.enable_environment) {
                 for (auto& g : active_grenades) {
                     if (g.active) {
@@ -1669,13 +2357,49 @@ void GameState::update_zombie_logic(float dt) {
         zom->is_paralyzed = false;
         active_zombie_idx++;
         active_zombie_substep = 0;
-        propagate_gradual_forest_fire();
+        return;
+    }
+    if (zom->is_frozen) {
+        zom->frozen_turns--;
+        if (zom->frozen_turns <= 0) {
+            zom->is_frozen = false;
+            zom->frozen_turns = 0;
+            add_log(tr("[ICE] " + zom->name + " thawed out! Frozen effect expired.",
+                       "[BANG] " + zom->name + " da giai bang! Het hieu ung dong bang."), ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+        } else {
+            add_log(tr("[ICE] " + zom->name + " is frozen solid! Loses this action. (" + std::to_string(zom->frozen_turns) + " turn(s) left)",
+                       "[BANG] " + zom->name + " bi dong cung! Mat hanh dong nay. (Con " + std::to_string(zom->frozen_turns) + " luot)"), ImVec4(0.6f, 0.8f, 1.0f, 1.0f));
+        }
+        active_zombie_idx++;
+        active_zombie_substep = 0;
+        return;
+    }
+    if (zom->is_stunned) {
+        add_log(tr("[ICE] " + zom->name + " is stunned from ice collision! Loses remaining actions.",
+                   "[BANG] " + zom->name + " bi choang do truot bang! Mat cac hanh dong con lai."), ImVec4(0.6f, 0.85f, 1.0f, 1.0f));
+        zom->is_stunned = false;
+        active_zombie_idx++;
+        active_zombie_substep = 0;
         return;
     }
     zombie_action_timer += dt; 
     if (zombie_action_timer >= std::max(0.05f, ZOMBIE_STEP_DELAY)) { 
         zombie_action_timer = 0.0f; 
         zombie_single_step(active_zombie_idx); 
+
+        // Re-check hp and game state immediately after step (slide/fire/mine may have killed zombie)
+        if (game_over || game_won) return;
+        if (zom->hp <= 0) {
+            active_zombie_idx++; active_zombie_substep = 0; return;
+        }
+
+        // If zombie was stunned by ice slide, end its turn immediately (no attack, no more moves)
+        if (zom->is_stunned) {
+            zom->is_stunned = false;
+            active_zombie_idx++;
+            active_zombie_substep = 0;
+            return;
+        }
         
         if (zom->hp > 0) { 
             int dx = std::abs(zom->pos.x - human.pos.x);
@@ -1737,7 +2461,6 @@ void GameState::update_zombie_logic(float dt) {
         }
         if (active_zombie_substep >= max_moves) { 
             active_zombie_idx++; active_zombie_substep = 0; 
-            propagate_gradual_forest_fire();
         } 
     } 
 }
@@ -1754,25 +2477,49 @@ void GameState::check_victory_conditions() {
 
 void GameState::propagate_gradual_forest_fire() {
     std::vector<Position> to_catch_fire;
+    std::vector<Position> ice_to_melt;
     const int dirs[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
     
     for (int x = 0; x < width; ++x) {
         for (int y = 0; y < height; ++y) {
+            bool near_fire = false;
+            for (const auto& d : dirs) {
+                int nx = x + d[0], ny = y + d[1];
+                if (nx >= 0 && nx < width && ny >= 0 && ny < height && grid[nx][ny] == Terrain::Fire) {
+                    near_fire = true;
+                    break;
+                }
+            }
+            if (!near_fire) continue;
+
             if (grid[x][y] == Terrain::Forest) {
-                bool near_fire = false;
-                for (const auto& d : dirs) {
-                    int nx = x + d[0];
-                    int ny = y + d[1];
-                    if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-                        if (grid[nx][ny] == Terrain::Fire) {
-                            near_fire = true;
-                            break;
-                        }
-                    }
-                }
-                if (near_fire) {
-                    to_catch_fire.push_back({x, y});
-                }
+                to_catch_fire.push_back({x, y});
+            } else if (grid[x][y] == Terrain::Ice) {
+                ice_to_melt.push_back({x, y});
+            }
+        }
+    }
+
+    // Melt ice adjacent to fire
+    for (const auto& p : ice_to_melt) {
+        grid[p.x][p.y] = Terrain::Water;
+        terrain_transitions.push_back({p, Terrain::Ice, Terrain::Water, 0.0f, 0.8f});
+        add_log(tr("[ICE] Fire heat melted ice at (" + std::to_string(p.x + 1) + ", " + std::to_string(p.y + 1) + ")!",
+                   "[BANG] Nhiet lua lam tan bang tai (" + std::to_string(p.x + 1) + ", " + std::to_string(p.y + 1) + ")!"),
+                ImVec4(0.5f, 0.85f, 1.0f, 1.0f));
+        // Unfreeze any entity on the melted cell
+        if (human.hp > 0 && human.pos == p && human.is_frozen) {
+            human.is_frozen = false;
+            add_log(tr("[ICE] Ice melted under Human! Unfrozen.", "[BANG] Bang tan duoi chan Nguoi! Giai bang."),
+                    ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+        }
+        for (auto& z : zombies) {
+            if (z->hp > 0 && z->pos == p && z->is_frozen) {
+                z->is_frozen = false;
+                z->frozen_turns = 0;
+                add_log(tr("[ICE] Ice melted under " + z->name + "! Unfrozen.",
+                           "[BANG] Bang tan duoi chan " + z->name + "! Giai bang."),
+                        ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
             }
         }
     }

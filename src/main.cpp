@@ -58,6 +58,8 @@ int main() {
 
             if (event.type == sf::Event::Closed) {
                 if (state.current_scene == GameScene::Playing || state.current_scene == GameScene::MapEditor) {
+                    // Close any open dialog first to avoid ImGui popup stack corruption
+                    show_confirm_return_hub = false;
                     show_confirm_exit_game = true;
                 } else {
                     window.close();
@@ -76,39 +78,68 @@ int main() {
                     if (lx >= 0 && lx < VIEW_CELLS && ly >= 0 && ly < VIEW_CELLS &&
                         tx >= 0 && tx < state.width && ty >= 0 && ty < state.height) {
                         if (state.input_mode == InputMode::MoveMode) {
-                            int dx = std::abs(tx - state.human.pos.x);
-                            int dy = std::abs(ty - state.human.pos.y);
-                            if (dx <= 1 && dy <= 1 && (dx != 0 || dy != 0)) {
-                                if (state.grid[tx][ty] != Terrain::Wall && state.grid[tx][ty] != Terrain::Wall) {
-                                    bool blocked = false;
-                                    for (const auto& z : state.zombies) {
-                                        if (z->hp > 0 && z->pos == Position{tx, ty}) { blocked = true; break; }
-                                    }
-                                    if (!blocked) {
-                                        int cost = (state.grid[tx][ty] == Terrain::Water) ? 2 : 1;
-                                        if (state.human.stamina >= cost) {
-                                            state.human.pos = {tx, ty};
-                                            state.human.stamina -= cost;
-                                            sfx("footstep");
-                                            state.check_fire_interactions();
-                                            state.check_mine_interactions();
-                                        } else {
-                                            if (state.human.stamina == 0) {
-                                                state.add_log(tr("[SYSTEM] Out of stamina! End turn!", "[HE THONG] Het stamina! Ket thuc luot!"), ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
-                                                state.turn_banner_fx.type = FXType::Electricity;
-                                                state.turn_banner_fx.timer = 1.0f;
-                                                state.turn_banner_fx.max_duration = 1.0f;
-                                                state.turn_banner_fx.banner_text = (ui_lang == Lang::VI) ? "HET STAMINA! KET THUC LUOT!" : "OUT OF STAMINA! END TURN!";
-                                                state.start_zombie_phase();
+                            // Check if human is frozen
+                            if (!state.human.is_frozen) {
+                                int dx = std::abs(tx - state.human.pos.x);
+                                int dy = std::abs(ty - state.human.pos.y);
+                                if (dx <= 1 && dy <= 1 && (dx != 0 || dy != 0)) {
+                                    if (state.grid[tx][ty] != Terrain::Wall && state.grid[tx][ty] != Terrain::Wall) {
+                                        bool blocked = false;
+                                        for (const auto& z : state.zombies) {
+                                            if (z->hp > 0 && z->pos == Position{tx, ty}) { blocked = true; break; }
+                                        }
+                                        if (!blocked) {
+                                            int cost = (state.grid[tx][ty] == Terrain::Water) ? 2 : 1;
+                                            if (state.human.stamina >= cost) {
+                                                int move_dx = tx - state.human.pos.x;
+                                                int move_dy = ty - state.human.pos.y;
+                                                state.human.pos = {tx, ty};
+                                                state.human.stamina -= cost;
+                                                sfx("footstep");
+                                                state.check_fire_interactions();
+                                                state.check_mine_interactions();
+                                                // Ice slide check — try_ice_slide also calls check_fire/mine internally
+                                                if (state.human.hp > 0 && state.grid[state.human.pos.x][state.human.pos.y] == Terrain::Ice) {
+                                                    state.try_ice_slide(true, 0, move_dx, move_dy);
+                                                }
+                                                // Auto-end turn if stunned (set by try_ice_slide)
+                                                if (state.human.is_stunned) {
+                                                    state.human.is_stunned = false;
+                                                    state.start_zombie_phase();
+                                                }
                                             } else {
-                                                state.add_log(tr("[SYSTEM] Not enough stamina!", "[HE THONG] Khong du stamina!"), ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
-                                                state.turn_banner_fx.type = FXType::Electricity;
-                                                state.turn_banner_fx.timer = 1.0f;
-                                                state.turn_banner_fx.max_duration = 1.0f;
-                                                state.turn_banner_fx.banner_text = (ui_lang == Lang::VI) ? "KHONG DU STAMINA!" : "NOT ENOUGH STAMINA!";
+                                                if (state.human.stamina == 0) {
+                                                    state.add_log(tr("[SYSTEM] Zero stamina! End turn!", "[HE THONG] Het stamina! Ket thuc luot!"), ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
+                                                    state.turn_banner_fx.type = FXType::Electricity;
+                                                    state.turn_banner_fx.timer = 1.0f;
+                                                    state.turn_banner_fx.max_duration = 1.0f;
+                                                    state.turn_banner_fx.banner_text = (ui_lang == Lang::VI) ? "HET STAMINA! KET THUC LUOT!" : "ZERO STAMINA! END TURN!";
+                                                    state.start_zombie_phase();
+                                                } else {
+                                                    state.add_log(tr("[SYSTEM] Not enough stamina!", "[HE THONG] Khong du stamina!"), ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
+                                                    state.turn_banner_fx.type = FXType::Electricity;
+                                                    state.turn_banner_fx.timer = 1.0f;
+                                                    state.turn_banner_fx.max_duration = 1.0f;
+                                                    state.turn_banner_fx.banner_text = (ui_lang == Lang::VI) ? "KHONG DU STAMINA!" : "NOT ENOUGH STAMINA!";
+                                                }
                                             }
                                         }
                                     }
+                                }
+                            } else {
+                                // Human is frozen — costs 2 stamina to break free
+                                if (state.human.stamina >= 2) {
+                                    state.human.stamina -= 2;
+                                    state.human.is_frozen = false;
+                                    state.add_log(tr("[SYSTEM] You break free from the ice! (-2 stamina)",
+                                                   "[HE THONG] Ban tu giai bang! (-2 stamina)"),
+                                                ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+                                    // Don't end turn — player can now act with remaining stamina
+                                } else {
+                                    state.add_log(tr("[SYSTEM] Frozen solid! Need 2 stamina to break free. Turn skipped.",
+                                                   "[HE THONG] Bi dong cung! Can 2 stamina de giai bang. Bo qua luot."),
+                                                ImVec4(0.6f, 0.8f, 1.0f, 1.0f));
+                                    state.start_zombie_phase();
                                 }
                             }
                         } else {
@@ -203,6 +234,22 @@ int main() {
             if (ImGui::Button(tr("HARD", "KHO"), ImVec2(120, 30))) { state.apply_quick_difficulty(2); state.init_game(); state.current_scene = GameScene::Playing; state.playBackgroundMusic("battle"); view_initialized = false; }
             ImGui::SameLine();
             if (ImGui::Button(tr("UNFAIR", "SIEU KHO"), ImVec2(120, 30))) { state.apply_quick_difficulty(3); state.init_game(); state.current_scene = GameScene::Playing; state.playBackgroundMusic("battle"); view_initialized = false; }
+
+            // Audio toggles
+            ImGui::SameLine(); ImGui::Dummy(ImVec2(20, 1)); ImGui::SameLine();
+            {
+                bool music_on = state.music_enabled;
+                if (ImGui::Checkbox(tr("Music", "Nhac nen"), &music_on)) {
+                    state.music_enabled = music_on;
+                    if (music_on) state.playBackgroundMusic("menu");
+                    else state.stopBackgroundMusic();
+                }
+                ImGui::SameLine();
+                bool sfx_on = state.sfx_enabled;
+                if (ImGui::Checkbox(tr("SFX", "Am thanh"), &sfx_on)) {
+                    state.setSfxEnabled(sfx_on);
+                }
+            }
 
             ImGui::Separator(); ImGui::Spacing();
             ImGui::Columns(2, "menu_split", false); ImGui::SetColumnWidth(0, 690);
@@ -299,19 +346,22 @@ int main() {
             int temp_wall = state.active_config.ratio_wall;
             int temp_water = state.active_config.ratio_water;
             int temp_forest = state.active_config.ratio_forest;
+            int temp_ice = state.active_config.ratio_ice;
 
-            int total_r = temp_dirt + temp_wall + temp_water + temp_forest;
+            int total_r = temp_dirt + temp_wall + temp_water + temp_forest + temp_ice;
             if (total_r != 100) {
-                state.active_config.ratio_dirt = 60;
+                state.active_config.ratio_dirt = 55;
                 state.active_config.ratio_wall = 10;
                 state.active_config.ratio_water = 10;
-                state.active_config.ratio_forest = 20;
-                temp_dirt = 60; temp_wall = 10; temp_water = 10; temp_forest = 20;
+                state.active_config.ratio_forest = 15;
+                state.active_config.ratio_ice = 10;
+                temp_dirt = 55; temp_wall = 10; temp_water = 10; temp_forest = 15; temp_ice = 10;
             }
 
             int p1 = temp_dirt;
             int p2 = p1 + temp_wall;
             int p3 = p2 + temp_water;
+            int p4 = p3 + temp_forest;
 
             float bar_width = ImGui::GetContentRegionAvail().x - 10.0f;
             if (bar_width < 100.0f) bar_width = 360.0f;
@@ -335,20 +385,26 @@ int main() {
                     float d1 = std::abs(clicked_pct - p1);
                     float d2 = std::abs(clicked_pct - p2);
                     float d3 = std::abs(clicked_pct - p3);
-                    if (d1 <= d2 && d1 <= d3) active_knob = 0;
-                    else if (d2 <= d1 && d2 <= d3) active_knob = 1;
-                    else active_knob = 2;
+                    float d4 = std::abs(clicked_pct - p4);
+                    if (d1 <= d2 && d1 <= d3 && d1 <= d4) active_knob = 0;
+                    else if (d2 <= d1 && d2 <= d3 && d2 <= d4) active_knob = 1;
+                    else if (d3 <= d1 && d3 <= d2 && d3 <= d4) active_knob = 2;
+                    else active_knob = 3;
                 }
 
+                // MIN_KNOB_DISTANCE = 1 keeps knobs adjacent but never overlapping
                 if (active_knob == 0) {
                     p1 = std::round(clicked_pct);
-                    p1 = std::max(0, std::min(p2, p1));
+                    p1 = std::max(0, std::min(p2 - 1, p1));
                 } else if (active_knob == 1) {
                     p2 = std::round(clicked_pct);
-                    p2 = std::max(p1, std::min(p3, p2));
+                    p2 = std::max(p1 + 1, std::min(p3 - 1, p2));
                 } else if (active_knob == 2) {
                     p3 = std::round(clicked_pct);
-                    p3 = std::max(p2, std::min(100, p3));
+                    p3 = std::max(p2 + 1, std::min(p4 - 1, p3));
+                } else if (active_knob == 3) {
+                    p4 = std::round(clicked_pct);
+                    p4 = std::max(p3 + 1, std::min(100, p4));
                 }
             } else {
                 active_knob = -1;
@@ -357,18 +413,21 @@ int main() {
             state.active_config.ratio_dirt = p1;
             state.active_config.ratio_wall = p2 - p1;
             state.active_config.ratio_water = p3 - p2;
-            state.active_config.ratio_forest = 100 - p3;
+            state.active_config.ratio_forest = p4 - p3;
+            state.active_config.ratio_ice = 100 - p4;
 
             temp_dirt = state.active_config.ratio_dirt;
             temp_wall = state.active_config.ratio_wall;
             temp_water = state.active_config.ratio_water;
             temp_forest = state.active_config.ratio_forest;
+            temp_ice = state.active_config.ratio_ice;
 
             float x0 = cursor_pos.x;
             float x1 = x0 + p1 * (bar_width / 100.f);
             float x2 = x0 + p2 * (bar_width / 100.f);
             float x3 = x0 + p3 * (bar_width / 100.f);
-            float x4 = x0 + bar_width;
+            float x4 = x0 + p4 * (bar_width / 100.f);
+            float x5 = x0 + bar_width;
 
             float y_top = cursor_pos.y + 4.0f;
             float y_bot = y_top + bar_height;
@@ -377,11 +436,13 @@ int main() {
             ImU32 col_wall = ImGui::ColorConvertFloat4ToU32(ImVec4(60/255.f, 62/255.f, 66/255.f, 1.f));
             ImU32 col_water = ImGui::ColorConvertFloat4ToU32(ImVec4(35/255.f, 75/255.f, 115/255.f, 1.f));
             ImU32 col_forest = ImGui::ColorConvertFloat4ToU32(ImVec4(34/255.f, 110/255.f, 48/255.f, 1.f));
+            ImU32 col_ice = ImGui::ColorConvertFloat4ToU32(ImVec4(160/255.f, 210/255.f, 240/255.f, 1.f));
 
             draw_list->AddRectFilled(ImVec2(x0, y_top), ImVec2(x1, y_bot), col_dirt);
             draw_list->AddRectFilled(ImVec2(x1, y_top), ImVec2(x2, y_bot), col_wall);
             draw_list->AddRectFilled(ImVec2(x2, y_top), ImVec2(x3, y_bot), col_water);
             draw_list->AddRectFilled(ImVec2(x3, y_top), ImVec2(x4, y_bot), col_forest);
+            draw_list->AddRectFilled(ImVec2(x4, y_top), ImVec2(x5, y_bot), col_ice);
 
             auto draw_knob = [&](float x_center, int knob_idx) {
                 bool knob_hovered = hovered && std::abs(mouse_pos.x - x_center) < 10.0f;
@@ -408,15 +469,17 @@ int main() {
             draw_knob(x1, 0);
             draw_knob(x2, 1);
             draw_knob(x3, 2);
+            draw_knob(x4, 3);
 
-            draw_list->AddRect(ImVec2(x0, y_top), ImVec2(x4, y_bot), ImGui::ColorConvertFloat4ToU32(ImVec4(0.2f, 0.2f, 0.2f, 0.6f)), 0.0f, 0, 1.5f);
+            draw_list->AddRect(ImVec2(x0, y_top), ImVec2(x5, y_bot), ImGui::ColorConvertFloat4ToU32(ImVec4(0.2f, 0.2f, 0.2f, 0.6f)), 0.0f, 0, 1.5f);
 
             ImGui::Spacing();
 
             draw_legend_item(tr("Dirt", "Dat"), ImVec4(105/255.f, 60/255.f, 35/255.f, 1.f), temp_dirt); ImGui::SameLine(); ImGui::Dummy(ImVec2(10.0f, 1.0f)); ImGui::SameLine();
             draw_legend_item(tr("Wall", "Tuong"), ImVec4(60/255.f, 62/255.f, 66/255.f, 1.f), temp_wall); ImGui::SameLine(); ImGui::Dummy(ImVec2(10.0f, 1.0f)); ImGui::SameLine();
             draw_legend_item(tr("Water", "Nuoc"), ImVec4(35/255.f, 75/255.f, 115/255.f, 1.f), temp_water); ImGui::SameLine(); ImGui::Dummy(ImVec2(10.0f, 1.0f)); ImGui::SameLine();
-            draw_legend_item(tr("Forest", "Rung"), ImVec4(34/255.f, 110/255.f, 48/255.f, 1.f), temp_forest);
+            draw_legend_item(tr("Forest", "Rung"), ImVec4(34/255.f, 110/255.f, 48/255.f, 1.f), temp_forest); ImGui::SameLine(); ImGui::Dummy(ImVec2(10.0f, 1.0f)); ImGui::SameLine();
+            draw_legend_item(tr("Ice", "Bang"), ImVec4(160/255.f, 210/255.f, 240/255.f, 1.f), temp_ice);
 
             if (state.active_config.custom_map_mode) {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.5f, 0.3f, 0.1f, 1));
@@ -447,21 +510,27 @@ int main() {
                 int temp_rain = state.active_config.env_prob_rain;
                 int temp_clouds = state.active_config.env_prob_clouds;
                 int temp_light = state.active_config.env_prob_lightning;
+                int temp_heatwave = state.active_config.env_prob_heatwave;
+                int temp_blizzard = state.active_config.env_prob_blizzard;
 
-                int total_env = temp_clear + temp_wind + temp_rain + temp_clouds + temp_light;
+                int total_env = temp_clear + temp_wind + temp_rain + temp_clouds + temp_light + temp_heatwave + temp_blizzard;
                 if (total_env != 100) {
-                    state.active_config.env_prob_clear = 58;
-                    state.active_config.env_prob_wind = 16;
-                    state.active_config.env_prob_rain = 14;
+                    state.active_config.env_prob_clear = 50;
+                    state.active_config.env_prob_wind = 14;
+                    state.active_config.env_prob_rain = 12;
                     state.active_config.env_prob_clouds = 4;
                     state.active_config.env_prob_lightning = 8;
-                    temp_clear = 58; temp_wind = 16; temp_rain = 14; temp_clouds = 4; temp_light = 8;
+                    state.active_config.env_prob_heatwave = 6;
+                    state.active_config.env_prob_blizzard = 6;
+                    temp_clear = 50; temp_wind = 14; temp_rain = 12; temp_clouds = 4; temp_light = 8; temp_heatwave = 6; temp_blizzard = 6;
                 }
 
                 int ep1 = temp_clear;
                 int ep2 = ep1 + temp_wind;
                 int ep3 = ep2 + temp_rain;
                 int ep4 = ep3 + temp_clouds;
+                int ep5 = ep4 + temp_light;
+                int ep6 = ep5 + temp_heatwave;
 
                 float ebar_width = ImGui::GetContentRegionAvail().x - 10.0f;
                 if (ebar_width < 100.0f) ebar_width = 360.0f;
@@ -486,24 +555,36 @@ int main() {
                         float ed2 = std::abs(eclicked_pct - ep2);
                         float ed3 = std::abs(eclicked_pct - ep3);
                         float ed4 = std::abs(eclicked_pct - ep4);
-                        if (ed1 <= ed2 && ed1 <= ed3 && ed1 <= ed4) eactive_knob = 0;
-                        else if (ed2 <= ed1 && ed2 <= ed3 && ed2 <= ed4) eactive_knob = 1;
-                        else if (ed3 <= ed1 && ed3 <= ed2 && ed3 <= ed4) eactive_knob = 2;
-                        else eactive_knob = 3;
+                        float ed5 = std::abs(eclicked_pct - ep5);
+                        float ed6 = std::abs(eclicked_pct - ep6);
+                        if (ed1 <= ed2 && ed1 <= ed3 && ed1 <= ed4 && ed1 <= ed5 && ed1 <= ed6) eactive_knob = 0;
+                        else if (ed2 <= ed1 && ed2 <= ed3 && ed2 <= ed4 && ed2 <= ed5 && ed2 <= ed6) eactive_knob = 1;
+                        else if (ed3 <= ed1 && ed3 <= ed2 && ed3 <= ed4 && ed3 <= ed5 && ed3 <= ed6) eactive_knob = 2;
+                        else if (ed4 <= ed1 && ed4 <= ed2 && ed4 <= ed3 && ed4 <= ed5 && ed4 <= ed6) eactive_knob = 3;
+                        else if (ed5 <= ed1 && ed5 <= ed2 && ed5 <= ed3 && ed5 <= ed4 && ed5 <= ed6) eactive_knob = 4;
+                        else eactive_knob = 5;
                     }
+
+                    const int MIN_KNOB_DISTANCE = 1;  // Minimum distance between knobs to prevent overlap
 
                     if (eactive_knob == 0) {
                         ep1 = std::round(eclicked_pct);
-                        ep1 = std::max(0, std::min(ep2, ep1));
+                        ep1 = std::max(0, std::min(ep2 - MIN_KNOB_DISTANCE, ep1));
                     } else if (eactive_knob == 1) {
                         ep2 = std::round(eclicked_pct);
-                        ep2 = std::max(ep1, std::min(ep3, ep2));
+                        ep2 = std::max(ep1 + MIN_KNOB_DISTANCE, std::min(ep3 - MIN_KNOB_DISTANCE, ep2));
                     } else if (eactive_knob == 2) {
                         ep3 = std::round(eclicked_pct);
-                        ep3 = std::max(ep2, std::min(ep4, ep3));
+                        ep3 = std::max(ep2 + MIN_KNOB_DISTANCE, std::min(ep4 - MIN_KNOB_DISTANCE, ep3));
                     } else if (eactive_knob == 3) {
                         ep4 = std::round(eclicked_pct);
-                        ep4 = std::max(ep3, std::min(100, ep4));
+                        ep4 = std::max(ep3 + MIN_KNOB_DISTANCE, std::min(ep5 - MIN_KNOB_DISTANCE, ep4));
+                    } else if (eactive_knob == 4) {
+                        ep5 = std::round(eclicked_pct);
+                        ep5 = std::max(ep4 + MIN_KNOB_DISTANCE, std::min(ep6 - MIN_KNOB_DISTANCE, ep5));
+                    } else if (eactive_knob == 5) {
+                        ep6 = std::round(eclicked_pct);
+                        ep6 = std::max(ep5 + MIN_KNOB_DISTANCE, std::min(100, ep6));
                     }
                 } else {
                     eactive_knob = -1;
@@ -513,20 +594,26 @@ int main() {
                 state.active_config.env_prob_wind = ep2 - ep1;
                 state.active_config.env_prob_rain = ep3 - ep2;
                 state.active_config.env_prob_clouds = ep4 - ep3;
-                state.active_config.env_prob_lightning = 100 - ep4;
+                state.active_config.env_prob_lightning = ep5 - ep4;
+                state.active_config.env_prob_heatwave = ep6 - ep5;
+                state.active_config.env_prob_blizzard = 100 - ep6;
 
                 temp_clear = state.active_config.env_prob_clear;
                 temp_wind = state.active_config.env_prob_wind;
                 temp_rain = state.active_config.env_prob_rain;
                 temp_clouds = state.active_config.env_prob_clouds;
                 temp_light = state.active_config.env_prob_lightning;
+                temp_heatwave = state.active_config.env_prob_heatwave;
+                temp_blizzard = state.active_config.env_prob_blizzard;
 
                 float ex0 = ecursor_pos.x;
                 float ex1 = ex0 + ep1 * (ebar_width / 100.f);
                 float ex2 = ex0 + ep2 * (ebar_width / 100.f);
                 float ex3 = ex0 + ep3 * (ebar_width / 100.f);
                 float ex4 = ex0 + ep4 * (ebar_width / 100.f);
-                float ex5 = ex0 + ebar_width;
+                float ex5 = ex0 + ep5 * (ebar_width / 100.f);
+                float ex6 = ex0 + ep6 * (ebar_width / 100.f);
+                float ex7 = ex0 + ebar_width;
 
                 float ey_top = ecursor_pos.y + 4.0f;
                 float ey_bot = ey_top + ebar_height;
@@ -536,12 +623,16 @@ int main() {
                 ImU32 col_rain = ImGui::ColorConvertFloat4ToU32(ImVec4(0.35f, 0.55f, 0.85f, 1.0f));
                 ImU32 col_clouds = ImGui::ColorConvertFloat4ToU32(ImVec4(0.3f, 0.3f, 0.35f, 1.0f));
                 ImU32 col_light = ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 0.85f, 0.2f, 1.0f));
+                ImU32 col_heatwave = ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 0.5f, 0.2f, 1.0f));
+                ImU32 col_blizzard = ImGui::ColorConvertFloat4ToU32(ImVec4(0.6f, 0.8f, 1.0f, 1.0f));
 
                 edraw_list->AddRectFilled(ImVec2(ex0, ey_top), ImVec2(ex1, ey_bot), col_clear);
                 edraw_list->AddRectFilled(ImVec2(ex1, ey_top), ImVec2(ex2, ey_bot), col_wind);
                 edraw_list->AddRectFilled(ImVec2(ex2, ey_top), ImVec2(ex3, ey_bot), col_rain);
                 edraw_list->AddRectFilled(ImVec2(ex3, ey_top), ImVec2(ex4, ey_bot), col_clouds);
                 edraw_list->AddRectFilled(ImVec2(ex4, ey_top), ImVec2(ex5, ey_bot), col_light);
+                edraw_list->AddRectFilled(ImVec2(ex5, ey_top), ImVec2(ex6, ey_bot), col_heatwave);
+                edraw_list->AddRectFilled(ImVec2(ex6, ey_top), ImVec2(ex7, ey_bot), col_blizzard);
 
                 auto draw_eknob = [&](float x_center, int knob_idx) {
                     bool knob_hovered = ehovered && std::abs(emouse_pos.x - x_center) < 10.0f;
@@ -569,12 +660,14 @@ int main() {
                 draw_eknob(ex2, 1);
                 draw_eknob(ex3, 2);
                 draw_eknob(ex4, 3);
+                draw_eknob(ex5, 4);
+                draw_eknob(ex6, 5);
 
-                edraw_list->AddRect(ImVec2(ex0, ey_top), ImVec2(ex5, ey_bot), ImGui::ColorConvertFloat4ToU32(ImVec4(0.2f, 0.2f, 0.2f, 0.6f)), 0.0f, 0, 1.5f);
+                edraw_list->AddRect(ImVec2(ex0, ey_top), ImVec2(ex7, ey_bot), ImGui::ColorConvertFloat4ToU32(ImVec4(0.2f, 0.2f, 0.2f, 0.6f)), 0.0f, 0, 1.5f);
 
                 ImGui::Spacing();
 
-                // Draw legend items in two rows if needed to avoid overflow
+                // Draw legend items in three rows to avoid overflow
                 draw_legend_item(tr("Clear", "Troi quang"), ImVec4(0.5f, 0.7f, 0.9f, 1.0f), temp_clear); ImGui::SameLine(); ImGui::Dummy(ImVec2(10.0f, 1.0f)); ImGui::SameLine();
                 draw_legend_item(tr("Wind", "Gio lon"), ImVec4(0.7f, 0.85f, 0.95f, 1.0f), temp_wind); ImGui::SameLine(); ImGui::Dummy(ImVec2(10.0f, 1.0f)); ImGui::SameLine();
                 draw_legend_item(tr("Rain", "Mua to"), ImVec4(0.35f, 0.55f, 0.85f, 1.0f), temp_rain); 
@@ -582,7 +675,12 @@ int main() {
                 ImGui::Spacing();
                 
                 draw_legend_item(tr("Clouds", "May mu"), ImVec4(0.3f, 0.3f, 0.35f, 1.0f), temp_clouds); ImGui::SameLine(); ImGui::Dummy(ImVec2(10.0f, 1.0f)); ImGui::SameLine();
-                draw_legend_item(tr("Lightning", "Sam set"), ImVec4(1.0f, 0.85f, 0.2f, 1.0f), temp_light);
+                draw_legend_item(tr("Lightning", "Sam set"), ImVec4(1.0f, 0.85f, 0.2f, 1.0f), temp_light); ImGui::SameLine(); ImGui::Dummy(ImVec2(10.0f, 1.0f)); ImGui::SameLine();
+                draw_legend_item(tr("Heatwave", "Nang nong"), ImVec4(1.0f, 0.5f, 0.2f, 1.0f), temp_heatwave);
+                
+                ImGui::Spacing();
+                
+                draw_legend_item(tr("Blizzard", "Bang gia"), ImVec4(0.6f, 0.8f, 1.0f, 1.0f), temp_blizzard);
                 
                 ImGui::Unindent(15.0f);
                 ImGui::Spacing();
@@ -631,6 +729,7 @@ int main() {
                     if (t == Terrain::Wall) cell.setFillColor(sf::Color(60, 62, 66));
                     else if (t == Terrain::Water) cell.setFillColor(sf::Color(35, 75, 115));
                     else if (t == Terrain::Forest) cell.setFillColor(sf::Color(34, 110, 48));
+                    else if (t == Terrain::Ice) cell.setFillColor(sf::Color(160, 210, 240));
                     else cell.setFillColor(sf::Color(105, 60, 35));
                     window.draw(cell);
 
@@ -650,6 +749,7 @@ int main() {
             if (ImGui::RadioButton("Reinforced Wall", state.editor_selected_terrain == Terrain::Wall)) state.editor_selected_terrain = Terrain::Wall;
             if (ImGui::RadioButton("Deep Water Hazard", state.editor_selected_terrain == Terrain::Water)) state.editor_selected_terrain = Terrain::Water;
             if (ImGui::RadioButton(state.tr("Dense Forest", "Rung Ram Cung").c_str(), state.editor_selected_terrain == Terrain::Forest)) state.editor_selected_terrain = Terrain::Forest;
+            if (ImGui::RadioButton(state.tr("Ice Terrain", "Dia Hinh Bang").c_str(), state.editor_selected_terrain == Terrain::Ice)) state.editor_selected_terrain = Terrain::Ice;
 
             ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
             if (ImGui::Button("SAVE DESIGN & RETURN TO ENGINE", ImVec2(360, 50))) state.current_scene = GameScene::MainMenu;
@@ -672,60 +772,94 @@ int main() {
                         cell.setFillColor(sf::Color(60, 62, 66));
                     }
                     else if (state.grid[x][y] == Terrain::Water) {
-                        bool is_transitioning = false;
-                        if (state.active_fx.type == FXType::Rain) {
-                            for (auto p : state.active_fx.blast_cells) {
-                                if (p.x == x && p.y == y) {
-                                    is_transitioning = true;
-                                    break;
+                        // Check for terrain transitions
+                        sf::Color finalColor(35, 75, 115);
+                        for (const auto& trans : state.terrain_transitions) {
+                            if (trans.pos.x == x && trans.pos.y == y && trans.to_terrain == Terrain::Water) {
+                                float progress = trans.timer / trans.max_duration;
+                                sf::Color fromColor, toColor;
+                                if (trans.from_terrain == Terrain::Ice) {
+                                    fromColor = sf::Color(160, 210, 240);
+                                    toColor = sf::Color(35, 75, 115);
+                                } else if (trans.from_terrain == Terrain::Dirt) {
+                                    fromColor = sf::Color(105, 60, 35);
+                                    toColor = sf::Color(35, 75, 115);
                                 }
+                                finalColor = sf::Color(
+                                    static_cast<sf::Uint8>(fromColor.r + progress * (toColor.r - fromColor.r)),
+                                    static_cast<sf::Uint8>(fromColor.g + progress * (toColor.g - fromColor.g)),
+                                    static_cast<sf::Uint8>(fromColor.b + progress * (toColor.b - fromColor.b))
+                                );
+                                break;
                             }
                         }
-                        if (is_transitioning) {
-                            float progress = 1.0f - (state.active_fx.timer / state.active_fx.max_duration);
-                            sf::Color dirtColor(105, 60, 35);
-                            sf::Color waterColor(35, 75, 115);
-                            sf::Color lerpColor(
-                                static_cast<sf::Uint8>(dirtColor.r + progress * (waterColor.r - dirtColor.r)),
-                                static_cast<sf::Uint8>(dirtColor.g + progress * (waterColor.g - dirtColor.g)),
-                                static_cast<sf::Uint8>(dirtColor.b + progress * (waterColor.b - dirtColor.b))
-                            );
-                            cell.setFillColor(lerpColor);
-                        } else {
-                            cell.setFillColor(sf::Color(35, 75, 115));
-                        }
+                        cell.setFillColor(finalColor);
                     }
                     else if (state.grid[x][y] == Terrain::Fire) {
                         int pulse = static_cast<int>(25.0f * std::sin(timeSec * 12.0f));
                         cell.setFillColor(sf::Color(220 + pulse, 100 + pulse / 2, 20));
                     }
                     else if (state.grid[x][y] == Terrain::Forest) {
-                        cell.setFillColor(sf::Color(34, 110, 48));
-                    }
-                    else {
-                        bool was_extinguished = false;
-                        if (state.active_fx.type == FXType::Rain) {
-                            for (auto p : state.active_fx.extinguished_cells) {
-                                if (p.x == x && p.y == y) {
-                                    was_extinguished = true;
-                                    break;
-                                }
+                        // Check for terrain transitions
+                        sf::Color finalColor(34, 110, 48);
+                        for (const auto& trans : state.terrain_transitions) {
+                            if (trans.pos.x == x && trans.pos.y == y && trans.to_terrain == Terrain::Forest) {
+                                float progress = trans.timer / trans.max_duration;
+                                sf::Color fromColor(105, 60, 35);  // Dirt
+                                sf::Color toColor(34, 110, 48);    // Forest
+                                finalColor = sf::Color(
+                                    static_cast<sf::Uint8>(fromColor.r + progress * (toColor.r - fromColor.r)),
+                                    static_cast<sf::Uint8>(fromColor.g + progress * (toColor.g - fromColor.g)),
+                                    static_cast<sf::Uint8>(fromColor.b + progress * (toColor.b - fromColor.b))
+                                );
+                                break;
                             }
                         }
-                        if (was_extinguished) {
-                            float progress = 1.0f - (state.active_fx.timer / state.active_fx.max_duration);
-                            int pulse = static_cast<int>(25.0f * std::sin(timeSec * 12.0f));
-                            sf::Color fireColor(220 + pulse, 100 + pulse / 2, 20);
-                            sf::Color dirtColor(105, 60, 35);
-                            sf::Color lerpColor(
-                                static_cast<sf::Uint8>(fireColor.r + progress * (dirtColor.r - fireColor.r)),
-                                static_cast<sf::Uint8>(fireColor.g + progress * (dirtColor.g - fireColor.g)),
-                                static_cast<sf::Uint8>(fireColor.b + progress * (dirtColor.b - fireColor.b))
-                            );
-                            cell.setFillColor(lerpColor);
-                        } else {
-                            cell.setFillColor(sf::Color(105, 60, 35));
+                        cell.setFillColor(finalColor);
+                    }
+                    else if (state.grid[x][y] == Terrain::Ice) {
+                        // Check for terrain transitions
+                        sf::Color finalColor(160, 210, 240);
+                        for (const auto& trans : state.terrain_transitions) {
+                            if (trans.pos.x == x && trans.pos.y == y && trans.to_terrain == Terrain::Ice) {
+                                float progress = trans.timer / trans.max_duration;
+                                sf::Color fromColor(35, 75, 115);  // Water
+                                sf::Color toColor(160, 210, 240);  // Ice
+                                finalColor = sf::Color(
+                                    static_cast<sf::Uint8>(fromColor.r + progress * (toColor.r - fromColor.r)),
+                                    static_cast<sf::Uint8>(fromColor.g + progress * (toColor.g - fromColor.g)),
+                                    static_cast<sf::Uint8>(fromColor.b + progress * (toColor.b - fromColor.b))
+                                );
+                                break;
+                            }
                         }
+                        // Shimmering ice: light blue with subtle pulse
+                        int pulse = static_cast<int>(15.0f * std::sin(timeSec * 3.0f + x * 0.7f + y * 0.5f));
+                        finalColor.r = std::min(255, static_cast<int>(finalColor.r) + pulse);
+                        finalColor.g = std::min(255, static_cast<int>(finalColor.g) + pulse/2);
+                        cell.setFillColor(finalColor);
+                    }
+                    else {
+                        // Dirt - check for transitions
+                        sf::Color finalColor(105, 60, 35);
+                        for (const auto& trans : state.terrain_transitions) {
+                            if (trans.pos.x == x && trans.pos.y == y && trans.to_terrain == Terrain::Dirt) {
+                                float progress = trans.timer / trans.max_duration;
+                                sf::Color fromColor, toColor(105, 60, 35);  // Dirt
+                                if (trans.from_terrain == Terrain::Water) {
+                                    fromColor = sf::Color(35, 75, 115);
+                                } else if (trans.from_terrain == Terrain::Forest) {
+                                    fromColor = sf::Color(34, 110, 48);
+                                }
+                                finalColor = sf::Color(
+                                    static_cast<sf::Uint8>(fromColor.r + progress * (toColor.r - fromColor.r)),
+                                    static_cast<sf::Uint8>(fromColor.g + progress * (toColor.g - fromColor.g)),
+                                    static_cast<sf::Uint8>(fromColor.b + progress * (toColor.b - fromColor.b))
+                                );
+                                break;
+                            }
+                        }
+                        cell.setFillColor(finalColor);
                     }
                     
                     window.draw(cell);
@@ -781,6 +915,19 @@ int main() {
                 float drawX = zlx * cellSize + boardOffset + 3.0f;
                 float drawY = zly * cellSize + boardOffset + 3.0f;
                 
+                // Handle ice slide animation for this zombie
+                if (state.ice_slide_animation.active && !state.ice_slide_animation.is_human && state.ice_slide_animation.zombie_idx == i) {
+                    if (state.ice_slide_animation.current_step < state.ice_slide_animation.path.size()) {
+                        Position slide_pos = state.ice_slide_animation.path[state.ice_slide_animation.current_step];
+                        int slide_lx = slide_pos.x - viewX + padX;
+                        int slide_ly = slide_pos.y - viewY + padY;
+                        if (slide_lx >= 0 && slide_lx < VIEW_CELLS && slide_ly >= 0 && slide_ly < VIEW_CELLS) {
+                            drawX = slide_lx * cellSize + boardOffset + 3.0f;
+                            drawY = slide_ly * cellSize + boardOffset + 3.0f;
+                        }
+                    }
+                }
+                
                 if (state.active_fx.type == FXType::Wind) {
                     bool was_pushed = false;
                     for (auto p : state.active_fx.blast_cells) {
@@ -829,7 +976,7 @@ int main() {
 
                     // Blinking status tags on zombie icon
                     bool blinkOn = std::sin(timeSec * 10.0f) > 0.0f;
-                    if (blinkOn && (z->is_burning || z->is_paralyzed)) {
+                    if (blinkOn && (z->is_burning || z->is_paralyzed || z->is_stunned || z->is_frozen)) {
                         if (z->is_burning) {
                             sf::Text burnTxt;
                             burnTxt.setFont(boardFont);
@@ -848,6 +995,24 @@ int main() {
                             paraTxt.setPosition(drawX + cellSize - 17.0f, drawY - 1.0f);
                             window.draw(paraTxt);
                         }
+                        if (z->is_stunned) {
+                            sf::Text stunTxt;
+                            stunTxt.setFont(boardFont);
+                            stunTxt.setCharacterSize(11);
+                            stunTxt.setFillColor(sf::Color(100, 220, 255));
+                            stunTxt.setString("S");
+                            stunTxt.setPosition(drawX + (cellSize - 6.0f) / 2.0f - 4.0f, drawY - 1.0f);
+                            window.draw(stunTxt);
+                        }
+                        if (z->is_frozen) {
+                            sf::Text frozTxt;
+                            frozTxt.setFont(boardFont);
+                            frozTxt.setCharacterSize(11);
+                            frozTxt.setFillColor(sf::Color(160, 230, 255));
+                            frozTxt.setString("F");
+                            frozTxt.setPosition(drawX + (cellSize - 6.0f) / 2.0f + 5.0f, drawY - 1.0f);
+                            window.draw(frozTxt);
+                        }
                     }
                 }
             }
@@ -857,6 +1022,19 @@ int main() {
             
             float drawX = hlx * cellSize + boardOffset + 3.0f;
             float drawY = hly * cellSize + boardOffset + 3.0f;
+            
+            // Handle ice slide animation for human
+            if (state.ice_slide_animation.active && state.ice_slide_animation.is_human) {
+                if (state.ice_slide_animation.current_step < state.ice_slide_animation.path.size()) {
+                    Position slide_pos = state.ice_slide_animation.path[state.ice_slide_animation.current_step];
+                    int slide_lx = slide_pos.x - viewX + padX;
+                    int slide_ly = slide_pos.y - viewY + padY;
+                    if (slide_lx >= 0 && slide_lx < VIEW_CELLS && slide_ly >= 0 && slide_ly < VIEW_CELLS) {
+                        drawX = slide_lx * cellSize + boardOffset + 3.0f;
+                        drawY = slide_ly * cellSize + boardOffset + 3.0f;
+                    }
+                }
+            }
             
             if (state.active_fx.type == FXType::Wind) {
                 bool was_pushed = false;
@@ -919,7 +1097,7 @@ int main() {
 
             if (hasFont) {
                 bool blinkOn = std::sin(timeSec * 10.0f) > 0.0f;
-                if (blinkOn && (state.human.is_burning || state.human.is_paralyzed)) {
+                if (blinkOn && (state.human.is_burning || state.human.is_paralyzed || state.human.is_stunned || state.human.is_frozen)) {
                     if (state.human.is_burning) {
                         sf::Text burnTxt;
                         burnTxt.setFont(boardFont);
@@ -937,6 +1115,24 @@ int main() {
                         paraTxt.setString("P");
                         paraTxt.setPosition(hlx * cellSize + boardOffset + cellSize - 14.0f, hly * cellSize + boardOffset + 2.0f);
                         if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) window.draw(paraTxt);
+                    }
+                    if (state.human.is_stunned) {
+                        sf::Text stunTxt;
+                        stunTxt.setFont(boardFont);
+                        stunTxt.setCharacterSize(11);
+                        stunTxt.setFillColor(sf::Color(100, 220, 255));
+                        stunTxt.setString("S");
+                        stunTxt.setPosition(hlx * cellSize + boardOffset + cellSize / 2.0f - 4.0f, hly * cellSize + boardOffset + 2.0f);
+                        if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) window.draw(stunTxt);
+                    }
+                    if (state.human.is_frozen) {
+                        sf::Text frozTxt;
+                        frozTxt.setFont(boardFont);
+                        frozTxt.setCharacterSize(11);
+                        frozTxt.setFillColor(sf::Color(160, 230, 255));
+                        frozTxt.setString("F");
+                        frozTxt.setPosition(hlx * cellSize + boardOffset + cellSize / 2.0f + 4.0f, hly * cellSize + boardOffset + 2.0f);
+                        if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) window.draw(frozTxt);
                     }
                 }
             }
@@ -1065,6 +1261,20 @@ int main() {
                         cloud.setPosition(boardOffset, boardOffset);
                         window.draw(cloud);
                     }
+                } else if (state.active_fx.type == FXType::Heatwave) {
+                    // Golden/yellow shimmer overlay for heatwave
+                    float intensity = 0.5f + 0.3f * std::sin(timeSec * 4.0f);  // Pulsing effect
+                    sf::RectangleShape overlay(sf::Vector2f(state.width * cellSize, state.height * cellSize));
+                    overlay.setFillColor(sf::Color(255, 220, 100, static_cast<sf::Uint8>(intensity * 100)));
+                    overlay.setPosition(boardOffset, boardOffset);
+                    window.draw(overlay);
+                } else if (state.active_fx.type == FXType::Blizzard) {
+                    // Icy white shimmer overlay for blizzard
+                    float intensity = 0.5f + 0.3f * std::sin(timeSec * 4.0f);  // Pulsing effect
+                    sf::RectangleShape overlay(sf::Vector2f(state.width * cellSize, state.height * cellSize));
+                    overlay.setFillColor(sf::Color(220, 240, 255, static_cast<sf::Uint8>(intensity * 100)));
+                    overlay.setPosition(boardOffset, boardOffset);
+                    window.draw(overlay);
                 } else if (state.active_fx.type == FXType::Lightning) {
                     sf::Vector2f target = state.getCellCenter(state.active_fx.cx, state.active_fx.cy, cellSize, boardOffset);
                     float startY = boardOffset;
@@ -1177,7 +1387,23 @@ int main() {
                                tr("Env", "MT"), state.last_environment_event.c_str());
             if (state.human.is_burning) { ImGui::SameLine(); ImGui::TextColored(ImVec4(1, 0.45f, 0.1f, 1), "BURNING"); }
             if (state.human.is_paralyzed) { ImGui::SameLine(); ImGui::TextColored(ImVec4(0.45f, 0.9f, 1.0f, 1), "PARALYZED"); }
+            if (state.human.is_frozen) { ImGui::SameLine(); ImGui::TextColored(ImVec4(0.6f, 0.85f, 1.0f, 1), "FROZEN"); }
             if (state.dark_cloud_active) { ImGui::SameLine(); ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.8f, 1), "DARK CLOUD"); }
+            // Audio toggles moved to left side to avoid text cutoff
+            ImGui::SameLine(); ImGui::Dummy(ImVec2(10, 1)); ImGui::SameLine();
+            {
+                bool music_on = state.music_enabled;
+                if (ImGui::Checkbox(tr("Music##ig", "Nhac##ig"), &music_on)) {
+                    state.music_enabled = music_on;
+                    if (music_on) state.playBackgroundMusic("battle");
+                    else state.stopBackgroundMusic();
+                }
+                ImGui::SameLine();
+                bool sfx_on = state.sfx_enabled;
+                if (ImGui::Checkbox(tr("SFX##ig", "Am thanh##ig"), &sfx_on)) {
+                    state.setSfxEnabled(sfx_on);
+                }
+            }
             ImGui::Separator();
 
             bool human_turn = (state.phase == TurnPhase::HumanTurn);

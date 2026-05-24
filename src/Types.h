@@ -8,13 +8,13 @@
 
 #include "GameConstants.h"
 
-enum class Terrain { Dirt, Water, Wall, Fire, Forest };
+enum class Terrain { Dirt, Water, Wall, Fire, Forest, Ice };
 enum class InputMode { MoveMode, TargetKnife, TargetPistol, TargetShotgun, TargetGrenade, TargetMolotov };
 enum class ZombieType { Normal, Fast, Exploding, Vampire, Sick };
 enum class TurnPhase { HumanTurn, ZombieAnimating, EnvironmentAnimating };
 
 // Added Bite and Scratch FX
-enum class FXType { None, Knife, Pistol, Shotgun, Explosion, Molotov, Bite, Scratch, Wind, Rain, DarkCloud, Lightning, Electricity, GrenadeFly };
+enum class FXType { None, Knife, Pistol, Shotgun, Explosion, Molotov, Bite, Scratch, Wind, Rain, DarkCloud, Lightning, Electricity, GrenadeFly, Heatwave, Blizzard };
 enum class GameScene { MainMenu, Playing, MapEditor };
 
 struct Position {
@@ -31,8 +31,9 @@ struct GameConfig {
 
     int ratio_wall = 10;
     int ratio_water = 10;
-    int ratio_forest = 20;
-    int ratio_dirt = 60;
+    int ratio_forest = 15;
+    int ratio_dirt = 55;
+    int ratio_ice = 10;  // Ice terrain ratio for procedural generation
 
     int human_hp = GameConstants::Difficulty::Medium::HUMAN_HP;
     int initial_stamina = GameConstants::Difficulty::Medium::INITIAL_STAMINA;
@@ -53,11 +54,14 @@ struct GameConfig {
     bool custom_map_mode = false;  
     bool enable_environment = true;
 
-    int env_prob_clear = 58;
-    int env_prob_wind = 16;
-    int env_prob_rain = 14;
+    // Weather probabilities (must sum to 100)
+    int env_prob_clear = 50;
+    int env_prob_wind = 14;
+    int env_prob_rain = 12;
     int env_prob_clouds = 4;
     int env_prob_lightning = 8;
+    int env_prob_heatwave = 6;   // Nắng nóng gay gắt
+    int env_prob_blizzard = 6;   // Băng giá
 
     Position custom_human_pos{1, 1};
     std::vector<std::vector<Terrain>> custom_grid; 
@@ -79,6 +83,26 @@ struct FireCell {
     int duration; 
 };
 
+// Animation for ice slide (entity moves step by step)
+struct IceSlideAnimation {
+    bool active = false;
+    bool is_human = false;
+    size_t zombie_idx = 0;
+    std::vector<Position> path;  // Path of positions to slide through
+    int current_step = 0;
+    float step_timer = 0.0f;
+    float step_duration = 0.1f;  // Time per step
+};
+
+// Animation for terrain transitions (smooth color change)
+struct TerrainTransitionAnimation {
+    Position pos;
+    Terrain from_terrain;
+    Terrain to_terrain;
+    float timer = 0.0f;
+    float max_duration = 0.8f;  // Smooth transition over 0.8 seconds
+};
+
 struct VisualFX {
     FXType type = FXType::None;
     float timer = 0.0f;
@@ -92,6 +116,7 @@ struct VisualFX {
     int dx = 0;
     int dy = 0;
     std::string banner_text = "";
+    float overlay_intensity = 0.0f;  // For heatwave/blizzard overlay
 };
 
 // System for dynamic floating damage/heal numbers
