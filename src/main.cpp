@@ -17,7 +17,7 @@ int main() {
     enum class Lang { EN, VI };
     static Lang ui_lang = Lang::EN;
     auto tr = [&](const char* en, const char* vi) { return (ui_lang == Lang::VI) ? vi : en; };
-    sf::RenderWindow window(sf::VideoMode(1400, 658), "ZomChess Tactical Engine v2.1", sf::Style::Titlebar | sf::Style::Close);
+    sf::RenderWindow window(sf::VideoMode(1400, 658), "ZomChess Game", sf::Style::Titlebar | sf::Style::Close);
     window.setFramerateLimit(60);
     if (!ImGui::SFML::Init(window)) return -1;
 

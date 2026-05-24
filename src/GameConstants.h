@@ -10,9 +10,15 @@ namespace GameConstants {
         constexpr float CLUSTER_PROB_WATER = 0.25f;  // Organic water hazard clustering probability
         constexpr float CLUSTER_PROB_FOREST = 0.25f; // Organic forest wood clustering probability
         constexpr float CLUSTER_PROB_WALL = 0.15f;   // Wall obstacle clustering probability
-        
+
         // Spawn shielding parameters
         constexpr int SPAWN_SHIELD_RADIUS = 2;       // 5x5 shield around human spawn location
+
+        // Map dimension limits (used by menu sliders)
+        constexpr int MAP_WIDTH_MIN  = 5;
+        constexpr int MAP_WIDTH_MAX  = 50;
+        constexpr int MAP_HEIGHT_MIN = 5;
+        constexpr int MAP_HEIGHT_MAX = 50;
     }
 
     // =========================================================================
@@ -33,6 +39,23 @@ namespace GameConstants {
             constexpr int COUNT_EXPLODING = 1;
             constexpr int COUNT_VAMPIRE = 1;
             constexpr int COUNT_SICK = 1;
+            constexpr int TURN_LIMIT = 50;
+
+            // Terrain ratios (sum = 100)
+            constexpr int RATIO_DIRT    = 60;
+            constexpr int RATIO_WALL    = 8;
+            constexpr int RATIO_WATER   = 10;
+            constexpr int RATIO_FOREST  = 18;
+            constexpr int RATIO_ICE     = 4;
+
+            // Weather probabilities (sum = 100)
+            constexpr int ENV_PROB_CLEAR     = 60;
+            constexpr int ENV_PROB_WIND      = 14;
+            constexpr int ENV_PROB_RAIN      = 12;
+            constexpr int ENV_PROB_CLOUDS    = 4;
+            constexpr int ENV_PROB_LIGHTNING = 4;
+            constexpr int ENV_PROB_HEATWAVE  = 3;
+            constexpr int ENV_PROB_BLIZZARD  = 3;
         }
 
         // Preset Level 1: Medium (Default)
@@ -49,6 +72,23 @@ namespace GameConstants {
             constexpr int COUNT_EXPLODING = 3;
             constexpr int COUNT_VAMPIRE = 2;
             constexpr int COUNT_SICK = 2;
+            constexpr int TURN_LIMIT = 50;
+
+            // Terrain ratios (sum = 100)
+            constexpr int RATIO_DIRT    = 52;
+            constexpr int RATIO_WALL    = 10;
+            constexpr int RATIO_WATER   = 12;
+            constexpr int RATIO_FOREST  = 18;
+            constexpr int RATIO_ICE     = 8;
+
+            // Weather probabilities (sum = 100)
+            constexpr int ENV_PROB_CLEAR     = 50;
+            constexpr int ENV_PROB_WIND      = 14;
+            constexpr int ENV_PROB_RAIN      = 12;
+            constexpr int ENV_PROB_CLOUDS    = 4;
+            constexpr int ENV_PROB_LIGHTNING = 8;
+            constexpr int ENV_PROB_HEATWAVE  = 6;
+            constexpr int ENV_PROB_BLIZZARD  = 6;
         }
 
         // Preset Level 2: Hard
@@ -65,6 +105,23 @@ namespace GameConstants {
             constexpr int COUNT_EXPLODING = 4;
             constexpr int COUNT_VAMPIRE = 3;
             constexpr int COUNT_SICK = 2;
+            constexpr int TURN_LIMIT = 50;
+
+            // Terrain ratios (sum = 100)
+            constexpr int RATIO_DIRT    = 42;
+            constexpr int RATIO_WALL    = 13;
+            constexpr int RATIO_WATER   = 14;
+            constexpr int RATIO_FOREST  = 16;
+            constexpr int RATIO_ICE     = 15;
+
+            // Weather probabilities (sum = 100)
+            constexpr int ENV_PROB_CLEAR     = 38;
+            constexpr int ENV_PROB_WIND      = 14;
+            constexpr int ENV_PROB_RAIN      = 12;
+            constexpr int ENV_PROB_CLOUDS    = 6;
+            constexpr int ENV_PROB_LIGHTNING = 12;
+            constexpr int ENV_PROB_HEATWAVE  = 9;
+            constexpr int ENV_PROB_BLIZZARD  = 9;
         }
 
         // Preset Level 3: Unfair
@@ -81,6 +138,48 @@ namespace GameConstants {
             constexpr int COUNT_EXPLODING = 6;
             constexpr int COUNT_VAMPIRE = 3;
             constexpr int COUNT_SICK = 3;
+            constexpr int TURN_LIMIT = 50;
+
+            // Terrain ratios (sum = 100)
+            constexpr int RATIO_DIRT    = 32;
+            constexpr int RATIO_WALL    = 15;
+            constexpr int RATIO_WATER   = 16;
+            constexpr int RATIO_FOREST  = 14;
+            constexpr int RATIO_ICE     = 23;
+
+            // Weather probabilities (sum = 100)
+            constexpr int ENV_PROB_CLEAR     = 22;
+            constexpr int ENV_PROB_WIND      = 14;
+            constexpr int ENV_PROB_RAIN      = 12;
+            constexpr int ENV_PROB_CLOUDS    = 6;
+            constexpr int ENV_PROB_LIGHTNING = 16;
+            constexpr int ENV_PROB_HEATWAVE  = 15;
+            constexpr int ENV_PROB_BLIZZARD  = 15;
+        }
+
+        // Slider bounds for custom configuration in the menu
+        namespace SliderBounds {
+            constexpr int HUMAN_HP_MIN       = 1;
+            constexpr int HUMAN_HP_MAX       = 20;
+            constexpr int INITIAL_STAMINA_MIN = 1;
+            constexpr int INITIAL_STAMINA_MAX = 6;
+            constexpr int PISTOL_AMMO_MIN    = 0;
+            constexpr int PISTOL_AMMO_MAX    = 50;
+            constexpr int SHOTGUN_AMMO_MIN   = 0;
+            constexpr int SHOTGUN_AMMO_MAX   = 50;
+            constexpr int GRENADES_MIN       = 0;
+            constexpr int GRENADES_MAX       = 20;
+            constexpr int MINES_MIN          = 0;
+            constexpr int MINES_MAX          = 20;
+            constexpr int MOLOTOVS_MIN       = 0;
+            constexpr int MOLOTOVS_MAX       = 20;
+            constexpr int TURN_LIMIT_MIN     = 5;
+            constexpr int TURN_LIMIT_MAX     = 200;
+            constexpr int COUNT_NORMAL_MAX   = 50;
+            constexpr int COUNT_FAST_MAX     = 50;
+            constexpr int COUNT_EXPLODING_MAX = 50;
+            constexpr int COUNT_VAMPIRE_MAX  = 50;
+            constexpr int COUNT_SICK_MAX     = 50;
         }
     }
 
@@ -112,6 +211,8 @@ namespace GameConstants {
         constexpr int GRENADE_CENTER_DAMAGE = 3;
         constexpr int GRENADE_MID_DAMAGE = 2;
         constexpr int GRENADE_OUTER_DAMAGE = 1;
+        constexpr int GRENADE_MIN_STEPS = 1;
+        constexpr int GRENADE_MAX_STEPS = 6;
 
         // Molotov parameters
         constexpr int MOLOTOV_STAMINA_COST = 1;
@@ -121,6 +222,17 @@ namespace GameConstants {
 
         // Claymore Mine parameters
         constexpr int MINE_EXPLOSION_RADIUS = 1;
+        constexpr int MINE_DAMAGE = 2;
+
+        // Explosion damage tiers (center, mid ring, outer ring)
+        constexpr int EXPLOSION_CENTER_DAMAGE = 3;
+        constexpr int EXPLOSION_MID_DAMAGE    = 2;
+        constexpr int EXPLOSION_OUTER_DAMAGE  = 1;
+        constexpr int EXPLOSION_IMPACT_DAMAGE = 1; // extra damage when blast pushes entity into obstacle
+
+        // Grenade blast radius when thrown by human vs zombie exploder
+        constexpr int GRENADE_HUMAN_RADIUS   = 2;
+        constexpr int GRENADE_ZOMBIE_RADIUS  = 1;
     }
 
     // =========================================================================
@@ -154,14 +266,22 @@ namespace GameConstants {
 
         // Exploding Zombie explosion parameters
         constexpr int EXPLODER_RADIUS = 1;
+
+        // Frozen turns when hit by blizzard
+        constexpr int FROZEN_TURNS_NORMAL  = 2; // Normal/Exploding/Vampire/Sick
+        constexpr int FROZEN_TURNS_FAST    = 1; // Fast sprinters thaw quicker
+
+        // Collision damage (zombie pushed into another entity)
+        constexpr int COLLISION_DAMAGE = 1;
     }
 
     // =========================================================================
     // SECTION 5: WATER MOVEMENT & TERRAIN PENALTIES
     // =========================================================================
     namespace TerrainPenalties {
-        constexpr int WATER_MOVES_MAX_SPRINTER = 1;  //sprinters max moves per turn capped to 1 in water
+        constexpr int WATER_MOVES_MAX_SPRINTER = 1;  // sprinters max moves per turn capped to 1 in water
         constexpr int WATER_MOVEMENT_COST = 2;       // stamina cost to move into water
+        constexpr int FREEZE_BREAK_STAMINA_COST = 2; // stamina cost for human to break free from ice freeze
     }
 
     // =========================================================================
@@ -169,9 +289,15 @@ namespace GameConstants {
     // =========================================================================
     namespace Ice {
         // Number of consecutive ice cells required to trigger a slide
-        constexpr int SLIDE_TRIGGER_LENGTH = 4;
+        constexpr int SLIDE_TRIGGER_LENGTH = 2;
         // Probability of sliding when entering ice with >= SLIDE_TRIGGER_LENGTH consecutive ice ahead
         constexpr float SLIDE_CHANCE = 0.5f;
+        // Probability multiplier per extra step beyond the minimum slide length
+        constexpr float SLIDE_DECAY = 0.8f;
+        // Duration of each visual step in the ice slide animation (seconds)
+        constexpr float SLIDE_STEP_DURATION = 0.1f;
+        // Duration of terrain transition animation (seconds)
+        constexpr float TERRAIN_TRANSITION_DURATION = 0.8f;
     }
 
     // =========================================================================
@@ -225,6 +351,8 @@ namespace GameConstants {
         constexpr float FX_RAIN_DURATION = 3.2f;
         constexpr float FX_WIND_DURATION = 3.2f;
         constexpr float FX_DARK_CLOUD_DURATION = 1.6f;
+        constexpr float FX_HEATWAVE_DURATION = 3.2f;
+        constexpr float FX_BLIZZARD_DURATION = 3.2f;
     }
 
     // =========================================================================
@@ -236,45 +364,68 @@ namespace GameConstants {
         constexpr int MAP_HEIGHT = 15;
         constexpr int VIEW_CELLS = 15;  // Number of cells visible in the viewport
 
-        // Terrain ratios (sum = 100%)
-        constexpr int RATIO_WALL = 10;
-        constexpr int RATIO_WATER = 10;
-        constexpr int RATIO_FOREST = 20;
-        constexpr int RATIO_DIRT = 60;
+        // Terrain ratios (sum = 100%) — used as fallback when config is invalid
+        constexpr int RATIO_WALL   = 10;
+        constexpr int RATIO_WATER  = 10;
+        constexpr int RATIO_FOREST = 15;
+        constexpr int RATIO_DIRT   = 60;
+        constexpr int RATIO_ICE    = 5;
+
+        // GameConfig default terrain ratios (initial values in Types.h)
+        constexpr int CONFIG_RATIO_DIRT   = 55;
+        constexpr int CONFIG_RATIO_WALL   = 10;
+        constexpr int CONFIG_RATIO_WATER  = 10;
+        constexpr int CONFIG_RATIO_FOREST = 15;
+        constexpr int CONFIG_RATIO_ICE    = 10;
 
         // Turn limit
         constexpr int TURN_LIMIT = 20;
 
         // Human spawn position (default for custom maps)
-        constexpr int CUSTOM_HUMAN_X = 1;
-        constexpr int CUSTOM_HUMAN_Y = 1;
+        constexpr int CUSTOM_HUMAN_X = 8;
+        constexpr int CUSTOM_HUMAN_Y = 8;
 
-        // Environment probabilities (sum = 100%)
-        constexpr int ENV_PROB_CLEAR = 58;
-        constexpr int ENV_PROB_WIND = 16;
-        constexpr int ENV_PROB_RAIN = 14;
-        constexpr int ENV_PROB_CLOUDS = 4;
+        // Environment probabilities (sum = 100%) — used as fallback when config is invalid
+        constexpr int ENV_PROB_CLEAR     = 50;
+        constexpr int ENV_PROB_WIND      = 14;
+        constexpr int ENV_PROB_RAIN      = 12;
+        constexpr int ENV_PROB_CLOUDS    = 4;
         constexpr int ENV_PROB_LIGHTNING = 8;
+        constexpr int ENV_PROB_HEATWAVE  = 6;
+        constexpr int ENV_PROB_BLIZZARD  = 6;
 
         // Human default stats (fallback when not set by difficulty)
-        constexpr int HUMAN_DEFAULT_HP = 5;
-        constexpr int HUMAN_DEFAULT_STAMINA = 6;
-        constexpr int HUMAN_DEFAULT_PISTOL_AMMO = 12;
-        constexpr int HUMAN_DEFAULT_SHOTGUN_AMMO = 6;
-        constexpr int HUMAN_DEFAULT_GRENADES = 3;
-        constexpr int HUMAN_DEFAULT_MINES = 2;
-        constexpr int HUMAN_DEFAULT_MOLOTOVS = 3;
+        constexpr int HUMAN_DEFAULT_HP           = 6;
+        constexpr int HUMAN_DEFAULT_STAMINA      = 6;
+        constexpr int HUMAN_DEFAULT_PISTOL_AMMO  = 15;
+        constexpr int HUMAN_DEFAULT_SHOTGUN_AMMO = 8;
+        constexpr int HUMAN_DEFAULT_GRENADES     = 5;
+        constexpr int HUMAN_DEFAULT_MINES        = 5;
+        constexpr int HUMAN_DEFAULT_MOLOTOVS     = 5;
 
         // Fire duration (in turns)
         constexpr int FIRE_DURATION = 2;
 
-        // Stamina regen range
+        // Stamina regen range (rolled each turn)
         constexpr int STAMINA_REGEN_MIN = 1;
         constexpr int STAMINA_REGEN_MAX = 6;
 
-        // Grenade/Molotov steps range
-        constexpr int PROJECTILE_MIN_STEPS = 1;
-        constexpr int PROJECTILE_MAX_STEPS = 6;
+        // Loot system
+        constexpr int LOOT_HP_POTION_AMOUNT      = 2;   // HP restored by health potion
+        constexpr int LOOT_HP_POTION_CAP         = 20;  // Maximum HP cap when picking up health potion
+        constexpr int LOOT_STAMINA_RESTORE       = 6;   // Stamina restored by stamina potion
+        constexpr int LOOT_PISTOL_AMMO_AMOUNT    = 3;   // Pistol ammo gained from loot
+        constexpr int LOOT_SHOTGUN_AMMO_AMOUNT   = 1;   // Shotgun ammo gained from loot
+
+        // Loot spawn probabilities (out of 100)
+        constexpr int LOOT_PROB_JUNK         = 75; // 0..74
+        constexpr int LOOT_PROB_PISTOL_AMMO  = 80; // 75..79
+        constexpr int LOOT_PROB_STAMINA_POT  = 85; // 80..84
+        constexpr int LOOT_PROB_HEALTH_POT   = 89; // 85..88
+        constexpr int LOOT_PROB_SHOTGUN_AMMO = 93; // 89..92
+        constexpr int LOOT_PROB_GRENADE      = 96; // 93..95
+        constexpr int LOOT_PROB_MOLOTOV      = 98; // 96..97
+        // Mine: 98..99 (remainder)
     }
 
     // =========================================================================
@@ -337,348 +488,6 @@ namespace GameConstants {
 
         // Human default sick zombie stamina penalty
         constexpr int HUMAN_SICK_ZOMBIA_STAMINA_PENALTY = 1;
-
-        // Human default fire extinguish in water
-        constexpr int HUMAN_FIRE_EXTINGUISH_IN_WATER = 1;
-
-        // Human default fire damage on burning
-        constexpr int HUMAN_FIRE_DAMAGE_ON_BURNING = 1;
-
-        // Human default fire damage on entering fire
-        constexpr int HUMAN_FIRE_DAMAGE_ENTERING_FIRE = 1;
-
-        // Human default fire damage on catching fire
-        constexpr int HUMAN_FIRE_DAMAGE_CATCHING_FIRE = 1;
-
-        // Human default fire damage on proximity
-        constexpr int HUMAN_FIRE_DAMAGE_PROXIMITY = 1;
-
-        // Human default fire damage on burning entity
-        constexpr int HUMAN_FIRE_DAMAGE_BURNING_ENTITY = 1;
-
-        // Human default fire damage on fire cell
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CELL = 1;
-
-        // Human default fire damage on fire interaction
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_INTERACTION = 1;
-
-        // Human default fire damage on fire check
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK = 1;
-
-        // Human default fire damage on fire resolve
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_RESOLVE = 1;
-
-        // Human default fire damage on fire propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_PROPAGATION = 1;
-
-        // Human default fire damage on fire spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_SPREAD = 1;
-
-        // Human default fire damage on fire check interaction
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_INTERACTION = 1;
-
-        // Human default fire damage on fire check resolve
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_RESOLVE = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION2 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD2 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION3 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD3 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION4 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD4 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION5 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD5 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION6 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD6 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION7 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD7 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION8 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD8 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION9 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD9 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION10 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD10 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION11 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD11 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION12 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD12 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION13 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD13 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION14 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD14 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION15 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD15 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION16 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD16 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION17 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD17 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION18 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD18 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION19 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD19 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION20 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD20 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION21 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD21 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION22 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD22 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION23 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD23 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION24 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD24 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION25 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD25 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION26 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD26 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION27 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD27 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION28 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD28 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION29 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD29 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION30 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD30 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION31 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD31 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION32 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD32 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION33 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD33 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION34 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD34 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION35 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD35 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION36 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD36 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION37 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD37 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION38 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD38 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION39 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD39 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION40 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD40 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION41 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD41 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION42 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD42 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION43 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD43 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION44 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD44 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION45 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD45 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION46 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD46 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION47 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD47 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION48 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD48 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION49 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD49 = 1;
-
-        // Human default fire damage on fire check propagation
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_PROPAGATION50 = 1;
-
-        // Human default fire damage on fire check spread
-        constexpr int HUMAN_FIRE_DAMAGE_FIRE_CHECK_SPREAD50 = 1;
     }
 }
 

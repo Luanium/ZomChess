@@ -26,45 +26,45 @@ struct Position {
 };
 
 struct GameConfig {
-    int map_width = 15;
-    int map_height = 15;
+    int map_width  = GameConstants::Defaults::MAP_WIDTH;
+    int map_height = GameConstants::Defaults::MAP_HEIGHT;
 
-    int ratio_wall = 10;
-    int ratio_water = 10;
-    int ratio_forest = 15;
-    int ratio_dirt = 55;
-    int ratio_ice = 10;  // Ice terrain ratio for procedural generation
+    int ratio_wall   = GameConstants::Defaults::CONFIG_RATIO_WALL;
+    int ratio_water  = GameConstants::Defaults::CONFIG_RATIO_WATER;
+    int ratio_forest = GameConstants::Defaults::CONFIG_RATIO_FOREST;
+    int ratio_dirt   = GameConstants::Defaults::CONFIG_RATIO_DIRT;
+    int ratio_ice    = GameConstants::Defaults::CONFIG_RATIO_ICE;
 
-    int human_hp = GameConstants::Difficulty::Medium::HUMAN_HP;
+    int human_hp      = GameConstants::Difficulty::Medium::HUMAN_HP;
     int initial_stamina = GameConstants::Difficulty::Medium::INITIAL_STAMINA;
-    int pistol_ammo = GameConstants::Difficulty::Medium::PISTOL_AMMO;
-    int shotgun_ammo = GameConstants::Difficulty::Medium::SHOTGUN_AMMO;
-    int grenades = GameConstants::Difficulty::Medium::GRENADES;
-    int mines = GameConstants::Difficulty::Medium::MINES;
-    int molotovs = GameConstants::Difficulty::Medium::MOLOTOVS; 
-    int turn_limit = 50;
+    int pistol_ammo   = GameConstants::Difficulty::Medium::PISTOL_AMMO;
+    int shotgun_ammo  = GameConstants::Difficulty::Medium::SHOTGUN_AMMO;
+    int grenades      = GameConstants::Difficulty::Medium::GRENADES;
+    int mines         = GameConstants::Difficulty::Medium::MINES;
+    int molotovs      = GameConstants::Difficulty::Medium::MOLOTOVS;
+    int turn_limit    = GameConstants::Defaults::TURN_LIMIT;
 
-    int count_normal = GameConstants::Difficulty::Medium::COUNT_NORMAL;
-    int count_fast = GameConstants::Difficulty::Medium::COUNT_FAST;
+    int count_normal   = GameConstants::Difficulty::Medium::COUNT_NORMAL;
+    int count_fast     = GameConstants::Difficulty::Medium::COUNT_FAST;
     int count_exploding = GameConstants::Difficulty::Medium::COUNT_EXPLODING;
-    int count_vampire = GameConstants::Difficulty::Medium::COUNT_VAMPIRE;
-    int count_sick = GameConstants::Difficulty::Medium::COUNT_SICK;
+    int count_vampire  = GameConstants::Difficulty::Medium::COUNT_VAMPIRE;
+    int count_sick     = GameConstants::Difficulty::Medium::COUNT_SICK;
 
-    bool spawn_shield = true;      
-    bool custom_map_mode = false;  
+    bool spawn_shield = true;
+    bool custom_map_mode = false;
     bool enable_environment = true;
 
     // Weather probabilities (must sum to 100)
-    int env_prob_clear = 50;
-    int env_prob_wind = 14;
-    int env_prob_rain = 12;
-    int env_prob_clouds = 4;
-    int env_prob_lightning = 8;
-    int env_prob_heatwave = 6;   // Nắng nóng gay gắt
-    int env_prob_blizzard = 6;   // Băng giá
+    int env_prob_clear     = GameConstants::Defaults::ENV_PROB_CLEAR;
+    int env_prob_wind      = GameConstants::Defaults::ENV_PROB_WIND;
+    int env_prob_rain      = GameConstants::Defaults::ENV_PROB_RAIN;
+    int env_prob_clouds    = GameConstants::Defaults::ENV_PROB_CLOUDS;
+    int env_prob_lightning = GameConstants::Defaults::ENV_PROB_LIGHTNING;
+    int env_prob_heatwave  = GameConstants::Defaults::ENV_PROB_HEATWAVE;  // Nắng nóng gay gắt
+    int env_prob_blizzard  = GameConstants::Defaults::ENV_PROB_BLIZZARD;  // Băng giá
 
-    Position custom_human_pos{1, 1};
-    std::vector<std::vector<Terrain>> custom_grid; 
+    Position custom_human_pos{GameConstants::Defaults::CUSTOM_HUMAN_X, GameConstants::Defaults::CUSTOM_HUMAN_Y};
+    std::vector<std::vector<Terrain>> custom_grid;
 };
 
 struct LogLine {
@@ -91,7 +91,7 @@ struct IceSlideAnimation {
     std::vector<Position> path;  // Path of positions to slide through
     int current_step = 0;
     float step_timer = 0.0f;
-    float step_duration = 0.1f;  // Time per step
+    float step_duration = GameConstants::Ice::SLIDE_STEP_DURATION;
 };
 
 // Animation for terrain transitions (smooth color change)
@@ -100,7 +100,7 @@ struct TerrainTransitionAnimation {
     Terrain from_terrain;
     Terrain to_terrain;
     float timer = 0.0f;
-    float max_duration = 0.8f;  // Smooth transition over 0.8 seconds
+    float max_duration = GameConstants::Ice::TERRAIN_TRANSITION_DURATION;
 };
 
 struct VisualFX {
