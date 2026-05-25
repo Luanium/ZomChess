@@ -158,6 +158,9 @@ make
 
 All music tracks are sourced from [Incompetech](https://incompetech.com/music/), by Kevin MacLeod under CC BY 4.0 License.
 
+### Idea of the game
+Original idea traces back to my friend, Tran Thanh Sang, who played the on-paper version with me in our childhood. Now with the power of AIs, I decided to develop the gameplay and "digitalize" it, in order to recall part of my memories. That's the reason for the birth of ZomChess.
+
 ---
 
 ## 📄 License
@@ -315,6 +318,9 @@ make
 * **Menu Theme: Ancient Rite** [menu_theme.ogg](assets/music/menu_theme.ogg)
 
 Tất cả bản nhạc được lấy từ nguồn [Incompetech](https://incompetech.com/music/), đóng góp bởi Kevin MacLeod theo Giấy phép CC BY 4.0.
+
+### Ý tưởng game
+Ý tưởng ban đầu xuất phát từ bạn tôi, Trần Thanh Sang, người đã cùng tôi chơi phiên bản trên giấy của trò này trong thời thơ ấu. Bây giờ với sự hỗ trợ của AI, tôi quyết định phát triển thêm gameplay và "số hóa" nó để ôn lại một phần ký ức. Đó là lý do ZomChess ra đời.
 
 ---
 
