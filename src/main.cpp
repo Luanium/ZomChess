@@ -2069,7 +2069,9 @@ int main() {
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr("Vampire Zombie: 4 HP. Heals 1 HP when biting Human.", "Zombie Ma Cat: 4 HP. Hoi phuc 1 HP khi can Nguoi."));
             ImGui::SameLine(); ImGui::TextColored(ImVec4(0.85f, 0.78f, 0.3f, 1.0f), "Sick");
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr("Sick Carrier: 3 HP. Bite inflicts -1 ST on Human for next turn.", "Zombie Benh: 3 HP. Can gay Liet cho Nguoi trong 1 luot."));
-            
+
+            // Scrollable zombie list — fixed height, vertical scrollbar when overflow
+            ImGui::BeginChild("ZombieListBox", ImVec2(0, 72.0f), true);
             float start_x = ImGui::GetCursorPosX();
             for (size_t i = 0; i < state.zombies.size(); ++i) {
                 int col = i % 10;
@@ -2089,6 +2091,7 @@ int main() {
                 snprintf(id_buf, sizeof(id_buf), "#%2zu", i + 1);
                 ImGui::TextColored(idColor, "%s", id_buf);
             }
+            ImGui::EndChild();
 
             ImGui::Separator();
             ImGui::BeginChild("LiveLogBox", ImVec2(0, ImGui::GetContentRegionAvail().y - 5.0f), true);

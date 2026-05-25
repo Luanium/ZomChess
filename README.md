@@ -45,9 +45,11 @@ Environment is neither on your side or Zombies' side. It just does what it wants
 Your character is heavily armed but resources are extremely limited:
 
 * **🔪 Knife:** Close-range melee weapon, no ammo cost but requires dangerous proximity.
+* **⛏️ Ice Pick:** Use to break Ice tile where you stand, make that tile into Water.
 * **🔫 Pistol:** Standard ranged weapon with stable accuracy.
 * **💥 Shotgun:** Wide-area damage dealing at close range.
 * **💣 Grenade:** Throw to a location, detonates after a delay (Grenade Timer) causing area damage.
+* **🪔 Molotov:** Throw to a location, may create Fire tile (or not).
 * **🛑 Mines:** Place traps on any tile. Zombies stepping on them trigger instant detonation.
 
 ---
@@ -60,6 +62,7 @@ Each Zombie type has different health (`HP`) and movement mechanics to counter y
 * **Fast Sprinter:** Ultra-fast movement of 2 tiles per turn, specializes in surprise attacks.
 * **Volatile Exploder:** Explosive zombie. When defeated or triggered, they self-destruct causing area damage.
 * **Vampiric Dracula:** Blood-sucking creature. Each successful attack on the player restores their health.
+* **Sick Carrier:** Spread sick by biting, making you lose turns and stamina point .
 
 ---
 
@@ -78,23 +81,26 @@ Each Zombie type has different health (`HP`) and movement mechanics to counter y
 | Terrain Type | Display Color | Combat Properties |
 | :--- | :--- | :--- |
 | **Dirt** | Brown | Normal movement. Costs 1 Stamina. |
-| **Water** | Blue | Swampy terrain slows movement. Costs 2 Stamina to traverse. |
-| **Wall** | Light Gray | Solid walls forming boundaries or structures, completely blocks movement. |
+| **Water** | Blue | Swampy terrain slows movement. Costs 2 Stamina to traverse. Conduct electricity. |
+| **Wall** | Black | Solid walls forming boundaries or structures, completely blocks movement. |
+| **Forest** | Green | Flamable and spread Fire. |
+| **Fire** | Red | Temporary, cause Burned status and damage. |
+| **Ice** | White | May cause sliding. Conduct electricity. |
 
 ---
 
 ## 🎮 Screenshots
 
-![Screenshot 1 - Gameplay](SCREENSHOT_1_PLACEHOLDER)
+![Screenshot 1 - Menu Hub](assets/screenshots/hub.png)
 
-![Screenshot 2 - Map Editor](SCREENSHOT_2_PLACEHOLDER)
+![Screenshot 2 - In-game](assets/screenshots/ingame.png)
 
 ---
 
 ## 🚀 Building & Running
 
 ### Quick Start (Linux)
-Pre-built executable is available in the [GitHub Releases](https://github.com/yourusername/ZomChess/releases). Simply download and run:
+Pre-built executable for Linux (and maybe MacOS) is available in the [GitHub Releases](https://github.com/Luanium/ZomChess/releases). Simply download and run:
 ```bash
 ./ZomChess
 ```
@@ -103,7 +109,7 @@ Pre-built executable is available in the [GitHub Releases](https://github.com/yo
 
 **Requirements:**
 - CMake 3.10+
-- C++17 compatible compiler
+- C++20 compatible compiler
 - SFML 2.5+
 - ImGui + ImGui-SFML
 
@@ -135,7 +141,7 @@ make
 
 ## 🛠️ Technology Stack
 
-* **Language:** C++17 / C++20.
+* **Language:** C++20.
 * **Frameworks:**
     * **SFML (Simple and Fast Multimedia Library):** Manages window, renders 2D graphics, sprites, and game loop.
     * **Dear ImGui + ImGui-SFML:** Creates smooth character/zombie stat configuration sliders, control panels, and map editor interface.
@@ -145,23 +151,18 @@ make
 ## 🎵 Credits
 
 ### Soundtrack Attribution
-* **Battle Theme:** [battle_theme.ogg](assets/music/battle_theme.ogg)
-* **Victory Theme:** [victory_theme.ogg](assets/music/victory_theme.ogg)
-* **Defeat Theme:** [defeat_theme.ogg](assets/music/defeat_theme.ogg)
-* **Menu Theme:** [menu_theme.ogg](assets/music/menu_theme.ogg)
-* **Additional Tracks:**
-  - "Ancient Rite" - [Ancient Rite.mp3](assets/music/Ancient%20Rite.mp3)
-  - "Discovery Hit" - [Discovery Hit.mp3](assets/music/Discovery%20Hit.mp3)
-  - "Impending Boom" - [Impending Boom.mp3](assets/music/Impending%20Boom.mp3)
-  - "The Ice Giants" - [The Ice Giants.mp3](assets/music/The%20Ice%20Giants.mp3)
+* **Battle Theme: Impending Boom** [battle_theme.ogg](assets/music/battle_theme.ogg)
+* **Victory Theme: Discovery Hit** [victory_theme.ogg](assets/music/victory_theme.ogg)
+* **Defeat Theme: The Ice Giants** [defeat_theme.ogg](assets/music/defeat_theme.ogg)
+* **Menu Theme: Ancient Rite** [menu_theme.ogg](assets/music/menu_theme.ogg)
 
-All music tracks are sourced from royalty-free music libraries and are used in accordance with their respective licenses.
+All music tracks are sourced from [Incompetech](https://incompetech.com/music/), by Kevin MacLeod under CC BY 4.0 License.
 
 ---
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the AGPL-v3.0 - see the [LICENSE](LICENSE) file for details.
 
 ---
 
@@ -175,22 +176,25 @@ Hậu tận thế. Bạn là đặc nhiệm sống sót duy nhất bị vây hã
 
 ## 🎯 Mục Tiêu Tối Thượng
 
-* **Sống sót hoặc Tiêu diệt:** Quét sạch toàn bộ Zombie trên bản đồ HOẶC sống sót trụ vững cho đến khi hết giới hạn lượt đi (`turn_limit`).
+* **Sống sót hoặc Tiêu diệt:** Quét sạch toàn bộ Zombie trên bản đồ trước khi hết lượt (`turn_limit`).
 * **Điều kiện Thua cuộc:** Nhân vật cạn kiệt sinh lực (`HP <= 0`) hoặc không hoàn thành nhiệm vụ trong số lượt quy định.
 
 ---
 
 ## 🎮 Cơ Chế Gameplay Theo Lượt (Turn-Based)
 
-Chiến trường hoạt động theo cơ chế hai pha luân phiên rõ ràng:
+Chiến trường hoạt động theo cơ chế ba pha luân phiên rõ ràng:
 
 ### 1. Pha của Con Người (Human Turn)
 Mỗi lượt, bạn sẽ nhận được một lượng thể lực ngẫu nhiên (`Stamina`). Bạn có thể thực hiện các hành động sau miễn là còn đủ Stamina:
 * **Di chuyển:** Đi tới 8 ô xung quanh. Đi qua nền Đất (`Dirt`) tốn 1 Stamina, lội qua Nước (`Water`) tốn 2 Stamina. Không thể đi vào Tường (`Wall`) hay Vật cản (`Obstacle`).
-* **Tấn công & Sử dụng vũ khí:** Kích hoạt chế độ ngắm bắn và click chuột để chọn mục tiêu.
+* **Tấn công & Sử dụng vũ khí:** Sử dụng vũ khí để tấn công Zombie hoặc tự thoát khỏi tình trạng đóng băng.
 
 ### 2. Pha của Zombie (Zombie Animating)
-Sau khi bạn kết thúc lượt, hệ thống Radar Live Logs sẽ quét và kích hoạt AI của Zombie. Chúng tự động tìm đường, áp sát và tấn công bạn theo thuật toán khoảng cách.
+Sau khi bạn kết thúc lượt, các Zombie bắt đầu di chuyển về phía bạn. Chúng cảm nhận vị trí của bạn qua mùi. Một khi lại gần, chúng sẽ cắn hoặc cào bạn.
+
+### 3. Pha của Môi trường
+Môi trường không đừng về phe nào. Nó chỉ làm những gì nó muốn, nhưng có thể thay đổi tình thế trên chiến trường.
 
 ---
 
@@ -199,9 +203,11 @@ Sau khi bạn kết thúc lượt, hệ thống Radar Live Logs sẽ quét và k
 Nhân vật được trang bị tận răng nhưng tài nguyên vô cùng hữu hạn:
 
 * **🔪 Dao găm (Knife):** Vũ khí cận chiến tầm gần, không tốn đạn nhưng đòi hỏi áp sát nguy hiểm.
+* **⛏️ Ice Pick:** Dùng để phá ô Băng và biến ô Băng thành ô Nước.
 * **🔫 Súng lục (Pistol):** Vũ khí tầm xa tiêu chuẩn, độ chính xác ổn định.
 * **💥 Súng săn (Shotgun):** Sức sát thương diện rộng hủy diệt ở cự ly gần.
 * **💣 Lựu đạn (Grenade):** Ném vào một vị trí, kích nổ sau một khoảng thời gian (Grenade Timer) gây sát thương lan rộng phá hủy mục tiêu.
+* **🪔 Molotov:** Ném vào một vị trí, có thể tạo ra Lửa (hoặc không).
 * **🛑 Mìn Claymore (Mines):** Đặt bẫy tại ô bất kỳ. Zombie dẫm phải sẽ kích hoạt nổ ngay lập tức.
 
 ---
@@ -210,10 +216,11 @@ Nhân vật được trang bị tận răng nhưng tài nguyên vô cùng hữu 
 
 Mỗi loại Zombie sở hữu chỉ số máu (`HP`) và cơ chế di chuyển khác nhau để khắc chế chiến thuật của bạn:
 
-* **Normal Zombie:** Kẻ địch cơ bản, di chuyển 1 ô mỗi lượt.
-* **Fast Sprinter:** Di chuyển siêu tốc 2 ô mỗi lượt, chuyên áp sát bất ngờ.
-* **Volatile Exploder:** Zombie phát nổ. Khi bị tiêu diệt hoặc kích hoạt, chúng tự bạo gây sát thương lan ra xung quanh.
-* **Vampiric Dracula:** Quái vật hút máu. Mỗi lần tấn công trúng con người, chúng sẽ được hồi phục sinh lực.
+* **Zombie Thường:** Kẻ địch cơ bản, di chuyển 1 ô mỗi lượt.
+* **Zombie Nhanh:** Di chuyển siêu tốc 2 ô mỗi lượt, chuyên áp sát bất ngờ.
+* **Zombie Nổ:** Zombie phát nổ. Khi bị tiêu diệt hoặc kích hoạt, chúng tự bạo gây sát thương lan ra xung quanh.
+* **Zombie Dơi:** Quái vật hút máu. Mỗi lần tấn công trúng con người, chúng sẽ được hồi phục sinh lực.
+* **Zombie Bệnh:** Lan truyền mầm bệnh qua vết cắn, làm bạn giảm số lượt và mất thể lực.
 
 ---
 
@@ -232,24 +239,26 @@ Mỗi loại Zombie sở hữu chỉ số máu (`HP`) và cơ chế di chuyển 
 | Loại Địa Hình | Màu Sắc Hiển Thị | Đặc Tính Tác Chiến |
 | :--- | :--- | :--- |
 | **Dirt (Đất)** | Nâu Đất | Di chuyển bình thường. Tốn 1 Stamina. |
-| **Water (Nước)** | Xanh Dương | Đầm lầy cản bước. Tốn tới 2 Stamina để vượt qua. |
-| **Obstacle (Vật cản)** | Xám Đậm | Vật cản thấp, không thể đi vào. |
+| **Water (Nước)** | Xanh Dương | Đầm lầy cản bước. Tốn tới 2 Stamina để vượt qua. Dẫn điện. |
 | **Wall (Tường)** | Xám Khói | Tường kiên cố biên giới hoặc kiến trúc nội thất, chặn hoàn toàn di chuyển. |
+| **Forest (Rừng)** | Green | Dễ cháy và lan truyền Lửa. |
+| **Fire (Lửa)** | Red | Tạm thời, gây hiệu ứng cháy và mất máu. |
+| **Ice (Băng)** | White | Có thể gây trượt. Dẫn điện. |
 
 ---
 
 ## 🎮 Ảnh Chụp Màn Hình
 
-![Ảnh Chụp 1 - Gameplay](SCREENSHOT_1_PLACEHOLDER)
+![Ảnh Chụp 1 - Giao diện thiết lập](assets/screenshots/hub.png)
 
-![Ảnh Chụp 2 - Trình Chỉnh Sửa Bản Đồ](SCREENSHOT_2_PLACEHOLDER)
+![Ảnh Chụp 2 - Giao diện vào game](assets/screenshots/ingame.png)
 
 ---
 
 ## 🚀 Cách Build & Chạy Game
 
 ### Khởi Động Nhanh (Linux)
-File executable đã được build sẵn có sẵn trong [GitHub Releases](https://github.com/yourusername/ZomChess/releases). Chỉ cần tải xuống và chạy:
+File executable đã được build sẵn cho Linux (và có lẽ MacOS) có sẵn trong [GitHub Releases](https://github.com/Luanium/ZomChess/releases). Chỉ cần tải xuống và chạy:
 ```bash
 ./ZomChess
 ```
@@ -258,7 +267,7 @@ File executable đã được build sẵn có sẵn trong [GitHub Releases](http
 
 **Yêu cầu:**
 - CMake 3.10+
-- Trình biên dịch hỗ trợ C++17
+- Trình biên dịch hỗ trợ C++20
 - SFML 2.5+
 - ImGui + ImGui-SFML
 
@@ -290,7 +299,7 @@ make
 
 ## �️ Công Nghệ Phát Triển
 
-* **Ngôn Ngữ:** C++17 / C++20.
+* **Ngôn Ngữ:** C++20.
 * **Frameworks:**
     * **SFML (Simple and Fast Multimedia Library):** Quản lý cửa sổ, render đồ họa 2D, sprite và vòng lặp game.
     * **Dear ImGui + ImGui-SFML:** Tạo các slider cấu hình chỉ số nhân vật/zombie, bảng điều khiển và trình chỉnh sửa map editor mượt mà.
@@ -300,20 +309,15 @@ make
 ## 🎵 Ghi Công
 
 ### Ghi Công Nhạc Nền
-* **Battle Theme:** [battle_theme.ogg](assets/music/battle_theme.ogg)
-* **Victory Theme:** [victory_theme.ogg](assets/music/victory_theme.ogg)
-* **Defeat Theme:** [defeat_theme.ogg](assets/music/defeat_theme.ogg)
-* **Menu Theme:** [menu_theme.ogg](assets/music/menu_theme.ogg)
-* **Các Bài Hát Bổ Sung:**
-  - "Ancient Rite" - [Ancient Rite.mp3](assets/music/Ancient%20Rite.mp3)
-  - "Discovery Hit" - [Discovery Hit.mp3](assets/music/Discovery%20Hit.mp3)
-  - "Impending Boom" - [Impending Boom.mp3](assets/music/Impending%20Boom.mp3)
-  - "The Ice Giants" - [The Ice Giants.mp3](assets/music/The%20Ice%20Giants.mp3)
+* **Battle Theme: Impending Boom** [battle_theme.ogg](assets/music/battle_theme.ogg)
+* **Victory Theme: Discovery Hit** [victory_theme.ogg](assets/music/victory_theme.ogg)
+* **Defeat Theme: The Ice Giants** [defeat_theme.ogg](assets/music/defeat_theme.ogg)
+* **Menu Theme: Ancient Rite** [menu_theme.ogg](assets/music/menu_theme.ogg)
 
-Tất cả các bài hát được lấy từ các thư viện nhạc miễn phí bản quyền và được sử dụng theo các giấy phép tương ứng của chúng.
+Tất cả bản nhạc được lấy từ nguồn [Incompetech](https://incompetech.com/music/), đóng góp bởi Kevin MacLeod theo Giấy phép CC BY 4.0.
 
 ---
 
 ## 📄 Giấy Phép
 
-Dự án này được cấp phép theo Giấy phép MIT - xem tệp [LICENSE](LICENSE) để biết chi tiết.
+Dự án này được cấp phép theo Giấy phép AGPL-v3.0 - xem tệp [LICENSE](LICENSE) để biết chi tiết.
