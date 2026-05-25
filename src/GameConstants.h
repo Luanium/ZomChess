@@ -224,6 +224,10 @@ namespace GameConstants {
         constexpr int MINE_EXPLOSION_RADIUS = 1;
         constexpr int MINE_DAMAGE = 2;
 
+        // Ice Pick parameters
+        constexpr int ICE_PICK_STAMINA_COST_NORMAL = 1;  // Stamina cost when not frozen
+        constexpr int ICE_PICK_STAMINA_COST_FROZEN = 2;  // Stamina cost when frozen
+
         // Explosion damage tiers (center, mid ring, outer ring)
         constexpr int EXPLOSION_CENTER_DAMAGE = 3;
         constexpr int EXPLOSION_MID_DAMAGE    = 2;

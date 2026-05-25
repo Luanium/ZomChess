@@ -193,6 +193,17 @@ public:
             window.draw(credit);
         }
 
+        // ── Music credit ───────────────────────────────────────────────
+        {
+            sf::Text music_credit;
+            music_credit.setFont(font);
+            music_credit.setString("Music: Kevin MacLeod (incompetech.com) — CC BY 4.0");
+            music_credit.setCharacterSize(14);
+            music_credit.setFillColor(sf::Color(140, 140, 140, a));
+            center_text(music_credit, W, H * 0.665f);
+            window.draw(music_credit);
+        }
+
         // ── Version badge ──────────────────────────────────────────────
         {
             sf::Text ver;

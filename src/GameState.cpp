@@ -481,7 +481,7 @@ void GameState::init_game() {
     spawn_zombie_lambda(ZombieType::Vampire, active_config.count_vampire, "Vampire Dracula", GameConstants::Zombies::BASE_HP_VAMPIRE);
     spawn_zombie_lambda(ZombieType::Sick, active_config.count_sick, "Sick Carrier", GameConstants::Zombies::BASE_HP_SICK);
 
-    add_log("Tactical Battleground initialized with dynamic safety boundaries!", ImVec4(0, 1, 1, 1));
+    //add_log("Tactical Battleground initialized with dynamic safety boundaries!", ImVec4(0, 1, 1, 1));
     add_log("=== HUMAN TURN " + std::to_string(current_turn) + " START ===", ImVec4(1.0f, 0.95f, 0.25f, 1.0f));
     turn_banner_fx.type = FXType::Electricity;
     turn_banner_fx.timer = 1.5f;
@@ -867,6 +867,7 @@ void GameState::melt_adjacent_ice(int cx, int cy) {
         if (grid[nx][ny] != Terrain::Ice) continue;
         grid[nx][ny] = Terrain::Water;
         terrain_transitions.push_back({Position{nx, ny}, Terrain::Ice, Terrain::Water, 0.0f, 0.8f});
+        thaw_loot_and_grenades_at({{nx, ny}});
         add_log(tr("[ICE] Heat transfer melted ice at (" + std::to_string(nx + 1) + ", " + std::to_string(ny + 1) + ")!",
                    "[BANG] Truyen nhiet lam tan bang tai (" + std::to_string(nx + 1) + ", " + std::to_string(ny + 1) + ")!"),
                 ImVec4(0.5f, 0.85f, 1.0f, 1.0f));
@@ -948,6 +949,8 @@ void GameState::apply_windstorm(int dx, int dy) {
     int grenades_blown = 0;
     for (auto& g : active_grenades) {
         if (g.active) {
+            // Grenade bị kẹt dưới băng không bị gió thổi
+            if (g.frozen_under_ice) continue;
             Position g_target{g.pos.x + dx, g.pos.y + dy};
             if (!is_blocking_cell(g_target.x, g_target.y)) {
                 g.pos = g_target;
@@ -959,6 +962,8 @@ void GameState::apply_windstorm(int dx, int dy) {
     // Gió thổi loot drops (cơ chế giống grenade)
     int loots_blown = 0;
     for (auto& ld : loot_drops) {
+        // Loot bị kẹt dưới băng không bị gió thổi
+        if (ld.frozen_under_ice) continue;
         Position l_target{ld.pos.x + dx, ld.pos.y + dy};
         if (!is_blocking_cell(l_target.x, l_target.y)) {
             ld.pos = l_target;
@@ -1230,6 +1235,7 @@ void GameState::apply_heatwave() {
 
     // Unfreeze any entities that were standing on now-melted ice
     if (!melted_ice.empty()) {
+        thaw_loot_and_grenades_at(melted_ice);
         if (human.hp > 0 && human.is_frozen) {
             for (const auto& p : melted_ice) {
                 if (human.pos == p) {
@@ -1351,6 +1357,20 @@ void GameState::apply_blizzard() {
 
     for (const auto& p : frozen_cells) grid[p.x][p.y] = Terrain::Ice;
     active_fx.blast_cells = frozen_cells;
+
+    // Đánh dấu loot và grenade đang nằm trên ô vừa đóng băng là bị kẹt dưới băng
+    for (auto& ld : loot_drops) {
+        for (const auto& p : frozen_cells) {
+            if (ld.pos == p) { ld.frozen_under_ice = true; break; }
+        }
+    }
+    for (auto& g : active_grenades) {
+        if (g.active) {
+            for (const auto& p : frozen_cells) {
+                if (g.pos == p) { g.frozen_under_ice = true; break; }
+            }
+        }
+    }
 
     // Apply frozen effect to entities standing on newly frozen cells
     if (human.hp > 0) {
@@ -1731,10 +1751,12 @@ void GameState::trigger_explosion(int cx, int cy, bool is_zombie_exploding) {
 
     // Ice cells in blast radius melt into water; unfreeze any entities standing on them
     int ice_melted = 0;
+    std::vector<Position> explosion_melted_ice;
     for (const auto& cell : active_fx.blast_cells) {
         if (grid[cell.x][cell.y] == Terrain::Ice) {
             grid[cell.x][cell.y] = Terrain::Water;
             ice_melted++;
+            explosion_melted_ice.push_back(cell);
             // Unfreeze entities on this cell
             if (human.hp > 0 && human.pos == cell && human.is_frozen) {
                 human.is_frozen = false;
@@ -1751,6 +1773,7 @@ void GameState::trigger_explosion(int cx, int cy, bool is_zombie_exploding) {
             }
         }
     }
+    if (!explosion_melted_ice.empty()) thaw_loot_and_grenades_at(explosion_melted_ice);
     if (ice_melted > 0) {
         add_log(tr("[ICE] Explosion melted " + std::to_string(ice_melted) + " ice cell(s) into water!",
                    "[BANG] Vu no lam tan chay " + std::to_string(ice_melted) + " o bang thanh nuoc!"),
@@ -2213,6 +2236,7 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
         } else if (grid[hit_pos.x][hit_pos.y] == Terrain::Ice) {
             grid[hit_pos.x][hit_pos.y] = Terrain::Water;
             terrain_transitions.push_back({hit_pos, Terrain::Ice, Terrain::Water, 0.0f, 0.8f});
+            thaw_loot_and_grenades_at({hit_pos});
             add_log(tr("[ICE] Molotov melted the ice at (" + std::to_string(hit_pos.x + 1) + ", " + std::to_string(hit_pos.y + 1) + ")! Ice -> Water.",
                        "[BANG] Bom xang lam tan chay bang tai (" + std::to_string(hit_pos.x + 1) + ", " + std::to_string(hit_pos.y + 1) + ")! Bang -> Nuoc."),
                     ImVec4(0.4f, 0.8f, 1.0f, 1.0f));
@@ -2533,6 +2557,7 @@ void GameState::propagate_gradual_forest_fire() {
     for (const auto& p : ice_to_melt) {
         grid[p.x][p.y] = Terrain::Water;
         terrain_transitions.push_back({p, Terrain::Ice, Terrain::Water, 0.0f, 0.8f});
+        thaw_loot_and_grenades_at({p});
         add_log(tr("[ICE] Fire heat melted ice at (" + std::to_string(p.x + 1) + ", " + std::to_string(p.y + 1) + ")!",
                    "[BANG] Nhiet lua lam tan bang tai (" + std::to_string(p.x + 1) + ", " + std::to_string(p.y + 1) + ")!"),
                 ImVec4(0.5f, 0.85f, 1.0f, 1.0f));
@@ -2637,6 +2662,60 @@ void GameState::check_loot_on_fire() {
         destroy_loot_at_cells(fire_positions);
 }
 
+void GameState::thaw_loot_and_grenades_at(const std::vector<Position>& cells) {
+    // Khi ô Ice tan thành Water, giải đóng băng loot và grenade bị kẹt tại đó
+    for (auto& ld : loot_drops) {
+        if (!ld.frozen_under_ice) continue;
+        for (const auto& p : cells) {
+            if (ld.pos == p) { ld.frozen_under_ice = false; break; }
+        }
+    }
+    for (auto& g : active_grenades) {
+        if (!g.active || !g.frozen_under_ice) continue;
+        for (const auto& p : cells) {
+            if (g.pos == p) { g.frozen_under_ice = false; break; }
+        }
+    }
+}
+
+void GameState::use_ice_pick() {
+    if (human.hp <= 0) return;
+    int px = human.pos.x, py = human.pos.y;
+    if (grid[px][py] != Terrain::Ice) return;
+
+    int cost = human.is_frozen
+        ? GameConstants::Weapons::ICE_PICK_STAMINA_COST_FROZEN
+        : GameConstants::Weapons::ICE_PICK_STAMINA_COST_NORMAL;
+
+    if (human.stamina < cost) {
+        add_log(tr("[ICE PICK] Not enough stamina! Need " + std::to_string(cost) + " stamina.",
+                   "[CUOC PHA BANG] Khong du the luc! Can " + std::to_string(cost) + " the luc."),
+                ImVec4(0.5f, 0.75f, 1.0f, 1.0f));
+        return;
+    }
+
+    human.stamina -= cost;
+    grid[px][py] = Terrain::Water;
+    terrain_transitions.push_back({Position{px, py}, Terrain::Ice, Terrain::Water, 0.0f, 0.8f});
+    thaw_loot_and_grenades_at({{px, py}});
+    sfx("footstep");
+
+    if (human.is_frozen) {
+        human.is_frozen = false;
+        add_log(tr("[ICE PICK] Human breaks the ice and escapes! Ice -> Water. (-2 stamina)",
+                   "[CUOC PHA BANG] Nguoi pha bang thoat ra! Bang -> Nuoc. (-2 the luc)"),
+                ImVec4(0.5f, 0.9f, 1.0f, 1.0f));
+    } else {
+        add_log(tr("[ICE PICK] Human breaks the ice underfoot! Ice -> Water. (-1 stamina)",
+                   "[CUOC PHA BANG] Nguoi pha bang duoi chan! Bang -> Nuoc. (-1 the luc)"),
+                ImVec4(0.5f, 0.9f, 1.0f, 1.0f));
+    }
+
+    // Auto-pickup any loot now accessible
+    check_loot_pickup();
+    input_mode = InputMode::MoveMode;
+}
+
 void GameState::spawn_loot_for_newly_dead() {
     for (auto& z : zombies) {
         if (z->hp <= 0 && !z->loot_spawned) {
@@ -2681,13 +2760,30 @@ void GameState::spawn_loot_at(Position pos) {
 void GameState::check_loot_pickup() {
     if (human.hp <= 0) return;
 
-    // Không thể nhặt loot trên ô nước hoặc băng
-    Terrain cur = grid[human.pos.x][human.pos.y];
-    if (cur == Terrain::Water || cur == Terrain::Ice) return;
+    // Ô nước và ô Ice thông thường đều nhặt được bình thường
+    // Chỉ loot bị kẹt dưới băng (frozen_under_ice) mới cần xử lý đặc biệt
 
     for (auto it = loot_drops.begin(); it != loot_drops.end(); ) {
-        if (it->pos == human.pos) {
-            switch (it->type) {
+        if (it->pos != human.pos) { ++it; continue; }
+
+        // Loot bị kẹt dưới băng: cần tốn 1 stamina để phá băng
+        if (it->frozen_under_ice) {
+            if (human.stamina >= 1) {
+                human.stamina -= 1;
+                it->frozen_under_ice = false;
+                add_log(tr("[LOOT] You break through the ice to reach the loot! (-1 stamina)",
+                           "[LOOT] Ban pha bang de lay do! (-1 the luc)"),
+                        ImVec4(0.5f, 0.85f, 1.0f, 1.0f));
+                // Tiếp tục xuống để nhặt loot ngay
+            } else {
+                add_log(tr("[LOOT] Loot is frozen under ice. Need 1 stamina to break through!",
+                           "[LOOT] Do bi ket duoi bang. Can 1 the luc de pha bang!"),
+                        ImVec4(0.5f, 0.75f, 1.0f, 1.0f));
+                ++it; continue;
+            }
+        }
+
+        switch (it->type) {
                 case LootType::Junk:
                     sfx("footstep"); // âm thanh nhặt đồ vô dụng
                     add_log(tr("[LOOT] You found... a zombie's old sock. Useless.",
@@ -2739,8 +2835,5 @@ void GameState::check_loot_pickup() {
                     break;
             }
             it = loot_drops.erase(it);
-        } else {
-            ++it;
-        }
     }
 }

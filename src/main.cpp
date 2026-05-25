@@ -103,8 +103,12 @@ int main() {
                     if (lx >= 0 && lx < VIEW_CELLS && ly >= 0 && ly < VIEW_CELLS &&
                         tx >= 0 && tx < state.width && ty >= 0 && ty < state.height) {
                         if (state.input_mode == InputMode::MoveMode) {
-                            // Check if human is frozen
-                            if (!state.human.is_frozen) {
+                            // If frozen, player must use Ice Pick — movement is blocked
+                            if (state.human.is_frozen) {
+                                state.add_log(tr("[SYSTEM] You are frozen! Use the Ice Pick to break free.",
+                                               "[HE THONG] Ban bi dong bang! Dung Cuoc Pha Bang de thoat ra."),
+                                            ImVec4(0.6f, 0.85f, 1.0f, 1.0f));
+                            } else {
                                 int dx = std::abs(tx - state.human.pos.x);
                                 int dy = std::abs(ty - state.human.pos.y);
                                 if (dx <= 1 && dy <= 1 && (dx != 0 || dy != 0)) {
@@ -151,21 +155,6 @@ int main() {
                                             }
                                         }
                                     }
-                                }
-                            } else {
-                                // Human is frozen — costs 2 stamina to break free
-                                if (state.human.stamina >= 2) {
-                                    state.human.stamina -= 2;
-                                    state.human.is_frozen = false;
-                                    state.add_log(tr("[SYSTEM] You break free from the ice! (-2 stamina)",
-                                                   "[HE THONG] Ban tu giai bang! (-2 stamina)"),
-                                                ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
-                                    // Don't end turn — player can now act with remaining stamina
-                                } else {
-                                    state.add_log(tr("[SYSTEM] Frozen solid! Need 2 stamina to break free. Turn skipped.",
-                                                   "[HE THONG] Bi dong cung! Can 2 stamina de giai bang. Bo qua luot."),
-                                                ImVec4(0.6f, 0.8f, 1.0f, 1.0f));
-                                    state.start_zombie_phase();
                                 }
                             }
                         } else {
@@ -1505,14 +1494,75 @@ int main() {
             ImGui::SetNextWindowSize(ImVec2(panelW2, panelH), ImGuiCond_Always);
             ImGui::Begin("Tactical Control Panel", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize);
 
-            ImGui::TextColored(ImVec4(0.3f,0.95f,1,1), "%s %d/%d | ST %d | HP %d | %s [%d,%d] | %s: %s",
-                               tr("TURN","LUOT"), state.current_turn, state.turn_limit, state.human.stamina, state.human.hp,
-                               tr("Pos", "Vi tri"), state.human.pos.x + 1, state.human.pos.y + 1,
-                               tr("Env", "MT"), state.last_environment_event.c_str());
-            if (state.human.is_burning) { ImGui::SameLine(); ImGui::TextColored(ImVec4(1, 0.45f, 0.1f, 1), "BURNING"); }
-            if (state.human.is_paralyzed) { ImGui::SameLine(); ImGui::TextColored(ImVec4(0.45f, 0.9f, 1.0f, 1), "PARALYZED"); }
-            if (state.human.is_frozen) { ImGui::SameLine(); ImGui::TextColored(ImVec4(0.6f, 0.85f, 1.0f, 1), "FROZEN"); }
-            if (state.dark_cloud_active) { ImGui::SameLine(); ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.8f, 1), "DARK CLOUD"); }
+            ImGui::TextColored(ImVec4(0.3f,0.95f,1,1), "%s %d/%d",
+                               tr("TURN","LUOT"), state.current_turn, state.turn_limit);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr(
+                "Current turn / Turn limit. Survive until all zombies are eliminated or turns run out.",
+                "Luot hien tai / Gioi han luot. Song sot cho den khi diet het zombie hoac het luot."));
+            ImGui::SameLine(); ImGui::TextColored(ImVec4(0.3f,0.95f,1,1), "|");
+            ImGui::SameLine(); ImGui::TextColored(ImVec4(0.3f,0.95f,1,1), "ST %d", state.human.stamina);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr(
+                "Stamina: rolled 1-6 at the start of each turn. Move = 1 (Water = 2). Each weapon use = 1. Reaches 0 = turn ends automatically.",
+                "The luc: tung 1-6 dau moi luot. Di chuyen = 1 (Nuoc = 2). Moi vu khi = 1. Ve 0 = tu dong ket thuc luot."));
+            ImGui::SameLine(); ImGui::TextColored(ImVec4(0.3f,0.95f,1,1), "|");
+            ImGui::SameLine(); ImGui::TextColored(ImVec4(0.3f,0.95f,1,1), "HP %d", state.human.hp);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr(
+                "Hit Points: reaches 0 = game over. Restored by Health Potion loot drops.",
+                "Diem mau: ve 0 = thua cuoc. Hoi phuc bang loot Binh Mau."));
+            ImGui::SameLine(); ImGui::TextColored(ImVec4(0.3f,0.95f,1,1), "|");
+            ImGui::SameLine(); ImGui::TextColored(ImVec4(0.3f,0.95f,1,1), "%s [%d,%d]",
+                               tr("Pos","Vi tri"), state.human.pos.x + 1, state.human.pos.y + 1);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr(
+                "Current position on the map (column, row). Click adjacent tiles to move.",
+                "Vi tri hien tai tren ban do (cot, hang). Nhan vao o ke ben de di chuyen."));
+            ImGui::SameLine(); ImGui::TextColored(ImVec4(0.3f,0.95f,1,1), "|");
+            ImGui::SameLine(); ImGui::TextColored(ImVec4(0.3f,0.95f,1,1), "%s: %s",
+                               tr("Env","MT"), state.last_environment_event.c_str());
+            if (ImGui::IsItemHovered()) {
+                const char* env_tip_en =
+                    "Environment event this turn.\n"
+                    "Clear: nothing happens.\n"
+                    "Wind: pushes entities back by 1 tiles in a random direction.\n"
+                    "Rain: extinguishes all Fire tiles, may grow Water and Forest.\n"
+                    "Dark Cloud: cover the whole battlefield, you must rely on your memory.\n"
+                    "Lightning: strikes a random tile, damages entity, makes Forest into Fire and conducts through Water/Ice.\n"
+                    "Heatwave: melts all Ice tiles into Water, may evaporate Water and kill Forest.\n"
+                    "Blizzard: may freezes Water tiles into Ice, may freeze entities standing on Water too.";
+                const char* env_tip_vi =
+                    "Su kien moi truong luot nay.\n"
+                    "Quang: khong co gi.\n"
+                    "Gio: day tat ca thuc the 1 o theo huong ngau nhien.\n"
+                    "Mua: tat tat ca o lua.\n"
+                    "May Den: giam do chinh xac sung luc.\n"
+                    "Set: danh vao o ngau nhien, gay sat thuong va dan qua Nuoc/Bang.\n"
+                    "Nang Nong: tan tat ca o Bang thanh Nuoc.\n"
+                    "Bao Tuyet: dong tat ca o Nuoc thanh Bang, co the dong bang thuc the.";
+                ImGui::SetTooltip("%s", tr(env_tip_en, env_tip_vi));
+            }
+            if (state.human.is_burning) {
+                ImGui::SameLine(); ImGui::TextColored(ImVec4(1, 0.45f, 0.1f, 1), "BURNING");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr(
+                    "BURNING: takes 1 damage at the end of this turn. Step onto a Water tile to extinguish.",
+                    "DANG CHAY: nhan 1 sat thuong cuoi luot nay. Buoc vao o Nuoc de dap lua."));
+            }
+            if (state.human.is_paralyzed) {
+                ImGui::SameLine(); ImGui::TextColored(ImVec4(0.45f, 0.9f, 1.0f, 1), "PARALYZED");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr(
+                    "PARALYZED: cannot act this turn. Caused by a Sick Zombie bite or lightning.",
+                    "BI LIET: khong the hanh dong luot nay. Do Zombie Benh can hoac set danh."));
+            }
+            if (state.human.is_frozen) {
+                ImGui::SameLine(); ImGui::TextColored(ImVec4(0.6f, 0.85f, 1.0f, 1), "FROZEN");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr(
+                    "FROZEN: cannot move. Use the Ice Pick to break free (-2 stamina). Weapons still usable.",
+                    "BI DONG BANG: khong the di chuyen. Dung Cuoc Pha Bang de thoat (-2 the luc). Van dung duoc vu khi."));
+            }
+            if (state.dark_cloud_active) {
+                ImGui::SameLine(); ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.8f, 1), "DARK CLOUD");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr(
+                    "DARK CLOUD: pistol accuracy is reduced this turn.",
+                    "MAY DEN: do chinh xac sung luc bi giam luot nay."));
+            }
             // Audio toggles moved to left side to avoid text cutoff
             ImGui::SameLine(); ImGui::Dummy(ImVec2(10, 1)); ImGui::SameLine();
             {
@@ -1540,6 +1590,10 @@ int main() {
             if (ImGui::Button(tr("END TURN", "KET THUC LUOT"), ImVec2(200, 35)) && human_turn) {
                 state.start_zombie_phase();
             }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                ImGui::SetTooltip("%s", tr("End your turn and let zombies move. Remaining stamina is lost.",
+                                           "Ket thuc luot cua ban va de zombie di chuyen. The luc con lai se mat."));
+            }
             if (!human_turn) {
                 ImGui::EndDisabled();
                 ImGui::PopStyleColor(3);
@@ -1551,55 +1605,221 @@ int main() {
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 0.8f, 0.2f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.8f, 0.6f, 0.0f, 1.0f));
             if (ImGui::Button(tr("GAME GUIDE", "HUONG DAN"), ImVec2(150, 35))) show_guide_popup = true;
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr("Open the in-game guide with rules and tips.", "Mo huong dan trong game voi luat choi va meo."));
             ImGui::PopStyleColor(3);
             ImGui::SameLine();
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.72f, 0.14f, 0.14f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.82f, 0.2f, 0.2f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.58f, 0.08f, 0.08f, 1.0f));
             if (ImGui::Button(tr("Return Hub", "Ve Hub"), ImVec2(150, 35))) show_confirm_return_hub = true;
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr("Return to the main menu. Current game progress will be lost.", "Quay ve menu chinh. Tien trinh game hien tai se bi mat."));
             ImGui::PopStyleColor(3);
 
             ImGui::TextColored(ImVec4(1, 0.55f, 0.9f, 1), "%s", tr("Weapons:", "Vu khi:"));
             
-            auto weapon_button = [&](const char* label, InputMode mode) {
+            // ── Shared terrain legend helper ──────────────────────────
+            auto terrain_legend_item = [&](const char* label, ImVec4 color, const char* tip_en, const char* tip_vi) {
+                ImVec2 cursor = ImGui::GetCursorScreenPos();
+                ImDrawList* d = ImGui::GetWindowDrawList();
+                d->AddRectFilled(ImVec2(cursor.x, cursor.y + 2.0f), ImVec2(cursor.x + 13.0f, cursor.y + 14.0f), ImGui::ColorConvertFloat4ToU32(color));
+                d->AddRect(ImVec2(cursor.x, cursor.y + 2.0f), ImVec2(cursor.x + 13.0f, cursor.y + 14.0f), ImGui::ColorConvertFloat4ToU32(ImVec4(1,1,1,0.4f)));
+                ImGui::Dummy(ImVec2(16.0f, 16.0f));
+                ImGui::SameLine(0, 2);
+                ImGui::TextUnformatted(label);
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("%s", tr(tip_en, tip_vi));
+                }
+            };
+
+            // ── Two-pane layout: weapon buttons | terrain+status legend ──
+            // Compute left pane width from the actual button sizes so the right
+            // pane never overlaps.  We measure the widest row at runtime.
+            {
+                const ImGuiStyle& sty = ImGui::GetStyle();
+                // Helper: pixel width of a button with the given label
+                auto btn_w = [&](const std::string& lbl) -> float {
+                    return ImGui::CalcTextSize(lbl.c_str()).x + sty.FramePadding.x * 2.0f;
+                };
+
+                // Row 1: "Knife" + "Ice Pick [-2 ST]"  (worst case: frozen = -2)
+                std::string pick_lbl_frozen = tr("Ice Pick", "Cuoc Pha Bang");
+                pick_lbl_frozen += " [-2 ST]";
+                float row1 = btn_w("Knife") + sty.ItemSpacing.x + btn_w(pick_lbl_frozen);
+
+                // Row 2: "Pistol (XX)" + "Shotgun (XX)"
+                std::string pistol_lbl  = "Pistol (" + std::to_string(state.human.pistol_ammo)  + ")";
+                std::string shotgun_lbl = "Shotgun (" + std::to_string(state.human.shotgun_ammo) + ")";
+                float row2 = btn_w(pistol_lbl) + sty.ItemSpacing.x + btn_w(shotgun_lbl);
+
+                // Row 3: "Grenade (XX)" + "Molotov (XX)" + "Mine (XX)"
+                std::string gren_lbl  = "Grenade (" + std::to_string(state.human.grenades) + ")";
+                std::string mol_lbl   = "Molotov (" + std::to_string(state.human.molotovs) + ")";
+                std::string mine_lbl  = "Mine ("    + std::to_string(state.human.mines)    + ")";
+                float row3 = btn_w(gren_lbl) + sty.ItemSpacing.x + btn_w(mol_lbl) + sty.ItemSpacing.x + btn_w(mine_lbl);
+
+                float avail_w   = ImGui::GetContentRegionAvail().x;
+                float divider_w = 1.0f;
+                float gap       = 8.0f;
+                // Add window padding (both sides) so buttons fit inside the child window
+                float left_w  = std::max({row1, row2, row3}) + sty.WindowPadding.x * 2.0f + 4.0f;
+                float right_w = avail_w - left_w - divider_w - gap * 2.0f;
+                if (right_w < 80.0f) right_w = 80.0f;
+
+            // ── LEFT PANE: Weapon buttons ─────────────────────────────
+            ImGui::BeginChild("##weapons_pane", ImVec2(left_w, 110.0f), false, ImGuiWindowFlags_NoScrollbar);
+
+            auto weapon_button = [&](const char* label, InputMode mode, const char* tooltip_en, const char* tooltip_vi) {
                 bool disabled = state.human.is_paralyzed || state.human.stamina == 0 || state.phase != TurnPhase::HumanTurn;
                 if (disabled) { ImGui::BeginDisabled(); }
                 if (state.input_mode == mode) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.4f, 0.0f, 1));
                 else ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_Button]);
                 if (ImGui::Button(label) && !disabled) state.input_mode = mode;
                 ImGui::PopStyleColor();
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                    ImGui::SetTooltip("%s", tr(tooltip_en, tooltip_vi));
+                }
                 if (disabled) { ImGui::EndDisabled(); }
             };
 
-            weapon_button("Knife", InputMode::TargetKnife); ImGui::SameLine();
-            weapon_button(("Pistol (" + std::to_string(state.human.pistol_ammo) + ")").c_str(), InputMode::TargetPistol); ImGui::SameLine();
-            weapon_button(("Shotgun (" + std::to_string(state.human.shotgun_ammo) + ")").c_str(), InputMode::TargetShotgun);
-            
-            weapon_button(("Grenade (" + std::to_string(state.human.grenades) + ")").c_str(), InputMode::TargetGrenade); ImGui::SameLine();
-            weapon_button(("Molotov (" + std::to_string(state.human.molotovs) + ")").c_str(), InputMode::TargetMolotov); ImGui::SameLine();
-            
-            bool mine_disabled = state.human.is_paralyzed || state.human.stamina == 0 || state.phase != TurnPhase::HumanTurn || state.human.mines == 0;
-            if (mine_disabled) { ImGui::BeginDisabled(); }
-            if (ImGui::Button(("Mine (" + std::to_string(state.human.mines) + ")").c_str())) {
-                if (!mine_disabled) {
-                    state.mine_grid[state.human.pos.x][state.human.pos.y] = true; 
-                    state.human.mines--; state.human.stamina--;
+            // Row 1: Knife + Ice Pick
+            weapon_button("Knife", InputMode::TargetKnife,
+                "Melee attack. 1 damage. Click an adjacent tile to strike.",
+                "Can chien. 1 sat thuong. Nhan vao o ke ben de tan cong.");
+            ImGui::SameLine();
+            {
+                bool on_ice = state.phase == TurnPhase::HumanTurn
+                    && !state.human.is_paralyzed
+                    && state.grid[state.human.pos.x][state.human.pos.y] == Terrain::Ice;
+                int pick_cost = state.human.is_frozen
+                    ? GameConstants::Weapons::ICE_PICK_STAMINA_COST_FROZEN
+                    : GameConstants::Weapons::ICE_PICK_STAMINA_COST_NORMAL;
+                bool pick_disabled = !on_ice || state.human.stamina < pick_cost;
+                if (pick_disabled) { ImGui::BeginDisabled(); }
+                std::string pick_label = tr("Ice Pick", "Cuoc Pha Bang");
+                pick_label += " [-" + std::to_string(pick_cost) + " ST]";
+                if (ImGui::Button(pick_label.c_str()) && !pick_disabled) {
+                    state.use_ice_pick();
+                }
+                if (pick_disabled) { ImGui::EndDisabled(); }
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                    if (!on_ice)
+                        ImGui::SetTooltip("%s", tr("Only usable while standing on Ice. Breaks the ice tile: Ice -> Water.",
+                                                   "Chi dung duoc khi dang dung tren o Bang. Pha bang: Bang -> Nuoc."));
+                    else if (state.human.is_frozen)
+                        ImGui::SetTooltip("%s", tr("You are frozen! Use Ice Pick to break free (-2 stamina). Ice -> Water.",
+                                                   "Ban bi dong bang! Dung Cuoc Pha Bang de thoat ra (-2 the luc). Bang -> Nuoc."));
+                    else if (state.human.stamina < pick_cost)
+                        ImGui::SetTooltip("%s", tr("Not enough stamina to use Ice Pick.",
+                                                   "Khong du the luc de dung Cuoc Pha Bang."));
+                    else
+                        ImGui::SetTooltip("%s", tr("Break the ice underfoot: Ice -> Water. Costs 1 stamina.",
+                                                   "Pha bang duoi chan: Bang -> Nuoc. Ton 1 the luc."));
                 }
             }
-            if (mine_disabled) { ImGui::EndDisabled(); }
+            // Row 2: Pistol + Shotgun
+            weapon_button(("Pistol (" + std::to_string(state.human.pistol_ammo) + ")").c_str(), InputMode::TargetPistol,
+                "Ranged shot. Accuracy decreases with distance. Blocked by walls.",
+                "Ban xa. Do chinh xac giam theo khoang cach. Bi chan boi tuong.");
+            ImGui::SameLine();
+            weapon_button(("Shotgun (" + std::to_string(state.human.shotgun_ammo) + ")").c_str(), InputMode::TargetShotgun,
+                "Fires a 3-tile line blast hitting all targets. Pushes Human back 1 tile (recoil).",
+                "Ban 3 o thang hang, trung tat ca muc tieu. Day lui Nguoi 1 o (giat lui).");
+            // Row 3: Grenade + Molotov + Mine
+            weapon_button(("Grenade (" + std::to_string(state.human.grenades) + ")").c_str(), InputMode::TargetGrenade,
+                "Thrown explosive. 1-turn fuse, then AoE blast. Can be frozen under ice.",
+                "Luu dan nem. No sau 1 luot, sat thuong vung. Co the bi dong bang duoi bang.");
+            ImGui::SameLine();
+            weapon_button(("Molotov (" + std::to_string(state.human.molotovs) + ")").c_str(), InputMode::TargetMolotov,
+                "Throws a fire bomb 1-6 tiles. Creates a fire zone on impact.",
+                "Nem bom xang 1-6 o. Tao vung lua khi trung.");
+            ImGui::SameLine();
+            {
+                bool mine_disabled = state.human.is_paralyzed || state.human.stamina == 0 || state.phase != TurnPhase::HumanTurn || state.human.mines == 0;
+                if (mine_disabled) { ImGui::BeginDisabled(); }
+                if (ImGui::Button(("Mine (" + std::to_string(state.human.mines) + ")").c_str())) {
+                    if (!mine_disabled) {
+                        state.mine_grid[state.human.pos.x][state.human.pos.y] = true;
+                        state.human.mines--; state.human.stamina--;
+                    }
+                }
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                    ImGui::SetTooltip("%s", tr("Place a claymore mine on your current tile. Explodes when a zombie steps on it.",
+                                               "Dat min claymore tai o dang dung. No khi zombie buoc vao."));
+                }
+                if (mine_disabled) { ImGui::EndDisabled(); }
+            }
+
+            ImGui::EndChild(); // ##weapons_pane
+
+            // ── Vertical divider line ─────────────────────────────────
+            ImGui::SameLine(0, gap);
+            {
+                ImVec2 p = ImGui::GetCursorScreenPos();
+                // 110px tall to match the child height
+                ImGui::GetWindowDrawList()->AddLine(
+                    ImVec2(p.x, p.y),
+                    ImVec2(p.x, p.y + 110.0f),
+                    ImGui::ColorConvertFloat4ToU32(ImGui::GetStyle().Colors[ImGuiCol_Separator]),
+                    1.0f);
+                ImGui::Dummy(ImVec2(divider_w, 110.0f));
+            }
+
+            // ── RIGHT PANE: Terrain + Status legend ───────────────────
+            ImGui::SameLine(0, gap);
+            ImGui::BeginChild("##legend_pane", ImVec2(right_w, 110.0f), false, ImGuiWindowFlags_NoScrollbar);
+
+            ImGui::TextColored(ImVec4(0.9f, 0.85f, 0.4f, 1.0f), "%s", tr("Terrain", "Dia hinh"));
+            terrain_legend_item(tr("Dirt","Dat"),    ImVec4(105/255.f,60/255.f,35/255.f,1.f),
+                "Dirt: Normal terrain. Move cost: 1 stamina.",
+                "Dat: Dia hinh binh thuong. Chi phi di chuyen: 1 the luc.");
+            ImGui::SameLine(0,6);
+            terrain_legend_item(tr("Wall","Tuong"),  ImVec4(60/255.f,62/255.f,66/255.f,1.f),
+                "Wall: Impassable. Blocks movement and ranged attacks. Can be destroyed by explosions.",
+                "Tuong: Khong the di qua. Chan di chuyen va tan cong xa. Co the bi pha boi vu no.");
+            ImGui::SameLine(0,6);
+            terrain_legend_item(tr("Water","Nuoc"),  ImVec4(35/255.f,75/255.f,115/255.f,1.f),
+                "Water: Passable but slow. Move cost: 2 stamina. Conducts electricity (lightning).",
+                "Nuoc: Co the di qua nhung cham. Chi phi: 2 the luc. Dan dien (set).");
+            terrain_legend_item(tr("Forest","Rung"), ImVec4(34/255.f,110/255.f,48/255.f,1.f),
+                "Forest: Normal move cost. Can catch fire and spread flames to adjacent tiles.",
+                "Rung: Chi phi di chuyen binh thuong. Co the bat lua va lan sang o ke ben.");
+            ImGui::SameLine(0,6);
+            terrain_legend_item(tr("Ice","Bang"),    ImVec4(160/255.f,210/255.f,240/255.f,1.f),
+                "Ice: Causes sliding! Conducts electricity (lightning). Use Ice Pick to break.",
+                "Bang: Gay truot! Dan dien (set). Dung Cuoc Pha Bang de pha.");
+            ImGui::SameLine(0,6);
+            terrain_legend_item(tr("Fire","Lua"),    ImVec4(220/255.f,80/255.f,20/255.f,1.f),
+                "Fire: Damages any entity standing on it each turn. Spreads to adjacent Forest tiles.",
+                "Lua: Gay sat thuong cho thuc the dung tren do moi luot. Lan sang o Rung ke ben.");
+
+            ImGui::Spacing();
+            ImGui::TextColored(ImVec4(0.9f, 0.85f, 0.4f, 1.0f), "%s", tr("Status", "Trang thai"));
+            ImGui::TextColored(ImVec4(0.95f, 0.2f, 0.2f, 1.0f), "B=Burn");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr("Burned: Entity takes 1 damage after 1 turn + immediate damage if stepping on Fire tile. Step on Water tile to resolve.", "Bi chay: Thuc the nhan sat thuong lua moi luot khi dung tren o lua."));
+            ImGui::SameLine(0,6);
+            ImGui::TextColored(ImVec4(0.95f, 0.85f, 0.25f, 1.0f), "P=Paralyzed");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr("Paralyzed: Cannot act for 1 turn. Inflicted by electricity.", "Bi liet: Khong the hanh dong trong 1 luot. Do dong dien can gay ra."));
+            ImGui::SameLine(0,6);
+            ImGui::TextColored(ImVec4(0.63f, 0.82f, 0.94f, 1.0f), "F=Frozen");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr("Frozen: Cannot move but can use weapons. Use Ice Pick to resolve.", "Bi dong bang: Khong the di chuyen nhung co the dung vu khi. Dung Pha Bang de thoat."));
+
+            ImGui::EndChild(); // ##legend_pane
+            } // end two-pane layout block
 
             ImGui::Separator();
-            ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f), "%s: %zu", tr("Hostiles", "Zombie"), state.zombies.size());
+            ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f), "%s: %zu", tr("Remaining Zombies", "So Zombie con lai"), state.zombies.size());
             ImGui::Text("%s:", tr("Legend", "Chu giai"));
             ImGui::SameLine(); ImGui::TextColored(ImVec4(0.2f, 0.75f, 0.3f, 1.0f), "Normal");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr("Normal Zombie: 3 HP. Moves 1 tile/turn toward Human.", "Zombie Binh Thuong: 3 HP. Di chuyen 1 o/luot ve phia Nguoi."));
             ImGui::SameLine(); ImGui::TextColored(ImVec4(0.35f, 0.75f, 1.0f, 1.0f), "Fast");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr("Fast Sprinter: 2 HP. Moves up to 2 tiles/turn. Thaws faster from ice.", "Zombie Nhanh: 2 HP. Di chuyen toi 2 o/luot. Tan bang nhanh hon."));
             ImGui::SameLine(); ImGui::TextColored(ImVec4(0.9f, 0.5f, 0.1f, 1.0f), "Exploder");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr("Exploding Zombie: 2 HP. Detonates on death, dealing AoE damage.", "Zombie No: 2 HP. Kich no khi chet, gay sat thuong vung."));
             ImGui::SameLine(); ImGui::TextColored(ImVec4(0.7f, 0.2f, 0.7f, 1.0f), "Vampire");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr("Vampire Zombie: 4 HP. Heals 1 HP when biting Human.", "Zombie Ma Cat: 4 HP. Hoi phuc 1 HP khi can Nguoi."));
             ImGui::SameLine(); ImGui::TextColored(ImVec4(0.85f, 0.78f, 0.3f, 1.0f), "Sick");
-            ImGui::Text("%s:", tr("Status", "Trang thai"));
-            ImGui::SameLine(); ImGui::TextColored(ImVec4(0.95f, 0.2f, 0.2f, 1.0f), "B = Burned");
-            ImGui::SameLine(); ImGui::TextColored(ImVec4(0.95f, 0.85f, 0.25f, 1.0f), "P = Paralyzed");
-            ImGui::Text("%s:", tr("Zombie IDs", "So thu tu Zombie"));
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr("Sick Carrier: 3 HP. Bite inflicts -1 ST on Human for next turn.", "Zombie Benh: 3 HP. Can gay Liet cho Nguoi trong 1 luot."));
+            
             float start_x = ImGui::GetCursorPosX();
             for (size_t i = 0; i < state.zombies.size(); ++i) {
                 int col = i % 10;
@@ -1621,7 +1841,6 @@ int main() {
             }
 
             ImGui::Separator();
-            ImGui::TextColored(ImVec4(1, 0.85f, 0.25f, 1), "=== %s ===", tr("LIVE RADIO LOGS", "NHAT KY VO TUYEN"));
             ImGui::BeginChild("LiveLogBox", ImVec2(0, ImGui::GetContentRegionAvail().y - 5.0f), true);
             for (const auto& log : state.logs) {
                 ImGui::PushTextWrapPos(0.0f);
@@ -1873,6 +2092,12 @@ int main() {
                     ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.2f, 1.0f), "%s", tr("Mine  [Cost: 0 stamina, placed on current tile]", "Min  [Chi phi: 0 the luc, dat tai o hien tai]"));
                     ImGui::BulletText("%s", tr("Placed invisibly on Human's current tile. Triggers when any entity steps on it.", "Dat an tren o Human dang dung. Kich hoat khi bat ky thuc the buoc len."));
                     ImGui::BulletText("%s", tr("Explosion radius 1: same damage as grenade (center 3, ring 2, outer 1).", "Ban kinh no 1: sat thuong giong luu dan (tam 3, vong 2, ngoai 1)."));
+                    ImGui::Spacing();
+                    ImGui::TextColored(ImVec4(0.5f, 0.9f, 1.0f, 1.0f), "%s", tr("Ice Pick  [Only usable on Ice tiles]", "Cuoc Pha Bang  [Chi dung duoc tren o Bang]"));
+                    ImGui::BulletText("%s", tr("Breaks the Ice tile Human is standing on: Ice -> Water.", "Pha o Bang Human dang dung: Bang -> Nuoc."));
+                    ImGui::BulletText("%s", tr("Cost: 1 stamina normally. 2 stamina if Human is Frozen (also escapes freeze).", "Chi phi: 1 the luc binh thuong. 2 the luc neu Human dang Dong Bang (dong thoi giai bang)."));
+                    ImGui::BulletText("%s", tr("Unlimited uses. Loot frozen under the broken ice is immediately accessible.", "Khong gioi han so lan dung. Loot bi ket duoi bang co the nhat ngay sau khi pha."));
+                    ImGui::BulletText("%s", tr("Grenade frozen under ice is freed and can be blown by wind again.", "Luu dan bi ket duoi bang duoc giai phong va co the bi gio thoi lai."));
                 }
                 ImGui::Spacing();
 
@@ -2148,9 +2373,10 @@ int main() {
                     ImGui::TextWrapped("%s", tr("Every zombie leaves a '?' loot drop on death. Walk onto it to collect.", "Moi zombie de lai loot drop '?' khi chet. Di chuyen vao o do de nhat."));
                     ImGui::BulletText("%s", tr("75%% Junk (useless). 25%% useful items split by rarity.", "75%% Rac (vo dung). 25%% do huu ich phan chia theo do hiem."));
                     ImGui::BulletText("%s", tr("Items: Health Potion +2 HP, Stamina Potion (restore to 6), Pistol Ammo +3, Shotgun Shell +1, Grenade +1, Molotov +1, Mine +1.", "Do: Binh Mau +2 HP, Binh The Luc (phuc hoi ve 6), Dan Luc +3, Dan Hoa Mai +1, Luu Dan +1, Bom Xang +1, Min +1."));
-                    ImGui::BulletText("%s", tr("Cannot pick up on Water or Ice tiles. Pickup resumes when tile changes to Dirt/Forest.", "Khong the nhat tren o Nuoc hoac Bang. Co the nhat khi o chuyen thanh Dat/Rung."));
+                    ImGui::BulletText("%s", tr("Loot on Water: pickup normally. Loot on regular Ice: pickup normally.", "Loot tren Nuoc: nhat binh thuong. Loot tren Bang thuong: nhat binh thuong."));
+                    ImGui::BulletText("%s", tr("Loot FROZEN UNDER ICE (Water cell that got frozen by Blizzard): costs 1 stamina to break through, or use Ice Pick, or wait for ice to melt.", "Loot BI KET DUOI BANG (o Nuoc bi dong bang boi Bao Tuyet): ton 1 the luc de pha, hoac dung Cuoc Pha Bang, hoac cho bang tan."));
                     ImGui::BulletText("%s", tr("Destroyed by: explosion blast, shotgun cone, lightning direct hit, tile becoming Fire, or Wind blowing it into Fire.", "Bi pha huy boi: vu no, vung shotgun, set danh truc tiep, o chuyen thanh Lua, hoac Gio thoi vao Lua."));
-                    ImGui::BulletText("%s", tr("Wind blows loot drops 1 tile (same as grenades). Frozen loot is NOT immune to wind.", "Gio thoi loot drop 1 o (giong luu dan). Loot KHONG mien nhiem voi gio."));
+                    ImGui::BulletText("%s", tr("Wind blows loot 1 tile. Loot frozen under ice is immune to wind until the ice melts.", "Gio thoi loot 1 o. Loot bi ket duoi bang mien nhiem voi gio cho den khi bang tan."));
                 }
                 ImGui::Spacing();
 

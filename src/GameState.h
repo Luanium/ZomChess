@@ -116,10 +116,14 @@ public:
     void destroy_loot_at_cells(const std::vector<Position>& cells);
     // Kiểm tra và hủy loot nếu ô của nó bị chuyển thành lửa
     void check_loot_on_fire();
+    // Giải đóng băng loot và grenade khi ô Ice tan thành Water
+    void thaw_loot_and_grenades_at(const std::vector<Position>& cells);
 
     // Ice terrain helpers
     // Returns true if entity slid (and turn should end immediately for that entity)
     bool try_ice_slide(bool is_human, size_t zombie_idx, int move_dx, int move_dy);
+    // Ice Pick: break the ice tile human is standing on (Ice -> Water)
+    void use_ice_pick();
 
     // Audio methods
     void initAudio();

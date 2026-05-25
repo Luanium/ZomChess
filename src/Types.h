@@ -9,7 +9,7 @@
 #include "GameConstants.h"
 
 enum class Terrain { Dirt, Water, Wall, Fire, Forest, Ice };
-enum class InputMode { MoveMode, TargetKnife, TargetPistol, TargetShotgun, TargetGrenade, TargetMolotov };
+enum class InputMode { MoveMode, TargetKnife, TargetPistol, TargetShotgun, TargetGrenade, TargetMolotov, UseIcePick };
 enum class ZombieType { Normal, Fast, Exploding, Vampire, Sick };
 enum class TurnPhase { HumanTurn, ZombieAnimating, EnvironmentAnimating };
 
@@ -76,6 +76,7 @@ struct GrenadeTimer {
     bool active = false;
     Position pos{0, 0};
     int turns_left = 2;
+    bool frozen_under_ice = false; // Bị kẹt dưới băng (ô nước bị đóng băng)
 };
 
 struct FireCell {
@@ -142,6 +143,7 @@ struct LootDrop {
     Position pos;
     LootType type;
     float blink_timer = 0.0f; // Dùng để nhấp nháy "?"
+    bool frozen_under_ice = false; // Bị kẹt dưới băng (ô nước bị đóng băng)
 };
 
 #endif // TYPES_H
