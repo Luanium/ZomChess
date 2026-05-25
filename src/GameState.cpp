@@ -829,8 +829,10 @@ bool GameState::has_living_entity_at(Position p) const {
 
 bool GameState::is_conductive_cell(Position p) const {
     if (p.x < 0 || p.x >= width || p.y < 0 || p.y >= height) return false;
-    // Water and Ice are both conductive; entities standing on any terrain also conduct
-    return grid[p.x][p.y] == Terrain::Water || grid[p.x][p.y] == Terrain::Ice || has_living_entity_at(p);
+    // Only Water and Ice tiles conduct electricity.
+    // An entity standing on Water/Ice also conducts (included via tile check).
+    // Entities on Dirt/Forest/Fire are insulators — they do NOT extend the cluster.
+    return grid[p.x][p.y] == Terrain::Water || grid[p.x][p.y] == Terrain::Ice;
 }
 
 std::vector<Position> GameState::get_conductive_cluster(Position start) const {
@@ -1190,21 +1192,57 @@ void GameState::apply_lightning_strike() {
         }
     }
 
+    // Step 1: Paralyze entities standing ON conductive (Water/Ice) cells in the cluster
+    int paralyzed_count = 0;
     for (const auto& p : conductive_cluster) {
-        if (human.hp > 0 && human.pos == p) {
+        if (human.hp > 0 && human.pos == p && !human.is_paralyzed) {
             human.is_paralyzed = true;
-            // Conductive spread does NOT unfreeze — only direct strike does
+            paralyzed_count++;
         }
         for (auto& z : zombies) {
-            if (z->hp > 0 && z->pos == p) {
+            if (z->hp > 0 && z->pos == p && !z->is_paralyzed) {
                 z->is_paralyzed = true;
-                // Conductive spread does NOT unfreeze — only direct strike does
+                paralyzed_count++;
             }
         }
     }
-    if (!conductive_cluster.empty()) {
+
+    // Step 2: Contact spread — entity standing orthogonally adjacent to a paralyzed
+    // entity on Water/Ice also gets shocked (simulates touching a live body).
+    // Only spreads one hop; entities on Dirt/Forest adjacent to empty Water/Ice are safe.
+    const int adj4[4][2] = {{1,0},{-1,0},{0,1},{0,-1}};
+    std::vector<Position> shocked_positions;
+    for (const auto& p : conductive_cluster) {
+        if (human.hp > 0 && human.pos == p && human.is_paralyzed)
+            shocked_positions.push_back(human.pos);
+        for (const auto& z : zombies)
+            if (z->hp > 0 && z->pos == p && z->is_paralyzed)
+                shocked_positions.push_back(z->pos);
+    }
+    for (const auto& sp : shocked_positions) {
+        for (const auto& d : adj4) {
+            Position nb{sp.x + d[0], sp.y + d[1]};
+            if (nb.x < 0 || nb.x >= width || nb.y < 0 || nb.y >= height) continue;
+            // Entities already on conductive tiles are handled in step 1
+            if (grid[nb.x][nb.y] == Terrain::Water || grid[nb.x][nb.y] == Terrain::Ice) continue;
+            if (human.hp > 0 && human.pos == nb && !human.is_paralyzed) {
+                human.is_paralyzed = true;
+                paralyzed_count++;
+            }
+            for (auto& z : zombies) {
+                if (z->hp > 0 && z->pos == nb && !z->is_paralyzed) {
+                    z->is_paralyzed = true;
+                    paralyzed_count++;
+                }
+            }
+        }
+    }
+
+    if (!conductive_cluster.empty() || paralyzed_count > 0) {
         sfx("electricity");
-        add_log("-> Electricity spreads through " + std::to_string(conductive_cluster.size()) + " conductive cells; occupants are paralyzed next action.", ImVec4(0.45f, 0.9f, 1.0f, 1.0f));
+        add_log("-> Electricity spreads through " + std::to_string(conductive_cluster.size()) +
+                " conductive cells; " + std::to_string(paralyzed_count) +
+                " entity/entities paralyzed.", ImVec4(0.45f, 0.9f, 1.0f, 1.0f));
     }
     check_victory_conditions();
 }
@@ -2489,9 +2527,9 @@ void GameState::update_zombie_logic(float dt) {
                 floating_texts.push_back({human.pos, -dmg, 1.0f, 1.0f});
                 attack_animations.push_back(atk_fx);
 
-                if (zom->type == ZombieType::Vampire) { 
-                    zom->hp += GameConstants::Zombies::VAMPIRE_HEAL_ON_HIT; 
-                    floating_texts.push_back({zom->pos, GameConstants::Zombies::VAMPIRE_HEAL_ON_HIT, 1.0f, 1.0f});
+                if (zom->type == ZombieType::Vampire && dmg > 0) {
+                    zom->hp += dmg; // drain exactly as much HP as dealt
+                    floating_texts.push_back({zom->pos, dmg, 1.0f, 1.0f});
                 }
                 if (zom->type == ZombieType::Sick) {
                     if (dx + dy == 1) { // Orthogonal -> Bite (Direct bite)

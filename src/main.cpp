@@ -7,6 +7,276 @@
 #include "AudioManager.h"
 #include "SplashScreen.h"
 #include <cmath>
+#include <filesystem>
+#include <algorithm>
+#include <string>
+#include <vector>
+#if defined(_WIN32)
+  #include <windows.h>
+#elif defined(__APPLE__)
+  #include <mach-o/dyld.h>
+#endif
+
+namespace fs = std::filesystem;
+
+// Cross-platform: get the directory containing the running executable.
+static std::string get_exe_dir() {
+#if defined(_WIN32)
+    char buf[MAX_PATH] = {};
+    DWORD len = GetModuleFileNameA(nullptr, buf, MAX_PATH);
+    if (len == 0) return "";
+    return fs::path(std::string(buf, len)).parent_path().string();
+#elif defined(__APPLE__)
+    char buf[4096] = {};
+    uint32_t size = sizeof(buf);
+    if (_NSGetExecutablePath(buf, &size) != 0) return "";
+    std::error_code ec;
+    return fs::canonical(buf, ec).parent_path().string();
+#else
+    // Linux — /proc/self/exe is always available
+    std::error_code ec;
+    fs::path p = fs::canonical("/proc/self/exe", ec);
+    if (ec) return "";
+    return p.parent_path().string();
+#endif
+}
+
+// ── Embedded ImGui File Browser ───────────────────────────────────────────────
+struct FileBrowser {
+    enum class Mode { Open, Save };
+
+    bool is_open = false;
+    Mode mode = Mode::Open;
+    char filename_buf[256] = "my_custom_challenge.zom";
+    std::string current_dir;
+    std::string exe_dir;          // directory of the executable, set once at startup
+    std::string selected_path;
+    bool confirmed = false;
+
+    struct Entry { std::string name; bool is_dir; };
+    std::vector<Entry> entries;
+    std::string error_msg;
+
+    void open(Mode m, const std::string& hint = "") {
+        mode = m;
+        confirmed = false;
+        selected_path.clear();
+        error_msg.clear();
+
+        // Determine starting directory
+        std::string start_dir;
+        if (!hint.empty()) {
+            fs::path hp(hint);
+            std::error_code ec;
+            if (fs::is_regular_file(hp, ec)) {
+                start_dir = hp.parent_path().string();
+                strncpy(filename_buf, hp.filename().string().c_str(), sizeof(filename_buf)-1);
+            } else if (fs::is_directory(hp, ec)) {
+                start_dir = hp.string();
+            } else {
+                // hint is a bare filename — use its parent if it has one, else cwd
+                fs::path parent = hp.parent_path();
+                std::error_code ec2;
+                start_dir = (!parent.empty() && fs::is_directory(parent, ec2))
+                            ? parent.string()
+                            : fs::current_path(ec2).string();
+                if (m == Mode::Save) {
+                    std::string fname = hp.filename().string();
+                    if (!fname.empty())
+                        strncpy(filename_buf, fname.c_str(), sizeof(filename_buf)-1);
+                }
+            }
+        } else {
+            std::error_code ec;
+            // Prefer exe directory over cwd — more predictable across platforms
+            start_dir = exe_dir.empty() ? fs::current_path(ec).string() : exe_dir;
+        }
+
+        if (start_dir.empty()) start_dir = exe_dir.empty() ? "/" : exe_dir;
+        current_dir = start_dir;
+        is_open = true;
+        refresh();
+    }
+
+    void navigate(const std::string& dir) {
+        current_dir = dir;
+        selected_path.clear();
+        error_msg.clear();
+        refresh();
+    }
+
+    void refresh() {
+        entries.clear();
+        error_msg.clear();
+        if (current_dir.empty()) { error_msg = "No directory set."; return; }
+
+        fs::path cur(current_dir);
+        std::error_code ec;
+
+        // Validate directory
+        if (!fs::is_directory(cur, ec)) {
+            error_msg = "Cannot open: " + current_dir;
+            // Fall back to exe dir, then home, then root
+            if (!exe_dir.empty()) current_dir = exe_dir;
+            else { const char* home = getenv("HOME"); current_dir = home ? home : "/"; }
+            cur = fs::path(current_dir);
+            ec.clear();
+        }
+
+        // Parent entry
+        fs::path parent = cur.parent_path();
+        if (!parent.empty() && parent != cur)
+            entries.push_back({"..", true});
+
+        // List contents
+        std::vector<Entry> dirs, files;
+        fs::directory_iterator it(cur, ec);
+        if (ec) { error_msg = "Read error: " + ec.message(); return; }
+
+        for (auto& e : it) {
+            std::error_code ec2;
+            std::string name = e.path().filename().string();
+            if (name.empty() || name[0] == '.') continue;
+            bool is_dir = e.is_directory(ec2);
+            if (is_dir) {
+                dirs.push_back({name, true});
+            } else {
+                // Show .zom files + all files in Save mode for context
+                bool is_zom = name.size() >= 4 &&
+                              name.substr(name.size()-4) == ".zom";
+                if (is_zom || mode == Mode::Save)
+                    files.push_back({name, false});
+            }
+        }
+        std::sort(dirs.begin(),  dirs.end(),  [](const Entry& a, const Entry& b){ return a.name < b.name; });
+        std::sort(files.begin(), files.end(), [](const Entry& a, const Entry& b){ return a.name < b.name; });
+        for (auto& d : dirs)  entries.push_back(d);
+        for (auto& f : files) entries.push_back(f);
+    }
+
+    // Call this OUTSIDE any other ImGui::Begin/End block each frame.
+    // Returns true when the user confirms a file selection.
+    bool draw(const char* title) {
+        if (!is_open) return false;
+
+        bool confirmed_this_frame = false;
+
+        ImGui::SetNextWindowSize(ImVec2(560, 440), ImGuiCond_Always);
+        ImGui::SetNextWindowPos(
+            ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f,
+                   ImGui::GetIO().DisplaySize.y * 0.5f),
+            ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+
+        bool window_open = true;
+        ImGui::Begin(title, &window_open,
+            ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse |
+            ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+        if (!window_open) { is_open = false; ImGui::End(); return false; }
+
+        // ── Path bar with Up button ──────────────────────────────────────
+        if (ImGui::Button("Up")) {
+            fs::path parent = fs::path(current_dir).parent_path();
+            if (!parent.empty() && parent.string() != current_dir)
+                navigate(parent.string());
+        }
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.4f, 0.85f, 1.0f, 1.0f), "%s", current_dir.c_str());
+
+        if (!error_msg.empty())
+            ImGui::TextColored(ImVec4(1,0.3f,0.3f,1), "! %s", error_msg.c_str());
+
+        ImGui::Separator();
+
+        // ── File list ────────────────────────────────────────────────────
+        float list_h = (mode == Mode::Save) ? 248.0f : 290.0f;
+        ImGui::BeginChild("##fb_list", ImVec2(0, list_h), true,
+                          ImGuiWindowFlags_HorizontalScrollbar);
+
+        if (entries.empty() && error_msg.empty()) {
+            ImGui::TextDisabled("(empty directory)");
+        }
+
+        for (auto& e : entries) {
+            std::string label = e.is_dir
+                ? ("[DIR]  " + e.name)
+                : ("       " + e.name);
+
+            bool sel = (!e.is_dir &&
+                        selected_path == (fs::path(current_dir) / e.name).string());
+
+            if (ImGui::Selectable(label.c_str(), sel,
+                    ImGuiSelectableFlags_AllowDoubleClick)) {
+                if (e.is_dir) {
+                    if (e.name == "..") {
+                        fs::path parent = fs::path(current_dir).parent_path();
+                        navigate(parent.string());
+                    } else {
+                        navigate((fs::path(current_dir) / e.name).string());
+                    }
+                } else {
+                    selected_path = (fs::path(current_dir) / e.name).string();
+                    strncpy(filename_buf, e.name.c_str(), sizeof(filename_buf)-1);
+                    filename_buf[sizeof(filename_buf)-1] = '\0';
+                    if (ImGui::IsMouseDoubleClicked(0) && mode == Mode::Open) {
+                        confirmed = true;
+                        confirmed_this_frame = true;
+                        is_open = false;
+                    }
+                }
+            }
+        }
+        ImGui::EndChild();
+
+        // ── Filename input ───────────────────────────────────────────────
+        if (mode == Mode::Save) {
+            ImGui::Spacing();
+            ImGui::Text("File name:");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(-1);
+            ImGui::InputText("##fb_fname", filename_buf, sizeof(filename_buf));
+        } else if (!selected_path.empty()) {
+            ImGui::Spacing();
+            ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.5f, 1.0f), "Selected: %s",
+                fs::path(selected_path).filename().string().c_str());
+        }
+
+        ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
+
+        // ── Buttons ──────────────────────────────────────────────────────
+        const char* confirm_label = (mode == Mode::Save) ? "Save" : "Open";
+        ImGui::PushStyleColor(ImGuiCol_Button,
+            mode == Mode::Save ? ImVec4(0.15f, 0.55f, 0.15f, 1)
+                               : ImVec4(0.15f, 0.35f, 0.65f, 1));
+        if (ImGui::Button(confirm_label, ImVec2(130, 32))) {
+            if (mode == Mode::Save) {
+                std::string fname = filename_buf;
+                if (!fname.empty()) {
+                    if (fname.size() < 4 || fname.substr(fname.size()-4) != ".zom")
+                        fname += ".zom";
+                    selected_path = (fs::path(current_dir) / fname).string();
+                    confirmed = true;
+                    confirmed_this_frame = true;
+                    is_open = false;
+                }
+            } else if (!selected_path.empty()) {
+                confirmed = true;
+                confirmed_this_frame = true;
+                is_open = false;
+            }
+        }
+        ImGui::PopStyleColor();
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(130, 32)))
+            is_open = false;
+
+        ImGui::End();
+        return confirmed_this_frame;
+    }
+
+    const std::string& result() const { return selected_path; }
+};
+// ─────────────────────────────────────────────────────────────────────────────
 
 // Shorthand helper for sound effects
 static inline void sfx(const std::string& name) {
@@ -61,6 +331,13 @@ int main() {
     GameState state;
     state.initAudio();
     state.playBackgroundMusic("menu");
+
+    FileBrowser save_browser, load_browser;
+    {
+        std::string ed = get_exe_dir();
+        save_browser.exe_dir = ed;
+        load_browser.exe_dir = ed;
+    }
     
     sf::Clock deltaClock;
     sf::Clock animationClock; 
@@ -236,7 +513,7 @@ int main() {
         if (state.current_scene == GameScene::MainMenu) {
             ImGui::SetNextWindowPos(ImVec2(0, 0));
             ImGui::SetNextWindowSize(ImVec2(1400, 658));
-            ImGui::Begin("ZomChess Tactical System Hub", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
+            ImGui::Begin("SYSTEM HUB", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
 
             ImGui::TextColored(ImVec4(0.2f, 0.95f, 0.9f, 1), "%s", tr("QUICK PLAY", "CHOI NHANH"));
             ImGui::SameLine();
@@ -729,9 +1006,11 @@ int main() {
             ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
             ImGui::TextColored(ImVec4(0, 1, 0.5f, 1), "--- IMPORT / EXPORT DATA HUB ---");
             ImGui::InputText("Save path", state.export_filename, IM_ARRAYSIZE(state.export_filename));
-            if (ImGui::Button("Save Configuration & Map File", ImVec2(400, 30))) state.export_challenge_file(state.export_filename);
+            if (ImGui::Button("Save Configuration & Map File", ImVec2(400, 30)))
+                save_browser.open(FileBrowser::Mode::Save, state.export_filename);
             ImGui::InputText("Load path", state.import_filename, IM_ARRAYSIZE(state.import_filename));
-            if (ImGui::Button("Load External Shared Challenge", ImVec2(400, 30))) state.import_challenge_file(state.import_filename);
+            if (ImGui::Button("Load External Shared Challenge", ImVec2(400, 30)))
+                load_browser.open(FileBrowser::Mode::Open, state.import_filename);
 
             ImGui::Columns(1); ImGui::Separator(); ImGui::Spacing();
 
@@ -789,6 +1068,20 @@ int main() {
             }
 
             ImGui::End();
+
+            // ── File browsers — drawn as standalone windows, outside SYSTEM HUB ──
+            if (save_browser.draw(tr("Save Challenge File", "Luu File Thach Thuc"))) {
+                const std::string& path = save_browser.result();
+                strncpy(state.export_filename, path.c_str(), sizeof(state.export_filename) - 1);
+                state.export_filename[sizeof(state.export_filename) - 1] = '\0';
+                state.export_challenge_file(path);
+            }
+            if (load_browser.draw(tr("Load Challenge File", "Tai File Thach Thuc"))) {
+                const std::string& path = load_browser.result();
+                strncpy(state.import_filename, path.c_str(), sizeof(state.import_filename) - 1);
+                state.import_filename[sizeof(state.import_filename) - 1] = '\0';
+                state.import_challenge_file(path);
+            }
         }
         else if (state.current_scene == GameScene::MapEditor) {
             int mw = state.active_config.map_width; int mh = state.active_config.map_height;
@@ -1087,44 +1380,24 @@ int main() {
                     zIdStr.setFillColor(sf::Color::White);
                     zIdStr.setPosition(drawX + (cellSize - 6.0f)/2.0f, drawY + (cellSize - 6.0f)/2.0f); window.draw(zIdStr);
 
-                    // Blinking status tags on zombie icon
+                    // Blinking status tags on zombie icon — all active tags shown side by side
                     bool blinkOn = std::sin(timeSec * 10.0f) > 0.0f;
                     if (blinkOn && (z->is_burning || z->is_paralyzed || z->is_stunned || z->is_frozen)) {
-                        if (z->is_burning) {
-                            sf::Text burnTxt;
-                            burnTxt.setFont(boardFont);
-                            burnTxt.setCharacterSize(11);
-                            burnTxt.setFillColor(sf::Color(230, 40, 40));
-                            burnTxt.setString("B");
-                            burnTxt.setPosition(drawX + 3.0f, drawY - 1.0f);
-                            window.draw(burnTxt);
-                        }
-                        if (z->is_paralyzed) {
-                            sf::Text paraTxt;
-                            paraTxt.setFont(boardFont);
-                            paraTxt.setCharacterSize(11);
-                            paraTxt.setFillColor(sf::Color(242, 214, 61));
-                            paraTxt.setString("P");
-                            paraTxt.setPosition(drawX + cellSize - 17.0f, drawY - 1.0f);
-                            window.draw(paraTxt);
-                        }
-                        if (z->is_stunned) {
-                            sf::Text stunTxt;
-                            stunTxt.setFont(boardFont);
-                            stunTxt.setCharacterSize(11);
-                            stunTxt.setFillColor(sf::Color(100, 220, 255));
-                            stunTxt.setString("S");
-                            stunTxt.setPosition(drawX + (cellSize - 6.0f) / 2.0f - 4.0f, drawY - 1.0f);
-                            window.draw(stunTxt);
-                        }
-                        if (z->is_frozen) {
-                            sf::Text frozTxt;
-                            frozTxt.setFont(boardFont);
-                            frozTxt.setCharacterSize(11);
-                            frozTxt.setFillColor(sf::Color(160, 230, 255));
-                            frozTxt.setString("F");
-                            frozTxt.setPosition(drawX + (cellSize - 6.0f) / 2.0f + 5.0f, drawY - 1.0f);
-                            window.draw(frozTxt);
+                        struct TagInfo { const char* label; sf::Color color; };
+                        std::vector<TagInfo> tags;
+                        if (z->is_burning)   tags.push_back({"B", sf::Color(230, 40,  40)});
+                        if (z->is_paralyzed) tags.push_back({"P", sf::Color(242, 214, 61)});
+                        if (z->is_stunned)   tags.push_back({"S", sf::Color(100, 220, 255)});
+                        if (z->is_frozen)    tags.push_back({"F", sf::Color(160, 230, 255)});
+                        float tagW = (cellSize - 6.0f) / static_cast<float>(tags.size());
+                        for (int ti = 0; ti < (int)tags.size(); ++ti) {
+                            sf::Text tagTxt;
+                            tagTxt.setFont(boardFont);
+                            tagTxt.setCharacterSize(11);
+                            tagTxt.setFillColor(tags[ti].color);
+                            tagTxt.setString(tags[ti].label);
+                            tagTxt.setPosition(drawX + ti * tagW + tagW * 0.5f - 4.0f, drawY - 1.0f);
+                            window.draw(tagTxt);
                         }
                     }
                 }
@@ -1211,41 +1484,22 @@ int main() {
             if (hasFont) {
                 bool blinkOn = std::sin(timeSec * 10.0f) > 0.0f;
                 if (blinkOn && (state.human.is_burning || state.human.is_paralyzed || state.human.is_stunned || state.human.is_frozen)) {
-                    if (state.human.is_burning) {
-                        sf::Text burnTxt;
-                        burnTxt.setFont(boardFont);
-                        burnTxt.setCharacterSize(11);
-                        burnTxt.setFillColor(sf::Color(230, 40, 40));
-                        burnTxt.setString("B");
-                        burnTxt.setPosition(hlx * cellSize + boardOffset + 6.0f, hly * cellSize + boardOffset + 2.0f);
-                        if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) window.draw(burnTxt);
-                    }
-                    if (state.human.is_paralyzed) {
-                        sf::Text paraTxt;
-                        paraTxt.setFont(boardFont);
-                        paraTxt.setCharacterSize(11);
-                        paraTxt.setFillColor(sf::Color(242, 214, 61));
-                        paraTxt.setString("P");
-                        paraTxt.setPosition(hlx * cellSize + boardOffset + cellSize - 14.0f, hly * cellSize + boardOffset + 2.0f);
-                        if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) window.draw(paraTxt);
-                    }
-                    if (state.human.is_stunned) {
-                        sf::Text stunTxt;
-                        stunTxt.setFont(boardFont);
-                        stunTxt.setCharacterSize(11);
-                        stunTxt.setFillColor(sf::Color(100, 220, 255));
-                        stunTxt.setString("S");
-                        stunTxt.setPosition(hlx * cellSize + boardOffset + cellSize / 2.0f - 4.0f, hly * cellSize + boardOffset + 2.0f);
-                        if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) window.draw(stunTxt);
-                    }
-                    if (state.human.is_frozen) {
-                        sf::Text frozTxt;
-                        frozTxt.setFont(boardFont);
-                        frozTxt.setCharacterSize(11);
-                        frozTxt.setFillColor(sf::Color(160, 230, 255));
-                        frozTxt.setString("F");
-                        frozTxt.setPosition(hlx * cellSize + boardOffset + cellSize / 2.0f + 4.0f, hly * cellSize + boardOffset + 2.0f);
-                        if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) window.draw(frozTxt);
+                    struct TagInfo { const char* label; sf::Color color; };
+                    std::vector<TagInfo> tags;
+                    if (state.human.is_burning)   tags.push_back({"B", sf::Color(230, 40,  40)});
+                    if (state.human.is_paralyzed) tags.push_back({"P", sf::Color(242, 214, 61)});
+                    if (state.human.is_stunned)   tags.push_back({"S", sf::Color(100, 220, 255)});
+                    if (state.human.is_frozen)    tags.push_back({"F", sf::Color(160, 230, 255)});
+                    float tagW = (cellSize - 6.0f) / static_cast<float>(tags.size());
+                    for (int ti = 0; ti < (int)tags.size(); ++ti) {
+                        sf::Text tagTxt;
+                        tagTxt.setFont(boardFont);
+                        tagTxt.setCharacterSize(11);
+                        tagTxt.setFillColor(tags[ti].color);
+                        tagTxt.setString(tags[ti].label);
+                        tagTxt.setPosition(hlx * cellSize + boardOffset + ti * tagW + tagW * 0.5f - 4.0f,
+                                           hly * cellSize + boardOffset + 2.0f);
+                        if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) window.draw(tagTxt);
                     }
                 }
             }
@@ -1540,25 +1794,21 @@ int main() {
                 ImGui::SetTooltip("%s", tr(env_tip_en, env_tip_vi));
             }
             if (state.human.is_burning) {
-                ImGui::SameLine(); ImGui::TextColored(ImVec4(1, 0.45f, 0.1f, 1), "BURNING");
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr(
                     "BURNING: takes 1 damage at the end of this turn. Step onto a Water tile to extinguish.",
                     "DANG CHAY: nhan 1 sat thuong cuoi luot nay. Buoc vao o Nuoc de dap lua."));
             }
             if (state.human.is_paralyzed) {
-                ImGui::SameLine(); ImGui::TextColored(ImVec4(0.45f, 0.9f, 1.0f, 1), "PARALYZED");
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr(
                     "PARALYZED: cannot act this turn. Caused by a Sick Zombie bite or lightning.",
                     "BI LIET: khong the hanh dong luot nay. Do Zombie Benh can hoac set danh."));
             }
             if (state.human.is_frozen) {
-                ImGui::SameLine(); ImGui::TextColored(ImVec4(0.6f, 0.85f, 1.0f, 1), "FROZEN");
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr(
                     "FROZEN: cannot move. Use the Ice Pick to break free (-2 stamina). Weapons still usable.",
                     "BI DONG BANG: khong the di chuyen. Dung Cuoc Pha Bang de thoat (-2 the luc). Van dung duoc vu khi."));
             }
             if (state.dark_cloud_active) {
-                ImGui::SameLine(); ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.8f, 1), "DARK CLOUD");
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr(
                     "DARK CLOUD: pistol accuracy is reduced this turn.",
                     "MAY DEN: do chinh xac sung luc bi giam luot nay."));

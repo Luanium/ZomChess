@@ -1,8 +1,171 @@
-# 🧟 ZomChess: A light 2D turn-based tactical game
-
-Một trò chơi chiến thuật sinh tồn theo lượt (Turn-based Tactical Survival) độc đáo được phát triển bằng **C++**, kết hợp đồ họa **SFML** và giao diện quản lý **ImGui**. Trò chơi mô phỏng một bàn cờ sinh tử, nơi bạn phải vận dụng tư duy chiến thuật đỉnh cao để điều khiển nhân vật sống sót trước làn sóng Zombie khát máu.
+# 🧟 ZomChess: A Light 2D Turn-Based Tactical Game
 
 ---
+
+## 📖 Language | Ngôn Ngữ
+- [English](#-english-version)
+- [Tiếng Việt](#-phiên-bản-tiếng-việt)
+
+---
+
+# 🇬🇧 English Version
+
+## 🌌 Battle Context
+
+Post-apocalypse. You are the sole surviving operative trapped and surrounded in a complex terrain infested with mutated entities. No retreat, no reinforcements. The only thing standing between you and death is limited ammunition, a sharp mind, and the ability to calculate every move on the battlefield with precision.
+
+---
+
+## 🎯 Ultimate Objective
+
+* **Survive or Annihilate:** Clear all Zombies from the map before the turn limit (`turn_limit`).
+* **Defeat Condition:** Your character runs out of health (`HP <= 0`) or fails to complete the mission within the allotted turns.
+
+---
+
+## 🎮 Turn-Based Gameplay Mechanics
+
+The battlefield operates on a clear three-phase alternating system:
+
+### 1. Human Turn Phase
+Each turn, you receive a random amount of stamina (`Stamina`). You can perform the following actions as long as you have enough stamina:
+* **Movement:** Move to any of 8 adjacent tiles. Moving through Dirt, Forest, Ice, Fire costs 1 Stamina, wading through Water costs 2 Stamina. Cannot move through Walls.
+* **Attack & Weapon Usage:** Choose the weapons or tool to attack Zombies or to help yourself when being frozen.
+
+### 2. Zombie Animation Phase
+After you end your turn, all Zombies start hunting for you. They can feel where you are by your smelling. Once approaching, they can scratch or bite you.
+
+### 3. Environment Phase
+Environment is neither on your side or Zombies' side. It just does what it wants, but it can change the situation.
+
+---
+
+## ⚔️ Arsenal & Combat Capabilities
+
+Your character is heavily armed but resources are extremely limited:
+
+* **🔪 Knife:** Close-range melee weapon, no ammo cost but requires dangerous proximity.
+* **🔫 Pistol:** Standard ranged weapon with stable accuracy.
+* **💥 Shotgun:** Wide-area damage dealing at close range.
+* **💣 Grenade:** Throw to a location, detonates after a delay (Grenade Timer) causing area damage.
+* **🛑 Mines:** Place traps on any tile. Zombies stepping on them trigger instant detonation.
+
+---
+
+## ☣️ Mutated Zombie Types
+
+Each Zombie type has different health (`HP`) and movement mechanics to counter your tactics:
+
+* **Normal Zombie:** Basic enemy, moves 1 tile per turn.
+* **Fast Sprinter:** Ultra-fast movement of 2 tiles per turn, specializes in surprise attacks.
+* **Volatile Exploder:** Explosive zombie. When defeated or triggered, they self-destruct causing area damage.
+* **Vampiric Dracula:** Blood-sucking creature. Each successful attack on the player restores their health.
+
+---
+
+## 🌟 Standout Features
+
+* **⚡ Quick Play:** Provides 4 pre-programmed difficulty levels suitable for all skill levels: **Easy**, **Medium**, **Hard** and **Unfair**.
+* **🛠️ Visual Map Editor:** Allows you to manually draw terrain and set player spawn positions directly on the graphical interface.
+* **📥 Challenge File Sharing System (.zom):** Export/Import functionality lets you easily save custom maps or load maps from friends to challenge yourself. Share `.zom` files with the community and challenge other players!
+* **🛡️ Smart Spawn Shield:** Optional 5x5 safe zone around your character at game start, preventing unfair Zombie spawns too close.
+* **🖥️ Cyberpunk Combat Interface:** Dark color scheme combined with Live Radar Logs displaying real-time battlefield events (damage, explosions, zombie healing...) creating an intense atmosphere.
+
+---
+
+## 📑 Terrain Reference Guide
+
+| Terrain Type | Display Color | Combat Properties |
+| :--- | :--- | :--- |
+| **Dirt** | Brown | Normal movement. Costs 1 Stamina. |
+| **Water** | Blue | Swampy terrain slows movement. Costs 2 Stamina to traverse. |
+| **Wall** | Light Gray | Solid walls forming boundaries or structures, completely blocks movement. |
+
+---
+
+## 🎮 Screenshots
+
+![Screenshot 1 - Gameplay](SCREENSHOT_1_PLACEHOLDER)
+
+![Screenshot 2 - Map Editor](SCREENSHOT_2_PLACEHOLDER)
+
+---
+
+## 🚀 Building & Running
+
+### Quick Start (Linux)
+Pre-built executable is available in the [GitHub Releases](https://github.com/yourusername/ZomChess/releases). Simply download and run:
+```bash
+./ZomChess
+```
+
+### Build from Source
+
+**Requirements:**
+- CMake 3.10+
+- C++17 compatible compiler
+- SFML 2.5+
+- ImGui + ImGui-SFML
+
+**Linux:**
+```bash
+mkdir build && cd build
+cmake ..
+make
+./ZomChess
+```
+
+**Windows (MSVC):**
+```bash
+mkdir build && cd build
+cmake .. -G "Visual Studio 16 2019"
+cmake --build . --config Release
+.\Release\ZomChess.exe
+```
+
+**macOS:**
+```bash
+mkdir build && cd build
+cmake ..
+make
+./ZomChess
+```
+
+---
+
+## 🛠️ Technology Stack
+
+* **Language:** C++17 / C++20.
+* **Frameworks:**
+    * **SFML (Simple and Fast Multimedia Library):** Manages window, renders 2D graphics, sprites, and game loop.
+    * **Dear ImGui + ImGui-SFML:** Creates smooth character/zombie stat configuration sliders, control panels, and map editor interface.
+
+---
+
+## 🎵 Credits
+
+### Soundtrack Attribution
+* **Battle Theme:** [battle_theme.ogg](assets/music/battle_theme.ogg)
+* **Victory Theme:** [victory_theme.ogg](assets/music/victory_theme.ogg)
+* **Defeat Theme:** [defeat_theme.ogg](assets/music/defeat_theme.ogg)
+* **Menu Theme:** [menu_theme.ogg](assets/music/menu_theme.ogg)
+* **Additional Tracks:**
+  - "Ancient Rite" - [Ancient Rite.mp3](assets/music/Ancient%20Rite.mp3)
+  - "Discovery Hit" - [Discovery Hit.mp3](assets/music/Discovery%20Hit.mp3)
+  - "Impending Boom" - [Impending Boom.mp3](assets/music/Impending%20Boom.mp3)
+  - "The Ice Giants" - [The Ice Giants.mp3](assets/music/The%20Ice%20Giants.mp3)
+
+All music tracks are sourced from royalty-free music libraries and are used in accordance with their respective licenses.
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+# 🇻🇳 Phiên Bản Tiếng Việt
 
 ## 🌌 Bối Cảnh Trận Đánh
 
@@ -58,7 +221,7 @@ Mỗi loại Zombie sở hữu chỉ số máu (`HP`) và cơ chế di chuyển 
 
 * **⚡ Trận Đấu Nhanh (Quick Play):** Cung cấp 3 mức độ khó lập trình sẵn phù hợp với mọi trình độ: **Binh nhì (Easy)**, **Trung tá (Medium)**, và **Ác mộng (Hard)**.
 * **🛠️ Trình Biên Tập Bản Đồ Trực Quan (Visual Map Editor):** Cho phép bạn tự tay vẽ địa hình (Đất, Nước, Tường, Vật cản) và đặt vị trí xuất phát cho nhân vật ngay trên giao diện đồ họa.
-* **📥 Hệ Thống Chia Sẻ Thử Thách (.zom):** Tính năng Xuất/Nhập dữ liệu (`export_challenge_file` / `import_challenge_file`) giúp bạn dễ dàng lưu lại map tự chế hoặc tải bản đồ từ bạn bè để thử thách bản thân.
+* **📥 Hệ Thống Chia Sẻ Thử Thách (.zom):** Tính năng Xuất/Nhập dữ liệu (`export_challenge_file` / `import_challenge_file`) giúp bạn dễ dàng lưu lại map tự chế hoặc tải bản đồ từ bạn bè để thử thách bản thân. Chia sẻ file `.zom` với cộng đồng và thử thách những người chơi khác!
 * **🛡️ Vùng Bảo Hiểm Thông Minh (Spawn Shield):** Tùy chọn kích hoạt vùng an toàn 7x7 quanh nhân vật khi bắt đầu game, ngăn chặn Zombie sinh ra quá gần gây bất công.
 * **🖥️ Giao Diện Tác Chiến Cyberpunk:** Tông màu chủ đạo tối kết hợp bảng Live Radar Logs hiển thị thời gian thực mọi diễn biến trên chiến trường (sát thương, vụ nổ, zombie hồi máu...) tạo cảm giác nghẹt thở.
 
@@ -75,8 +238,82 @@ Mỗi loại Zombie sở hữu chỉ số máu (`HP`) và cơ chế di chuyển 
 
 ---
 
-## 🛠️ Công Nghệ Phát Triển
+## 🎮 Ảnh Chụp Màn Hình
 
-* **Language:** C++17 / C++20.
-* **Frameworks:** * **SFML (Simple and Fast Multimedia Library):** Quản lý cửa sổ, render đồ họa 2D, sprite và vòng lặp game.
+![Ảnh Chụp 1 - Gameplay](SCREENSHOT_1_PLACEHOLDER)
+
+![Ảnh Chụp 2 - Trình Chỉnh Sửa Bản Đồ](SCREENSHOT_2_PLACEHOLDER)
+
+---
+
+## 🚀 Cách Build & Chạy Game
+
+### Khởi Động Nhanh (Linux)
+File executable đã được build sẵn có sẵn trong [GitHub Releases](https://github.com/yourusername/ZomChess/releases). Chỉ cần tải xuống và chạy:
+```bash
+./ZomChess
+```
+
+### Build từ Source
+
+**Yêu cầu:**
+- CMake 3.10+
+- Trình biên dịch hỗ trợ C++17
+- SFML 2.5+
+- ImGui + ImGui-SFML
+
+**Linux:**
+```bash
+mkdir build && cd build
+cmake ..
+make
+./ZomChess
+```
+
+**Windows (MSVC):**
+```bash
+mkdir build && cd build
+cmake .. -G "Visual Studio 16 2019"
+cmake --build . --config Release
+.\Release\ZomChess.exe
+```
+
+**macOS:**
+```bash
+mkdir build && cd build
+cmake ..
+make
+./ZomChess
+```
+
+---
+
+## �️ Công Nghệ Phát Triển
+
+* **Ngôn Ngữ:** C++17 / C++20.
+* **Frameworks:**
+    * **SFML (Simple and Fast Multimedia Library):** Quản lý cửa sổ, render đồ họa 2D, sprite và vòng lặp game.
     * **Dear ImGui + ImGui-SFML:** Tạo các slider cấu hình chỉ số nhân vật/zombie, bảng điều khiển và trình chỉnh sửa map editor mượt mà.
+
+---
+
+## 🎵 Ghi Công
+
+### Ghi Công Nhạc Nền
+* **Battle Theme:** [battle_theme.ogg](assets/music/battle_theme.ogg)
+* **Victory Theme:** [victory_theme.ogg](assets/music/victory_theme.ogg)
+* **Defeat Theme:** [defeat_theme.ogg](assets/music/defeat_theme.ogg)
+* **Menu Theme:** [menu_theme.ogg](assets/music/menu_theme.ogg)
+* **Các Bài Hát Bổ Sung:**
+  - "Ancient Rite" - [Ancient Rite.mp3](assets/music/Ancient%20Rite.mp3)
+  - "Discovery Hit" - [Discovery Hit.mp3](assets/music/Discovery%20Hit.mp3)
+  - "Impending Boom" - [Impending Boom.mp3](assets/music/Impending%20Boom.mp3)
+  - "The Ice Giants" - [The Ice Giants.mp3](assets/music/The%20Ice%20Giants.mp3)
+
+Tất cả các bài hát được lấy từ các thư viện nhạc miễn phí bản quyền và được sử dụng theo các giấy phép tương ứng của chúng.
+
+---
+
+## 📄 Giấy Phép
+
+Dự án này được cấp phép theo Giấy phép MIT - xem tệp [LICENSE](LICENSE) để biết chi tiết.
