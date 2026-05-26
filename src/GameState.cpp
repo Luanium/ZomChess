@@ -563,17 +563,36 @@ bool GameState::is_blocked_by_wall(Position start, Position end) const {
     int dx = end.x - start.x;
     int dy = end.y - start.y;
     int steps = std::max(std::abs(dx), std::abs(dy));
-    if (steps <= 1) return false;
-    
-    for (int i = 1; i < steps; ++i) {
+    if (steps == 0) return false;
+
+    int prev_cx = start.x;
+    int prev_cy = start.y;
+
+    for (int i = 1; i <= steps; ++i) {
         float t = (float)i / steps;
-        int cx = std::round(start.x + dx * t);
-        int cy = std::round(start.y + dy * t);
-        if (cx >= 0 && cx < width && cy >= 0 && cy < height) {
-            if (grid[cx][cy] == Terrain::Wall) {
-                return true;
-            }
+        float fx = start.x + dx * t;
+        float fy = start.y + dy * t;
+        
+        bool x_half = (std::abs(fx - std::round(fx)) == 0.5f);
+        bool y_half = (std::abs(fy - std::round(fy)) == 0.5f);
+        
+        int cx1 = std::floor(fx);
+        int cx2 = std::ceil(fx);
+        int cy1 = std::floor(fy);
+        int cy2 = std::ceil(fy);
+
+        if (i < steps) {
+            if (cx1 >= 0 && cx1 < width && cy1 >= 0 && cy1 < height && grid[cx1][cy1] == Terrain::Wall) return true;
+            if (x_half && cx2 >= 0 && cx2 < width && cy1 >= 0 && cy1 < height && grid[cx2][cy1] == Terrain::Wall) return true;
+            if (y_half && cx1 >= 0 && cx1 < width && cy2 >= 0 && cy2 < height && grid[cx1][cy2] == Terrain::Wall) return true;
+            if (x_half && y_half && cx2 >= 0 && cx2 < width && cy2 >= 0 && cy2 < height && grid[cx2][cy2] == Terrain::Wall) return true;
         }
+
+        int curr_cx = std::round(fx);
+        int curr_cy = std::round(fy);
+        
+        prev_cx = curr_cx;
+        prev_cy = curr_cy;
     }
     return false;
 }
@@ -609,7 +628,7 @@ void GameState::check_fire_interactions() {
                     floating_texts.push_back({z->pos, -1, 1.0f, 1.0f});
                     add_log(tr("[FIRE] " + z->name + " entered fire while already burning! Suffered 1 immediate Fire damage.", "[FIRE] " + z->name + " di vao o lua khi dang bi thieu dot! Bi tru 1 mau lap tuc."), ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
                     if (z->hp <= 0 && z->type == ZombieType::Exploding) {
-                        trigger_explosion(z->pos.x, z->pos.y, true);
+                        queue_explosion(z->pos.x, z->pos.y, true);
                     }
                     check_victory_conditions();
                 } else {
@@ -648,7 +667,7 @@ void GameState::check_mine_interactions() {
     if (human.hp > 0 && mine_grid[human.pos.x][human.pos.y]) {
         mine_grid[human.pos.x][human.pos.y] = false;
         add_log("[RADIO] WATCH OUT! Human stepped on a mine. Stand by for detonation!", ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
-        trigger_explosion(human.pos.x, human.pos.y);
+        queue_explosion(human.pos.x, human.pos.y);
     }
 }
 
@@ -659,7 +678,7 @@ void GameState::check_mine_interactions() {
 // On slide: entity moves to the last ice cell in the run.
 // If the cell after the last ice cell is a blocker, entity is stunned (turn ends immediately).
 // Returns true if a slide occurred (caller should end the entity's turn).
-bool GameState::try_ice_slide(bool is_human, size_t zombie_idx, int move_dx, int move_dy) {
+bool GameState::try_ice_slide(bool is_human, size_t zombie_idx, int move_dx, int move_dy, bool& out_stunned) {
     // Guard: zero direction means no movement, nothing to do
     if (move_dx == 0 && move_dy == 0) return false;
     // Guard: zombie index out of range
@@ -794,15 +813,15 @@ bool GameState::try_ice_slide(bool is_human, size_t zombie_idx, int move_dx, int
     // Apply stun BEFORE check_fire_interactions
     if (has_blocker_after) {
         if (is_human) {
-            human.is_stunned = true;
+            out_stunned = true;
             human.stamina = 0;
-            add_log(tr("[ICE] Human slammed into an obstacle! STUNNED — turn ends immediately.",
-                       "[BANG] Human truot vao vat can! CHOANG — ket thuc luot ngay lap tuc."),
+            add_log(tr("[ICE] Human slammed into an obstacle! Turn ends immediately.",
+                       "[BANG] Human truot vao vat can! Ket thuc luot ngay lap tuc."),
                     ImVec4(0.6f, 0.85f, 1.0f, 1.0f));
         } else {
-            zombies[zombie_idx]->is_stunned = true;
-            add_log(tr("[ICE] " + entity_name + " slammed into an obstacle! STUNNED — action ends.",
-                       "[BANG] " + entity_name + " truot vao vat can! CHOANG — ket thuc hanh dong."),
+            out_stunned = true;
+            add_log(tr("[ICE] " + entity_name + " slammed into an obstacle! Action ends.",
+                       "[BANG] " + entity_name + " truot vao vat can! Ket thuc hanh dong."),
                     ImVec4(0.6f, 0.85f, 1.0f, 1.0f));
         }
     }
@@ -1150,7 +1169,7 @@ void GameState::apply_lightning_strike() {
     active_fx.cy = strike.y;
     active_fx.blast_cells = conductive_cluster;
 
-    add_log("[ENV] Lightning strikes (" + std::to_string(strike.x) + ", " + std::to_string(strike.y) + ")!", ImVec4(1.0f, 1.0f, 0.35f, 1.0f));
+    add_log("[ENV] Lightning strikes (" + std::to_string(strike.x + 1) + ", " + std::to_string(strike.y + 1) + ")!", ImVec4(1.0f, 1.0f, 0.35f, 1.0f));
 
     // Hủy loot tại ô bị sét đánh trực tiếp
     destroy_loot_at_cells({strike});
@@ -1188,7 +1207,7 @@ void GameState::apply_lightning_strike() {
                 add_log(tr("[ICE] Lightning shattered the ice! " + z->name + " unfrozen.",
                            "[BANG] Set danh vo bang! " + z->name + " duoc giai bang."), ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
             }
-            if (z->hp <= 0 && z->type == ZombieType::Exploding) trigger_explosion(z->pos.x, z->pos.y, true);
+            if (z->hp <= 0 && z->type == ZombieType::Exploding) queue_explosion(z->pos.x, z->pos.y, true);
         }
     }
 
@@ -1505,6 +1524,7 @@ void GameState::finish_environment_phase() {
     }
 
     phase = TurnPhase::HumanTurn;
+    input_mode = InputMode::MoveMode;
     add_log("=== HUMAN TURN " + std::to_string(current_turn) + " START ===", ImVec4(1.0f, 0.95f, 0.25f, 1.0f));
     turn_banner_fx.type = FXType::Electricity;
     turn_banner_fx.timer = 1.5f;
@@ -1540,7 +1560,7 @@ void GameState::update_environment_logic(float dt) {
             g.turns_left--;
             if (g.turns_left <= 0) {
                 add_log("[RADIO] Grenade timer expires. Detonation!", ImVec4(1.0f, 0.45f, 0.1f, 1.0f));
-                trigger_explosion(g.pos.x, g.pos.y);
+                queue_explosion(g.pos.x, g.pos.y);
                 g.active = false;
                 triggered_explosion = true;
             }
@@ -1556,7 +1576,9 @@ void GameState::update_environment_logic(float dt) {
     finish_environment_phase();
 }
 
-void GameState::trigger_explosion(int cx, int cy, bool is_zombie_exploding) { 
+void GameState::queue_explosion(int cx, int cy, bool is_zombie_exploding) { explosion_queue.push({cx, cy, is_zombie_exploding}); }
+
+void GameState::execute_explosion_internal(int cx, int cy, bool is_zombie_exploding) { 
     add_log("[EXPLOSION] Detonated at (" + std::to_string(cx) + ", " + std::to_string(cy) + ")!", ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
     sfx("explosion");
     
@@ -1821,7 +1843,7 @@ void GameState::trigger_explosion(int cx, int cy, bool is_zombie_exploding) {
     check_victory_conditions(); 
 
     for (auto pos : chain_reactions) {
-        trigger_explosion(pos.x, pos.y, true);
+        queue_explosion(pos.x, pos.y, true);
     }
 }
 
@@ -1871,14 +1893,20 @@ void GameState::zombie_single_step(size_t idx) {
         if (mine_grid[zom->pos.x][zom->pos.y]) { 
             mine_grid[zom->pos.x][zom->pos.y] = false; 
             add_log("[RADIO] Zombie #" + std::to_string(idx + 1) + " stepped on a mine. Stand by for detonation!", ImVec4(1.0f, 0.38f, 0.22f, 1.0f));
-            trigger_explosion(zom->pos.x, zom->pos.y); 
+            queue_explosion(zom->pos.x, zom->pos.y); 
         }
         // Ice slide check for zombie — only if it actually moved and is still alive
         if (zom->hp > 0 && grid[zom->pos.x][zom->pos.y] == Terrain::Ice) {
             int move_dx = zom->pos.x - old_pos.x;
             int move_dy = zom->pos.y - old_pos.y;
             if (move_dx != 0 || move_dy != 0) {
-                try_ice_slide(false, idx, move_dx, move_dy);
+                bool stun = false;
+                try_ice_slide(false, idx, move_dx, move_dy, stun);
+                if (stun) {
+                    // Force the end of zombie's turn
+                    active_zombie_idx++;
+                    active_zombie_substep = 0;
+                }
                 // try_ice_slide already calls check_fire_interactions + check_mine_interactions
                 return;
             }
@@ -1896,6 +1924,13 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
     sf::Vector2f hCenter = getCellCenter(human.pos.x, human.pos.y, cellSize, boardOffset); 
     sf::Vector2f tCenter = getCellCenter(tx, ty, cellSize, boardOffset); 
 
+    if (input_mode == InputMode::TargetPistol || input_mode == InputMode::TargetShotgun || 
+        input_mode == InputMode::TargetGrenade || input_mode == InputMode::TargetMolotov) {
+        if (std::abs(tx - human.pos.x) > 1 || std::abs(ty - human.pos.y) > 1 || (tx == human.pos.x && ty == human.pos.y)) {
+            return; // Ignore clicks outside the directional arrows
+        }
+    }
+
     if (input_mode == InputMode::TargetKnife) { 
         if (distance(human.pos, target) <= GameConstants::Weapons::KNIFE_RANGE) { 
             for (size_t i = 0; i < zombies.size(); ++i) { 
@@ -1910,7 +1945,7 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
                     active_fx.max_duration = 0.35f; 
                     active_fx.start_p = hCenter; 
                     active_fx.end_p = tCenter; 
-                    if (zombies[i]->hp <= 0 && zombies[i]->type == ZombieType::Exploding) trigger_explosion(target.x, target.y, true); 
+                    if (zombies[i]->hp <= 0 && zombies[i]->type == ZombieType::Exploding) queue_explosion(target.x, target.y, true); 
                     input_mode = InputMode::MoveMode; 
                     check_victory_conditions(); 
                     return; 
@@ -1963,7 +1998,7 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
                     zombies[i]->hp -= GameConstants::Weapons::PISTOL_DAMAGE; 
                     floating_texts.push_back({zombies[i]->pos, -GameConstants::Weapons::PISTOL_DAMAGE, 1.0f, 1.0f});
                     add_log("[RADIO] Pistol round lands on Zombie #" + std::to_string(i + 1) + ".", ImVec4(1.0f, 0.95f, 0.35f, 1.0f));
-                    if (zombies[i]->hp <= 0 && zombies[i]->type == ZombieType::Exploding) trigger_explosion(hit_pos.x, hit_pos.y, true); 
+                    if (zombies[i]->hp <= 0 && zombies[i]->type == ZombieType::Exploding) queue_explosion(hit_pos.x, hit_pos.y, true); 
                 } else {
                     add_log("[RADIO] Pistol round misses Zombie #" + std::to_string(i + 1) + ".", ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
                 }
@@ -2034,6 +2069,8 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
         }
 
         if (vx != 0 && vy != 0) {
+            int first_x = human.pos.x + vx;
+            int first_y = human.pos.y + vy;
             // Diagonal shot: Half of 4x4 square with vertex at (1,1) relative to player, reaching (1,4) and (4,1)
             for (int dx_step = 0; dx_step <= 3; ++dx_step) {
                 for (int dy_step = 0; dy_step <= 3; ++dy_step) {
@@ -2041,7 +2078,7 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
                         int fx = human.pos.x + vx + dx_step * vx;
                         int fy = human.pos.y + vy + dy_step * vy;
                         if (fx >= 0 && fx < width && fy >= 0 && fy < height) {
-                            if (!is_blocked_by_wall(human.pos, Position{fx, fy})) {
+                            if (!is_blocked_by_wall(Position{first_x, first_y}, Position{fx, fy})) {
                                 active_fx.blast_cells.push_back({fx, fy});
                             }
                         }
@@ -2050,6 +2087,8 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
             }
         } else {
             // Straight shot: 3-step expanding cone (exactly 9 cells)
+            int first_x = human.pos.x + vx;
+            int first_y = human.pos.y + vy;
             int px = -vy, py = vx; 
             for (int step = 1; step <= 3; ++step) { 
                 int cx = human.pos.x + vx * step; 
@@ -2059,7 +2098,7 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
                     int fx = cx + px * s; 
                     int fy = cy + py * s; 
                     if (fx >= 0 && fx < width && fy >= 0 && fy < height) {
-                        if (!is_blocked_by_wall(human.pos, Position{fx, fy})) {
+                        if (!is_blocked_by_wall(Position{first_x, first_y}, Position{fx, fy})) {
                             active_fx.blast_cells.push_back({fx, fy});
                         }
                     }
@@ -2116,7 +2155,7 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
 
             if (zombies[i]->hp <= 0) {
                 if (zombies[i]->type == ZombieType::Exploding) {
-                    trigger_explosion(zombies[i]->pos.x, zombies[i]->pos.y, true);
+                    queue_explosion(zombies[i]->pos.x, zombies[i]->pos.y, true);
                 }
                 continue;
             }
@@ -2128,7 +2167,7 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
                 zombies[i]->hp -= 1;
                 floating_texts.push_back({zombies[i]->pos, -1, 1.0f, 1.0f});
                 if (zombies[i]->hp <= 0 && zombies[i]->type == ZombieType::Exploding) {
-                    trigger_explosion(zombies[i]->pos.x, zombies[i]->pos.y, true);
+                    queue_explosion(zombies[i]->pos.x, zombies[i]->pos.y, true);
                 }
             } else {
                 size_t blocking_zombie_idx = -1;
@@ -2151,10 +2190,10 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
                     add_log("[RADIO] Zombie #" + std::to_string(i + 1) + " collided with Zombie #" + std::to_string(blocking_zombie_idx + 1) + ". Both take 1 collision damage.", ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
 
                     if (zombies[i]->hp <= 0 && zombies[i]->type == ZombieType::Exploding) {
-                        trigger_explosion(zombies[i]->pos.x, zombies[i]->pos.y, true);
+                        queue_explosion(zombies[i]->pos.x, zombies[i]->pos.y, true);
                     }
                     if (zombies[blocking_zombie_idx]->hp <= 0 && zombies[blocking_zombie_idx]->type == ZombieType::Exploding) {
-                        trigger_explosion(zombies[blocking_zombie_idx]->pos.x, zombies[blocking_zombie_idx]->pos.y, true);
+                        queue_explosion(zombies[blocking_zombie_idx]->pos.x, zombies[blocking_zombie_idx]->pos.y, true);
                     }
                 } else {
                     zombies[i]->pos = {rx, ry};
@@ -2186,8 +2225,8 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
         int cy = landing_pos.y;
         
         if (all_walls) {
-            add_log("[RADIO] CHOI NGU! Luu dan va vao tuong doi lai ngay duoi chan Human va NO NGAY LAP TUC!", ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
-            trigger_explosion(human.pos.x, human.pos.y);
+            add_log("[RADIO] Stupid! That direction is full of walls, the grenade falls at Human's feet and explodes immediately!", ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
+            queue_explosion(human.pos.x, human.pos.y);
         } else {
             GrenadeTimer g;
             g.active = true; 
@@ -2245,8 +2284,21 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
                         hit_zombie = true;
                         current_zombie_hit = true;
                     } else {
-                        zombies[i]->is_burning = true;
-                        add_log("-> Molotov hit " + zombies[i]->name + " directly! Target ignited.", ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
+                        zombies[i]->hp -= 1;
+                        floating_texts.push_back({zombies[i]->pos, -1, 1.0f, 1.0f});
+                        if (zombies[i]->hp <= 0 && zombies[i]->type == ZombieType::Exploding) {
+                            queue_explosion(zombies[i]->pos.x, zombies[i]->pos.y, true);
+                        }
+                        
+                        if (grid[cx][cy] == Terrain::Water) {
+                            add_log(tr("-> Molotov hit " + zombies[i]->name + " in water! Target took 1 impact damage, but fire fizzled.",
+                                       "-> Bom xang trung " + zombies[i]->name + " duoi nuoc! Mat 1 mau va lua bi dap tat."), ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
+                            zombies[i]->is_burning = false;
+                        } else {
+                            add_log(tr("-> Molotov hit " + zombies[i]->name + " directly! Took 1 impact damage and ignited.",
+                                       "-> Bom xang trung " + zombies[i]->name + " truc tiep! Mat 1 mau va bi boc chay."), ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
+                            zombies[i]->is_burning = false; // Temporarily false so check_fire_interactions ignites it without extra immediate damage
+                        }
                         hit_zombie = true;
                         current_zombie_hit = true;
                     }
@@ -2258,7 +2310,7 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
         Position hit_pos = landing_pos;
         
         if (all_walls) {
-            add_log("[RADIO] CHOI NGU! Molotov va vao tuong vo ngay duoi chan Human va BOC CHAY NGAY LAP TUC!", ImVec4(1.0f, 0.3f, 0.0f, 1.0f));
+            add_log("[RADIO] Stupid! That direction is full of walls, the molotov falls at Human's feet and ignites immediately!", ImVec4(1.0f, 0.3f, 0.0f, 1.0f));
         } else {
             sf::Vector2f hCenter = getCellCenter(human.pos.x, human.pos.y, cellSize, boardOffset);
             active_fx.type = FXType::Molotov; 
@@ -2402,7 +2454,7 @@ void GameState::update_zombie_logic(float dt) {
                     floating_texts.push_back({z->pos, -1, 1.0f, 1.0f});
                     z->is_burning = false;
                     add_log("[FIRE] " + z->name + " suffered 1 Burn Damage!", ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
-                    if (z->hp <= 0 && z->type == ZombieType::Exploding) trigger_explosion(z->pos.x, z->pos.y, true);
+                    if (z->hp <= 0 && z->type == ZombieType::Exploding) queue_explosion(z->pos.x, z->pos.y, true);
                 }
             }
             
@@ -2415,7 +2467,7 @@ void GameState::update_zombie_logic(float dt) {
                         g.turns_left--;
                         if (g.turns_left <= 0) {
                             add_log("[RADIO] Grenade timer expires. Detonation!", ImVec4(1.0f, 0.45f, 0.1f, 1.0f));
-                            trigger_explosion(g.pos.x, g.pos.y);
+                            queue_explosion(g.pos.x, g.pos.y);
                             g.active = false;
                         }
                     }
@@ -2463,38 +2515,16 @@ void GameState::update_zombie_logic(float dt) {
         active_zombie_substep = 0;
         return;
     }
-    if (zom->is_stunned) {
-        add_log(tr("[ICE] " + zom->name + " is stunned from ice collision! Loses remaining actions.",
-                   "[BANG] " + zom->name + " bi choang do truot bang! Mat cac hanh dong con lai."), ImVec4(0.6f, 0.85f, 1.0f, 1.0f));
-        zom->is_stunned = false;
-        active_zombie_idx++;
-        active_zombie_substep = 0;
-        return;
-    }
-    zombie_action_timer += dt; 
-    if (zombie_action_timer >= std::max(0.05f, ZOMBIE_STEP_DELAY)) { 
-        zombie_action_timer = 0.0f; 
-        zombie_single_step(active_zombie_idx); 
-
-        // Re-check hp and game state immediately after step (slide/fire/mine may have killed zombie)
-        if (game_over || game_won) return;
-        if (zom->hp <= 0) {
-            active_zombie_idx++; active_zombie_substep = 0; return;
-        }
-
-        // If zombie was stunned by ice slide, end its turn immediately (no attack, no more moves)
-        if (zom->is_stunned) {
-            zom->is_stunned = false;
-            active_zombie_idx++;
-            active_zombie_substep = 0;
-            return;
-        }
-        
-        if (zom->hp > 0) { 
+    zombie_action_timer += dt;
+    if (zom->pending_attack) {
+        if (zombie_action_timer >= 0.2f) { // Delay before attack
+            zombie_action_timer = 0.0f;
+            zom->pending_attack = false;
+            
+            // Re-verify they are still adjacent and human is alive
             int dx = std::abs(zom->pos.x - human.pos.x);
             int dy = std::abs(zom->pos.y - human.pos.y);
-            
-            if (dx <= 1 && dy <= 1 && (dx != 0 || dy != 0)) {
+            if (human.hp > 0 && zom->hp > 0 && dx <= 1 && dy <= 1 && (dx != 0 || dy != 0)) {
                 int dmg = 0;
                 VisualFX atk_fx;
                 atk_fx.cx = human.pos.x;
@@ -2528,11 +2558,11 @@ void GameState::update_zombie_logic(float dt) {
                 attack_animations.push_back(atk_fx);
 
                 if (zom->type == ZombieType::Vampire && dmg > 0) {
-                    zom->hp += dmg; // drain exactly as much HP as dealt
+                    zom->hp += dmg;
                     floating_texts.push_back({zom->pos, dmg, 1.0f, 1.0f});
                 }
                 if (zom->type == ZombieType::Sick) {
-                    if (dx + dy == 1) { // Orthogonal -> Bite (Direct bite)
+                    if (dx + dy == 1) { // Orthogonal -> Bite
                         int turns_left = std::max(0, turn_limit - current_turn);
                         int halved_left = turns_left / 2;
                         turn_limit = current_turn + halved_left;
@@ -2540,7 +2570,41 @@ void GameState::update_zombie_logic(float dt) {
                         human_sick_stamina_penalty = true;
                     }
                 }
-                check_victory_conditions(); 
+                check_victory_conditions();
+            }
+            active_zombie_idx++;
+            active_zombie_substep = 0;
+        }
+        return;
+    }
+
+    if (zombie_action_timer >= std::max(0.05f, ZOMBIE_STEP_DELAY)) { 
+        zombie_action_timer = 0.0f; 
+        
+        size_t old_idx = active_zombie_idx;
+        zombie_single_step(active_zombie_idx); 
+
+        if (game_over || game_won) return;
+        
+        if (zom->hp <= 0) {
+            if (active_zombie_idx == old_idx) { // Ensure we don't skip a zombie if it already advanced
+                active_zombie_idx++; active_zombie_substep = 0; 
+            }
+            return;
+        }
+        
+        if (active_zombie_idx != old_idx) {
+            // Zombie turn ended from stun or max moves inside zombie_single_step
+            return;
+        }
+        
+        if (zom->hp > 0) { 
+            int dx = std::abs(zom->pos.x - human.pos.x);
+            int dy = std::abs(zom->pos.y - human.pos.y);
+            
+            if (dx <= 1 && dy <= 1 && (dx != 0 || dy != 0)) {
+                zom->pending_attack = true;
+                return; // Wait for timer to execute attack
             }
         } 
         active_zombie_substep++; 
@@ -2736,7 +2800,7 @@ void GameState::use_ice_pick() {
     grid[px][py] = Terrain::Water;
     terrain_transitions.push_back({Position{px, py}, Terrain::Ice, Terrain::Water, 0.0f, 0.8f});
     thaw_loot_and_grenades_at({{px, py}});
-    sfx("footstep");
+    sfx("ice_pick");
 
     if (human.is_frozen) {
         human.is_frozen = false;

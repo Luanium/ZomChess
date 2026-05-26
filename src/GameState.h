@@ -6,6 +6,7 @@
 #include <vector>
 #include <memory>
 #include <random>
+#include <queue>
 
 // Forward declaration for AudioManager
 class AudioManager;
@@ -60,6 +61,13 @@ public:
     std::mt19937 rng;
     Terrain editor_selected_terrain = Terrain::Wall;
 
+    struct ExplosionEvent {
+        int cx;
+        int cy;
+        bool is_zombie_exploding;
+    };
+    std::queue<ExplosionEvent> explosion_queue;
+
     std::vector<LootDrop> loot_drops; // Loot rơi khi zombie chết
 
     // Audio management
@@ -80,7 +88,8 @@ public:
     sf::Vector2f getCellCenter(int x, int y, float cellSize, float offset);
     bool is_blocked_by_wall(Position start, Position end) const;
     
-    void trigger_explosion(int cx, int cy, bool is_zombie_exploding = false);
+    void queue_explosion(int cx, int cy, bool is_zombie_exploding = false);
+    void execute_explosion_internal(int cx, int cy, bool is_zombie_exploding);
     void zombie_single_step(size_t idx);
     void handle_weapon_click(int tx, int ty, float cellSize, float boardOffset);
     void start_zombie_phase();
@@ -120,8 +129,8 @@ public:
     void thaw_loot_and_grenades_at(const std::vector<Position>& cells);
 
     // Ice terrain helpers
-    // Returns true if entity slid (and turn should end immediately for that entity)
-    bool try_ice_slide(bool is_human, size_t zombie_idx, int move_dx, int move_dy);
+    // Returns true if entity slid
+    bool try_ice_slide(bool is_human, size_t zombie_idx, int move_dx, int move_dy, bool& out_stunned);
     // Ice Pick: break the ice tile human is standing on (Ice -> Water)
     void use_ice_pick();
 

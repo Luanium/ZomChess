@@ -380,8 +380,15 @@ int main() {
                     if (lx >= 0 && lx < VIEW_CELLS && ly >= 0 && ly < VIEW_CELLS &&
                         tx >= 0 && tx < state.width && ty >= 0 && ty < state.height) {
                         if (state.input_mode == InputMode::MoveMode) {
-                            // If frozen, player must use Ice Pick — movement is blocked
-                            if (state.human.is_frozen) {
+                            if (state.human.stamina == 0) {
+                                state.add_log(tr("[SYSTEM] Zero stamina! End turn!", "[HE THONG] Het stamina! Ket thuc luot!"), ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
+                                state.turn_banner_fx.type = FXType::Electricity;
+                                state.turn_banner_fx.timer = 1.0f;
+                                state.turn_banner_fx.max_duration = 1.0f;
+                                state.turn_banner_fx.banner_text = (ui_lang == Lang::VI) ? "HET STAMINA! KET THUC LUOT!" : "ZERO STAMINA! END TURN!";
+                                state.start_zombie_phase();
+                            } else if (state.human.is_frozen) {
+                                // If frozen, player must use Ice Pick — movement is blocked
                                 state.add_log(tr("[SYSTEM] You are frozen! Use the Ice Pick to break free.",
                                                "[HE THONG] Ban bi dong bang! Dung Cuoc Pha Bang de thoat ra."),
                                             ImVec4(0.6f, 0.85f, 1.0f, 1.0f));
@@ -389,7 +396,7 @@ int main() {
                                 int dx = std::abs(tx - state.human.pos.x);
                                 int dy = std::abs(ty - state.human.pos.y);
                                 if (dx <= 1 && dy <= 1 && (dx != 0 || dy != 0)) {
-                                    if (state.grid[tx][ty] != Terrain::Wall && state.grid[tx][ty] != Terrain::Wall) {
+                                    if (state.grid[tx][ty] != Terrain::Wall) {
                                         bool blocked = false;
                                         for (const auto& z : state.zombies) {
                                             if (z->hp > 0 && z->pos == Position{tx, ty}) { blocked = true; break; }
@@ -407,28 +414,18 @@ int main() {
                                                 state.check_loot_pickup();
                                                 // Ice slide check — try_ice_slide also calls check_fire/mine internally
                                                 if (state.human.hp > 0 && state.grid[state.human.pos.x][state.human.pos.y] == Terrain::Ice) {
-                                                    state.try_ice_slide(true, 0, move_dx, move_dy);
-                                                }
-                                                // Auto-end turn if stunned (set by try_ice_slide)
-                                                if (state.human.is_stunned) {
-                                                    state.human.is_stunned = false;
-                                                    state.start_zombie_phase();
+                                                    bool stun = false;
+                                                    state.try_ice_slide(true, 0, move_dx, move_dy, stun);
+                                                    if (stun) {
+                                                        state.start_zombie_phase();
+                                                    }
                                                 }
                                             } else {
-                                                if (state.human.stamina == 0) {
-                                                    state.add_log(tr("[SYSTEM] Zero stamina! End turn!", "[HE THONG] Het stamina! Ket thuc luot!"), ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
-                                                    state.turn_banner_fx.type = FXType::Electricity;
-                                                    state.turn_banner_fx.timer = 1.0f;
-                                                    state.turn_banner_fx.max_duration = 1.0f;
-                                                    state.turn_banner_fx.banner_text = (ui_lang == Lang::VI) ? "HET STAMINA! KET THUC LUOT!" : "ZERO STAMINA! END TURN!";
-                                                    state.start_zombie_phase();
-                                                } else {
-                                                    state.add_log(tr("[SYSTEM] Not enough stamina!", "[HE THONG] Khong du stamina!"), ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
-                                                    state.turn_banner_fx.type = FXType::Electricity;
-                                                    state.turn_banner_fx.timer = 1.0f;
-                                                    state.turn_banner_fx.max_duration = 1.0f;
-                                                    state.turn_banner_fx.banner_text = (ui_lang == Lang::VI) ? "KHONG DU STAMINA!" : "NOT ENOUGH STAMINA!";
-                                                }
+                                                state.add_log(tr("[SYSTEM] Not enough stamina!", "[HE THONG] Khong du stamina!"), ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
+                                                state.turn_banner_fx.type = FXType::Electricity;
+                                                state.turn_banner_fx.timer = 1.0f;
+                                                state.turn_banner_fx.max_duration = 1.0f;
+                                                state.turn_banner_fx.banner_text = (ui_lang == Lang::VI) ? "KHONG DU STAMINA!" : "NOT ENOUGH STAMINA!";
                                             }
                                         }
                                     }
@@ -488,6 +485,11 @@ int main() {
             if (state.active_fx.type != FXType::None) {
                 state.active_fx.timer -= dtSeconds;
                 if (state.active_fx.timer <= 0.0f) state.active_fx.type = FXType::None;
+            }
+            if (state.active_fx.type == FXType::None && !state.explosion_queue.empty()) {
+                auto ev = state.explosion_queue.front();
+                state.explosion_queue.pop();
+                state.execute_explosion_internal(ev.cx, ev.cy, ev.is_zombie_exploding);
             }
             for (auto it = state.attack_animations.begin(); it != state.attack_animations.end();) {
                 it->timer -= dtSeconds;
@@ -1254,10 +1256,25 @@ int main() {
                                         int ovx = nx - viewX + padX;
                                         int ovy = ny - viewY + padY;
                                         if (ovx >= 0 && ovx < VIEW_CELLS && ovy >= 0 && ovy < VIEW_CELLS) {
-                                            sf::RectangleShape moveOverlay(sf::Vector2f(cellSize - 2.0f, cellSize - 2.0f));
-                                            moveOverlay.setPosition(ovx * cellSize + boardOffset, ovy * cellSize + boardOffset);
-                                            moveOverlay.setFillColor(sf::Color(100, 255, 100, 70));
-                                            window.draw(moveOverlay);
+                                            sf::ConvexShape arrow(4);
+                                            float cx = ovx * cellSize + boardOffset + cellSize / 2.0f;
+                                            float cy = ovy * cellSize + boardOffset + cellSize / 2.0f;
+                                            float angle = std::atan2(dy, dx);
+                                            float size = 10.0f;
+                                            
+                                            arrow.setPoint(0, sf::Vector2f(std::cos(angle) * size, std::sin(angle) * size));
+                                            arrow.setPoint(1, sf::Vector2f(std::cos(angle + 2.3f) * size, std::sin(angle + 2.3f) * size));
+                                            arrow.setPoint(2, sf::Vector2f(std::cos(angle + 3.14159f) * (size * 0.3f), std::sin(angle + 3.14159f) * (size * 0.3f)));
+                                            arrow.setPoint(3, sf::Vector2f(std::cos(angle - 2.3f) * size, std::sin(angle - 2.3f) * size));
+                                            
+                                            float pulse = std::sin(timeSec * 10.0f) * 0.2f + 1.0f;
+                                            arrow.setScale(pulse, pulse);
+                                            arrow.setPosition(cx, cy);
+                                            arrow.setFillColor(sf::Color(255, 220, 50, 230));
+                                            arrow.setOutlineColor(sf::Color(40, 30, 10, 200));
+                                            arrow.setOutlineThickness(1.5f);
+                                            
+                                            window.draw(arrow);
                                         }
                                     }
                                 }
@@ -1269,22 +1286,28 @@ int main() {
 
             if (hasFont) {
                 for (int lx = 0; lx < VIEW_CELLS; ++lx) {
-                    sf::Text tx;
-                    tx.setFont(boardFont);
-                    tx.setCharacterSize(12);
-                    tx.setString(std::to_string(viewX + (lx - padX) + 1));
-                    tx.setFillColor(sf::Color(180, 190, 205));
-                    tx.setPosition(lx * cellSize + boardOffset + cellSize * 0.35f, boardOffset - 16.0f);
-                    window.draw(tx);
+                    int mapX = viewX + (lx - padX);
+                    if (mapX >= 0 && mapX < state.width) {
+                        sf::Text tx;
+                        tx.setFont(boardFont);
+                        tx.setCharacterSize(12);
+                        tx.setString(std::to_string(mapX + 1));
+                        tx.setFillColor(sf::Color(180, 190, 205));
+                        tx.setPosition(lx * cellSize + boardOffset + cellSize * 0.35f, boardOffset - 16.0f);
+                        window.draw(tx);
+                    }
                 }
                 for (int ly = 0; ly < VIEW_CELLS; ++ly) {
-                    sf::Text ty;
-                    ty.setFont(boardFont);
-                    ty.setCharacterSize(12);
-                    ty.setString(std::to_string(viewY + (ly - padY) + 1));
-                    ty.setFillColor(sf::Color(180, 190, 205));
-                    ty.setPosition(boardOffset - 16.0f, ly * cellSize + boardOffset + cellSize * 0.28f);
-                    window.draw(ty);
+                    int mapY = viewY + (ly - padY);
+                    if (mapY >= 0 && mapY < state.height) {
+                        sf::Text ty;
+                        ty.setFont(boardFont);
+                        ty.setCharacterSize(12);
+                        ty.setString(std::to_string(mapY + 1));
+                        ty.setFillColor(sf::Color(180, 190, 205));
+                        ty.setPosition(boardOffset - 16.0f, ly * cellSize + boardOffset + cellSize * 0.28f);
+                        window.draw(ty);
+                    }
                 }
             }
 
@@ -1415,12 +1438,11 @@ int main() {
 
                     // Blinking status tags on zombie icon — all active tags shown side by side
                     bool blinkOn = std::sin(timeSec * 10.0f) > 0.0f;
-                    if (blinkOn && (z->is_burning || z->is_paralyzed || z->is_stunned || z->is_frozen)) {
+                    if (blinkOn && (z->is_burning || z->is_paralyzed || z->is_frozen)) {
                         struct TagInfo { const char* label; sf::Color color; };
                         std::vector<TagInfo> tags;
                         if (z->is_burning)   tags.push_back({"B", sf::Color(230, 40,  40)});
                         if (z->is_paralyzed) tags.push_back({"P", sf::Color(242, 214, 61)});
-                        if (z->is_stunned)   tags.push_back({"S", sf::Color(100, 220, 255)});
                         if (z->is_frozen)    tags.push_back({"F", sf::Color(160, 230, 255)});
                         float tagW = (cellSize - 6.0f) / static_cast<float>(tags.size());
                         for (int ti = 0; ti < (int)tags.size(); ++ti) {
@@ -1522,12 +1544,11 @@ int main() {
 
             if (hasFont) {
                 bool blinkOn = std::sin(timeSec * 10.0f) > 0.0f;
-                if (blinkOn && (state.human.is_burning || state.human.is_paralyzed || state.human.is_stunned || state.human.is_frozen)) {
+                if (blinkOn && (state.human.is_burning || state.human.is_paralyzed || state.human.is_frozen)) {
                     struct TagInfo { const char* label; sf::Color color; };
                     std::vector<TagInfo> tags;
                     if (state.human.is_burning)   tags.push_back({"B", sf::Color(230, 40,  40)});
                     if (state.human.is_paralyzed) tags.push_back({"P", sf::Color(242, 214, 61)});
-                    if (state.human.is_stunned)   tags.push_back({"S", sf::Color(100, 220, 255)});
                     if (state.human.is_frozen)    tags.push_back({"F", sf::Color(160, 230, 255)});
                     float tagW = (cellSize - 6.0f) / static_cast<float>(tags.size());
                     for (int ti = 0; ti < (int)tags.size(); ++ti) {
@@ -1538,6 +1559,50 @@ int main() {
                         tagTxt.setString(tags[ti].label);
                         tagTxt.setPosition(drawX + ti * tagW + tagW * 0.5f - 4.0f, drawY - 1.0f);
                         if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) window.draw(tagTxt);
+                    }
+                }
+            }
+
+            if (state.phase == TurnPhase::HumanTurn && !state.human.is_paralyzed && !state.human.is_frozen && 
+                    (state.input_mode == InputMode::TargetPistol || state.input_mode == InputMode::TargetShotgun || 
+                     state.input_mode == InputMode::TargetGrenade || state.input_mode == InputMode::TargetMolotov)) {
+                for (int dx = -1; dx <= 1; ++dx) {
+                    for (int dy = -1; dy <= 1; ++dy) {
+                        if (dx == 0 && dy == 0) continue;
+                        int nx = state.human.pos.x + dx;
+                        int ny = state.human.pos.y + dy;
+                        if (nx >= 0 && nx < state.width && ny >= 0 && ny < state.height) {
+                            int ovx = nx - viewX + padX;
+                            int ovy = ny - viewY + padY;
+                            if (ovx >= 0 && ovx < VIEW_CELLS && ovy >= 0 && ovy < VIEW_CELLS) {
+                                sf::ConvexShape arrow(4);
+                                float cx = ovx * cellSize + boardOffset + cellSize / 2.0f;
+                                float cy = ovy * cellSize + boardOffset + cellSize / 2.0f;
+                                float angle = std::atan2(dy, dx);
+                                float size = 12.0f;
+                                
+                                arrow.setPoint(0, sf::Vector2f(std::cos(angle) * size, std::sin(angle) * size));
+                                arrow.setPoint(1, sf::Vector2f(std::cos(angle + 2.0f) * size, std::sin(angle + 2.0f) * size));
+                                arrow.setPoint(2, sf::Vector2f(std::cos(angle + 3.14159f) * (size * 0.1f), std::sin(angle + 3.14159f) * (size * 0.1f)));
+                                arrow.setPoint(3, sf::Vector2f(std::cos(angle - 2.0f) * size, std::sin(angle - 2.0f) * size));
+                                
+                                float pulse = std::sin(timeSec * 15.0f) * 0.15f + 1.0f;
+                                arrow.setScale(pulse, pulse);
+                                arrow.setPosition(cx, cy);
+                                
+                                bool is_shoot = (state.input_mode == InputMode::TargetPistol || state.input_mode == InputMode::TargetShotgun);
+                                if (is_shoot) {
+                                    arrow.setFillColor(sf::Color(255, 60, 60, 230)); // Red for shooting
+                                    arrow.setOutlineColor(sf::Color(60, 10, 10, 200));
+                                } else {
+                                    arrow.setFillColor(sf::Color(60, 255, 60, 230)); // Green for throwing
+                                    arrow.setOutlineColor(sf::Color(10, 60, 10, 200));
+                                }
+                                arrow.setOutlineThickness(1.5f);
+                                
+                                window.draw(arrow);
+                            }
+                        }
                     }
                 }
             }
@@ -1577,12 +1642,19 @@ int main() {
             if (state.active_fx.type != FXType::None) {
                 float progress = state.active_fx.timer / state.active_fx.max_duration;
                 sf::Uint8 alpha = static_cast<sf::Uint8>(progress * 255);
+                sf::Vector2f view_shift((viewX - padX) * cellSize, (viewY - padY) * cellSize);
                 if (state.active_fx.type == FXType::Pistol) {
-                    sf::Vertex bLine[] = { sf::Vertex(state.active_fx.start_p, sf::Color(255, 255, 100, alpha)), sf::Vertex(state.active_fx.end_p, sf::Color(255, 60, 60, alpha)) };
+                    sf::Vertex bLine[] = { sf::Vertex(state.active_fx.start_p - view_shift, sf::Color(255, 255, 100, alpha)), sf::Vertex(state.active_fx.end_p - view_shift, sf::Color(255, 60, 60, alpha)) };
                     window.draw(bLine, 2, sf::Lines);
+                } else if (state.active_fx.type == FXType::Knife) {
+                    float t = 1.0f - progress;
+                    sf::Vector2f slash_start = state.active_fx.end_p - view_shift + sf::Vector2f(-15.0f + 30.0f * t, -15.0f - 10.0f * t);
+                    sf::Vector2f slash_end = state.active_fx.end_p - view_shift + sf::Vector2f(15.0f - 10.0f * t, 15.0f + 30.0f * t);
+                    sf::Vertex slash[] = { sf::Vertex(slash_start, sf::Color(220, 220, 220, alpha)), sf::Vertex(slash_end, sf::Color(255, 255, 255, alpha)) };
+                    window.draw(slash, 2, sf::Lines);
                 } else if (state.active_fx.type == FXType::Molotov) {
                     float t = 1.0f - progress;
-                    sf::Vector2f current_pos = state.active_fx.start_p + (state.active_fx.end_p - state.active_fx.start_p) * t;
+                    sf::Vector2f current_pos = state.active_fx.start_p - view_shift + (state.active_fx.end_p - state.active_fx.start_p) * t;
                     sf::CircleShape proj(6.0f, 6); 
                     proj.setFillColor(sf::Color(255, 120, 0, 230)); 
                     proj.setOutlineColor(sf::Color(200, 30, 0, 230));
@@ -1592,7 +1664,7 @@ int main() {
                     window.draw(proj);
                 } else if (state.active_fx.type == FXType::GrenadeFly) {
                     float t = 1.0f - progress;
-                    sf::Vector2f current_pos = state.active_fx.start_p + (state.active_fx.end_p - state.active_fx.start_p) * t;
+                    sf::Vector2f current_pos = state.active_fx.start_p - view_shift + (state.active_fx.end_p - state.active_fx.start_p) * t;
                     sf::CircleShape proj(6.0f, 8); 
                     proj.setFillColor(sf::Color(100, 255, 100, 220)); 
                     proj.setOutlineColor(sf::Color(30, 150, 30, 220));
@@ -1608,9 +1680,14 @@ int main() {
                         intensity = progress * flash;
                     }
                     for (auto p : state.active_fx.blast_cells) {
-                        sf::RectangleShape blastZone(sf::Vector2f(cellSize - 2.0f, cellSize - 2.0f));
-                        blastZone.setFillColor(state.active_fx.type == FXType::Shotgun ? sf::Color(255,130,30, intensity*180) : sf::Color(255,50,10, intensity*240));
-                        blastZone.setPosition(p.x * cellSize + boardOffset, p.y * cellSize + boardOffset); window.draw(blastZone);
+                        int bx = p.x - viewX + padX;
+                        int by = p.y - viewY + padY;
+                        if (bx >= 0 && bx < VIEW_CELLS && by >= 0 && by < VIEW_CELLS) {
+                            sf::RectangleShape blastZone(sf::Vector2f(cellSize - 2.0f, cellSize - 2.0f));
+                            blastZone.setFillColor(state.active_fx.type == FXType::Shotgun ? sf::Color(255,130,30, intensity*180) : sf::Color(255,50,10, intensity*240));
+                            blastZone.setPosition(bx * cellSize + boardOffset + 1.0f, by * cellSize + boardOffset + 1.0f); 
+                            window.draw(blastZone);
+                        }
                     }
                 } else if (state.active_fx.type == FXType::Wind) {
                     sf::Color windColor(180, 220, 255, alpha);
@@ -1661,7 +1738,7 @@ int main() {
                             window.draw(drop, 2, sf::Lines);
                         }
                     } else {
-                        sf::RectangleShape cloud(sf::Vector2f(state.width * cellSize, state.height * cellSize));
+                        sf::RectangleShape cloud(sf::Vector2f(VIEW_CELLS * cellSize, VIEW_CELLS * cellSize));
                         cloud.setFillColor(sf::Color(0, 0, 0, static_cast<sf::Uint8>((1.0f - progress) * 254)));
                         cloud.setPosition(boardOffset, boardOffset);
                         window.draw(cloud);
@@ -1669,19 +1746,19 @@ int main() {
                 } else if (state.active_fx.type == FXType::Heatwave) {
                     // Golden/yellow shimmer overlay for heatwave
                     float intensity = 0.5f + 0.3f * std::sin(timeSec * 4.0f);  // Pulsing effect
-                    sf::RectangleShape overlay(sf::Vector2f(state.width * cellSize, state.height * cellSize));
+                    sf::RectangleShape overlay(sf::Vector2f(VIEW_CELLS * cellSize, VIEW_CELLS * cellSize));
                     overlay.setFillColor(sf::Color(255, 220, 100, static_cast<sf::Uint8>(intensity * 100)));
                     overlay.setPosition(boardOffset, boardOffset);
                     window.draw(overlay);
                 } else if (state.active_fx.type == FXType::Blizzard) {
                     // Icy white shimmer overlay for blizzard
                     float intensity = 0.5f + 0.3f * std::sin(timeSec * 4.0f);  // Pulsing effect
-                    sf::RectangleShape overlay(sf::Vector2f(state.width * cellSize, state.height * cellSize));
+                    sf::RectangleShape overlay(sf::Vector2f(VIEW_CELLS * cellSize, VIEW_CELLS * cellSize));
                     overlay.setFillColor(sf::Color(220, 240, 255, static_cast<sf::Uint8>(intensity * 100)));
                     overlay.setPosition(boardOffset, boardOffset);
                     window.draw(overlay);
                 } else if (state.active_fx.type == FXType::Lightning) {
-                    sf::Vector2f target = state.getCellCenter(state.active_fx.cx, state.active_fx.cy, cellSize, boardOffset);
+                    sf::Vector2f target = state.getCellCenter(state.active_fx.cx, state.active_fx.cy, cellSize, boardOffset) - view_shift;
                     float startY = boardOffset;
                     float endY = target.y + cellSize / 2.0f;
                     
@@ -1729,10 +1806,14 @@ int main() {
                     draw_bolt(sf::Color(255, 255, 255, 255), 0.0f);
                     
                     for (auto p : state.active_fx.blast_cells) {
-                        sf::RectangleShape electric(sf::Vector2f(cellSize - 4.0f, cellSize - 4.0f));
-                        electric.setFillColor(sf::Color(80, 220, 255, progress * 130));
-                        electric.setPosition(p.x * cellSize + boardOffset + 2.0f, p.y * cellSize + boardOffset + 2.0f);
-                        window.draw(electric);
+                        int bx = p.x - viewX + padX;
+                        int by = p.y - viewY + padY;
+                        if (bx >= 0 && bx < VIEW_CELLS && by >= 0 && by < VIEW_CELLS) {
+                            sf::RectangleShape electric(sf::Vector2f(cellSize - 4.0f, cellSize - 4.0f));
+                            electric.setFillColor(sf::Color(80, 220, 255, progress * 130));
+                            electric.setPosition(bx * cellSize + boardOffset + 2.0f, by * cellSize + boardOffset + 2.0f);
+                            window.draw(electric);
+                        }
                     }
                 }
             }
@@ -1741,7 +1822,7 @@ int main() {
             for (const auto& fx : state.attack_animations) {
                 float progress = 1.0f - (fx.timer / fx.max_duration);
                 sf::Uint8 alpha = static_cast<sf::Uint8>((1.0f - progress) * 255);
-                sf::Vector2f center = state.getCellCenter(fx.cx, fx.cy, cellSize, boardOffset);
+                sf::Vector2f center = state.getCellCenter(fx.cx, fx.cy, cellSize, boardOffset) - sf::Vector2f((viewX - padX) * cellSize, (viewY - padY) * cellSize);
 
                 if (fx.type == FXType::Bite) {
                     float dist = (progress < 0.5f) ? (15.0f * (1.0f - progress * 2.0f)) : 0.0f;
@@ -1771,7 +1852,7 @@ int main() {
                     fTxt.setCharacterSize(16);
                     fTxt.setFillColor(sf::Color(ft.amount > 0 ? 50 : 255, ft.amount > 0 ? 255 : 50, 50, alpha));
                     
-                    sf::Vector2f center = state.getCellCenter(ft.pos.x, ft.pos.y, cellSize, boardOffset);
+                    sf::Vector2f center = state.getCellCenter(ft.pos.x, ft.pos.y, cellSize, boardOffset) - sf::Vector2f((viewX - padX) * cellSize, (viewY - padY) * cellSize);
                     fTxt.setPosition(center.x - 8, center.y - 15 - (progress * 25.0f));
                     window.draw(fTxt);
                 }
@@ -1903,7 +1984,7 @@ int main() {
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr("Return to the main menu. Current game progress will be lost.", "Quay ve menu chinh. Tien trinh game hien tai se bi mat."));
             ImGui::PopStyleColor(3);
 
-            ImGui::TextColored(ImVec4(1, 0.55f, 0.9f, 1), "%s", tr("Weapons:", "Vu khi:"));
+            ImGui::TextColored(ImVec4(1, 0.55f, 0.9f, 1), "%s", tr("Actions:", "Hanh dong:"));
             
             // ── Shared terrain legend helper ──────────────────────────
             auto terrain_legend_item = [&](const char* label, ImVec4 color, const char* tip_en, const char* tip_vi) {
@@ -1929,10 +2010,10 @@ int main() {
                     return ImGui::CalcTextSize(lbl.c_str()).x + sty.FramePadding.x * 2.0f;
                 };
 
-                // Row 1: "Knife" + "Ice Pick [-2 ST]"  (worst case: frozen = -2)
+                // Row 1: "Move" + "Knife" + "Ice Pick [-2 ST]"  (worst case: frozen = -2)
                 std::string pick_lbl_frozen = tr("Ice Pick", "Cuoc Pha Bang");
                 pick_lbl_frozen += " [-2 ST]";
-                float row1 = btn_w("Knife") + sty.ItemSpacing.x + btn_w(pick_lbl_frozen);
+                float row1 = btn_w("Move") + sty.ItemSpacing.x + btn_w("Knife") + sty.ItemSpacing.x + btn_w(pick_lbl_frozen);
 
                 // Row 2: "Pistol (XX)" + "Shotgun (XX)"
                 std::string pistol_lbl  = "Pistol (" + std::to_string(state.human.pistol_ammo)  + ")";
@@ -1969,7 +2050,11 @@ int main() {
                 if (disabled) { ImGui::EndDisabled(); }
             };
 
-            // Row 1: Knife + Ice Pick
+            // Row 1: Move + Knife + Ice Pick
+            weapon_button("Move", InputMode::MoveMode,
+                "Move adjacent tile. Costs 1 stamina.",
+                "Di chuyen o ke ben. Ton 1 the luc.");
+            ImGui::SameLine();
             weapon_button("Knife", InputMode::TargetKnife,
                 "Melee attack. 1 damage. Click an adjacent tile to strike.",
                 "Can chien. 1 sat thuong. Nhan vao o ke ben de tan cong.");
@@ -2022,12 +2107,18 @@ int main() {
                 "Nem bom xang 1-6 o. Tao vung lua khi trung.");
             ImGui::SameLine();
             {
-                bool mine_disabled = state.human.is_paralyzed || state.human.stamina == 0 || state.phase != TurnPhase::HumanTurn || state.human.mines == 0;
+                bool mine_disabled = state.human.is_paralyzed || state.human.stamina == 0 || state.phase != TurnPhase::HumanTurn || state.human.mines == 0 || state.grid[state.human.pos.x][state.human.pos.y] == Terrain::Ice;
                 if (mine_disabled) { ImGui::BeginDisabled(); }
                 if (ImGui::Button(("Mine (" + std::to_string(state.human.mines) + ")").c_str())) {
                     if (!mine_disabled) {
-                        state.mine_grid[state.human.pos.x][state.human.pos.y] = true;
-                        state.human.mines--; state.human.stamina--;
+                        if (state.mine_grid[state.human.pos.x][state.human.pos.y]) {
+                            state.add_log(state.tr("[SYSTEM] Cannot place mine: a mine is already here!", "[HE THONG] Khong the cai min: o nay da co min!"), ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
+                        } else {
+                            state.mine_grid[state.human.pos.x][state.human.pos.y] = true;
+                            state.human.mines--; state.human.stamina--;
+                            state.add_log(state.tr("-> Human placed a claymore mine.", "-> Nguoi cai min claymore."), ImVec4(1.0f, 0.7f, 0.3f, 1.0f));
+                            sfx("mine_plant");
+                        }
                     }
                 }
                 if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {

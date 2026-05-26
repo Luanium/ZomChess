@@ -348,6 +348,30 @@ static sf::SoundBuffer makeRain() {
     return buildBuffer(s);
 }
 
+// ─── Ice Pick ───────────────────────────────────────────────────────────────
+// Sharp high-pitched strike: fast transient and high-pass noise
+static sf::SoundBuffer makeIcePick() {
+    std::mt19937 rng(15);
+    const float dur = 0.15f;
+    int n = static_cast<int>(dur * SAMPLE_RATE);
+    std::vector<float> s(n);
+    float hp = 0.f;
+    for (int i = 0; i < n; ++i) {
+        float t = (float)i / SAMPLE_RATE;
+        float raw = noise(rng);
+        hp = hp * 0.4f + raw * 0.6f;
+        float hi = raw - hp;
+        
+        // sharp strike tone
+        float tone = std::sin(2.f * M_PI * 2500.f * t) * std::exp(-t * 80.f);
+        // shatter noise
+        float shatter = hi * std::exp(-t * 20.f);
+        
+        s[i] = (tone * 0.4f + shatter * 0.6f) * 0.85f;
+    }
+    return buildBuffer(s);
+}
+
 // ─── Register all sounds into AudioManager ──────────────────────────────────
 // Call once during initAudio()
 static void registerAll(class AudioManager& audio) {
@@ -366,6 +390,7 @@ static void registerAll(class AudioManager& audio) {
     audio.loadSoundFromBuffer("knife",       makeKnife());
     audio.loadSoundFromBuffer("molotov",     makeMolotov());
     audio.loadSoundFromBuffer("rain",        makeRain());
+    audio.loadSoundFromBuffer("ice_pick",    makeIcePick());
 }
 
 } // namespace SoundSynth
