@@ -1848,6 +1848,39 @@ int main() {
             ImGui::SetNextWindowPos(ImVec2(panelX, panelY), ImGuiCond_Always);
             ImGui::SetNextWindowSize(ImVec2(panelW2, panelH), ImGuiCond_Always);
             ImGui::Begin("Tactical Control Panel", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize);
+            Terrain human_terrain = state.grid[state.human.pos.x][state.human.pos.y];
+            auto terrain_name = [&](Terrain t) -> const char* {
+                switch (t) {
+                    case Terrain::Dirt:   return tr("Dirt", "Dat");
+                    case Terrain::Wall:   return tr("Wall", "Tuong");
+                    case Terrain::Water:  return tr("Water", "Nuoc");
+                    case Terrain::Forest: return tr("Forest", "Rung");
+                    case Terrain::Ice:    return tr("Ice", "Bang");
+                    case Terrain::Fire:   return tr("Fire", "Lua");
+                    default:              return tr("Unknown", "Khong ro");
+                }
+            };
+            auto terrain_color = [&](Terrain t) -> ImVec4 {
+                switch (t) {
+                    case Terrain::Dirt:   return ImVec4(105/255.f, 60/255.f, 35/255.f, 1.f);
+                    case Terrain::Wall:   return ImVec4(60/255.f, 62/255.f, 66/255.f, 1.f);
+                    case Terrain::Water:  return ImVec4(35/255.f, 75/255.f, 115/255.f, 1.f);
+                    case Terrain::Forest: return ImVec4(34/255.f, 110/255.f, 48/255.f, 1.f);
+                    case Terrain::Ice:    return ImVec4(160/255.f, 210/255.f, 240/255.f, 1.f);
+                    case Terrain::Fire:   return ImVec4(220/255.f, 80/255.f, 20/255.f, 1.f);
+                    default:              return ImVec4(0.85f, 0.85f, 0.85f, 1.f);
+                }
+            };
+            auto weather_color = [&](const std::string& event_name) -> ImVec4 {
+                if (event_name == "Clear skies") return ImVec4(0.9f, 0.95f, 1.0f, 1.0f);
+                if (event_name == "Windstorm")   return ImVec4(0.65f, 0.85f, 1.0f, 1.0f);
+                if (event_name == "Heavy rain")  return ImVec4(0.4f, 0.6f, 1.0f, 1.0f);
+                if (event_name == "Dark clouds") return ImVec4(0.5f, 0.5f, 0.7f, 1.0f);
+                if (event_name == "Lightning")   return ImVec4(1.0f, 1.0f, 0.35f, 1.0f);
+                if (event_name == "Heatwave")    return ImVec4(1.0f, 0.7f, 0.2f, 1.0f);
+                if (event_name == "Blizzard")    return ImVec4(0.7f, 0.9f, 1.0f, 1.0f);
+                return ImVec4(0.3f, 0.95f, 1.0f, 1.0f);
+            };
 
             ImGui::TextColored(ImVec4(0.3f,0.95f,1,1), "%s %d/%d",
                                tr("TURN","LUOT"), state.current_turn, state.turn_limit);
@@ -1865,14 +1898,13 @@ int main() {
                 "Hit Points: reaches 0 = game over. Restored by Health Potion loot drops.",
                 "Diem mau: ve 0 = thua cuoc. Hoi phuc bang loot Binh Mau."));
             ImGui::SameLine(); ImGui::TextColored(ImVec4(0.3f,0.95f,1,1), "|");
-            ImGui::SameLine(); ImGui::TextColored(ImVec4(0.3f,0.95f,1,1), "%s [%d,%d]",
-                               tr("Pos","Vi tri"), state.human.pos.x + 1, state.human.pos.y + 1);
+            ImGui::SameLine(); ImGui::TextColored(terrain_color(human_terrain), "%s", terrain_name(human_terrain));
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr(
-                "Current position on the map (column, row). Click adjacent tiles to move.",
-                "Vi tri hien tai tren ban do (cot, hang). Nhan vao o ke ben de di chuyen."));
+                "Terrain tile Human is currently standing on.",
+                "O dia hinh ma Human dang dung."));
             ImGui::SameLine(); ImGui::TextColored(ImVec4(0.3f,0.95f,1,1), "|");
-            ImGui::SameLine(); ImGui::TextColored(ImVec4(0.3f,0.95f,1,1), "%s: %s",
-                               tr("Env","MT"), state.last_environment_event.c_str());
+            ImGui::SameLine(); ImGui::TextColored(weather_color(state.last_environment_event), "%s",
+                               state.last_environment_event.c_str());
             if (ImGui::IsItemHovered()) {
                 const char* env_tip_en =
                     "Environment event this turn.\n"
@@ -2101,6 +2133,7 @@ int main() {
                 if (mine_disabled) { ImGui::BeginDisabled(); }
                 if (ImGui::Button(("Mine (" + std::to_string(state.human.mines) + ")").c_str())) {
                     if (!mine_disabled) {
+                        state.input_mode = InputMode::MoveMode;
                         if (state.mine_grid[state.human.pos.x][state.human.pos.y]) {
                             state.add_log(state.tr("[SYSTEM] Cannot place mine: a mine is already here!", "[HE THONG] Khong the cai min: o nay da co min!"), ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
                         } else {
