@@ -1237,53 +1237,6 @@ int main() {
                 }
             }
 
-            // Draw move overlay for Human
-            if (state.phase == TurnPhase::HumanTurn && !state.human.is_paralyzed && !state.human.is_frozen && state.input_mode == InputMode::MoveMode) {
-                for (int dx = -1; dx <= 1; ++dx) {
-                    for (int dy = -1; dy <= 1; ++dy) {
-                        if (dx == 0 && dy == 0) continue;
-                        int nx = state.human.pos.x + dx;
-                        int ny = state.human.pos.y + dy;
-                        if (nx >= 0 && nx < state.width && ny >= 0 && ny < state.height) {
-                            if (state.grid[nx][ny] != Terrain::Wall) {
-                                bool blocked = false;
-                                for (const auto& z : state.zombies) {
-                                    if (z->hp > 0 && z->pos == Position{nx, ny}) { blocked = true; break; }
-                                }
-                                if (!blocked) {
-                                    int cost = (state.grid[nx][ny] == Terrain::Water) ? 2 : 1;
-                                    if (state.human.stamina >= cost) {
-                                        int ovx = nx - viewX + padX;
-                                        int ovy = ny - viewY + padY;
-                                        if (ovx >= 0 && ovx < VIEW_CELLS && ovy >= 0 && ovy < VIEW_CELLS) {
-                                            sf::ConvexShape arrow(4);
-                                            float cx = ovx * cellSize + boardOffset + cellSize / 2.0f;
-                                            float cy = ovy * cellSize + boardOffset + cellSize / 2.0f;
-                                            float angle = std::atan2(dy, dx);
-                                            float size = 10.0f;
-                                            
-                                            arrow.setPoint(0, sf::Vector2f(std::cos(angle) * size, std::sin(angle) * size));
-                                            arrow.setPoint(1, sf::Vector2f(std::cos(angle + 2.3f) * size, std::sin(angle + 2.3f) * size));
-                                            arrow.setPoint(2, sf::Vector2f(std::cos(angle + 3.14159f) * (size * 0.3f), std::sin(angle + 3.14159f) * (size * 0.3f)));
-                                            arrow.setPoint(3, sf::Vector2f(std::cos(angle - 2.3f) * size, std::sin(angle - 2.3f) * size));
-                                            
-                                            float pulse = std::sin(timeSec * 10.0f) * 0.2f + 1.0f;
-                                            arrow.setScale(pulse, pulse);
-                                            arrow.setPosition(cx, cy);
-                                            arrow.setFillColor(sf::Color(255, 220, 50, 230));
-                                            arrow.setOutlineColor(sf::Color(40, 30, 10, 200));
-                                            arrow.setOutlineThickness(1.5f);
-                                            
-                                            window.draw(arrow);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
             if (hasFont) {
                 for (int lx = 0; lx < VIEW_CELLS; ++lx) {
                     int mapX = viewX + (lx - padX);
@@ -1563,15 +1516,34 @@ int main() {
                 }
             }
 
-            if (state.phase == TurnPhase::HumanTurn && !state.human.is_paralyzed && !state.human.is_frozen && 
-                    (state.input_mode == InputMode::TargetPistol || state.input_mode == InputMode::TargetShotgun || 
-                     state.input_mode == InputMode::TargetGrenade || state.input_mode == InputMode::TargetMolotov)) {
+            if (state.phase == TurnPhase::HumanTurn && !state.human.is_paralyzed &&
+                    ((state.input_mode == InputMode::MoveMode && !state.human.is_frozen) ||
+                     state.input_mode == InputMode::TargetKnife || (!state.human.is_frozen &&
+                    (state.input_mode == InputMode::TargetPistol || state.input_mode == InputMode::TargetShotgun ||
+                     state.input_mode == InputMode::TargetGrenade || state.input_mode == InputMode::TargetMolotov)))) {
                 for (int dx = -1; dx <= 1; ++dx) {
                     for (int dy = -1; dy <= 1; ++dy) {
                         if (dx == 0 && dy == 0) continue;
                         int nx = state.human.pos.x + dx;
                         int ny = state.human.pos.y + dy;
                         if (nx >= 0 && nx < state.width && ny >= 0 && ny < state.height) {
+                            if (state.input_mode == InputMode::MoveMode) {
+                                if (state.grid[nx][ny] == Terrain::Wall) continue;
+                                bool blocked = false;
+                                for (const auto& z : state.zombies) {
+                                    if (z->hp > 0 && z->pos == Position{nx, ny}) { blocked = true; break; }
+                                }
+                                if (blocked) continue;
+                                int cost = (state.grid[nx][ny] == Terrain::Water) ? 2 : 1;
+                                if (state.human.stamina < cost) continue;
+                            }
+                            if (state.input_mode == InputMode::TargetKnife) {
+                                bool has_zombie = false;
+                                for (const auto& z : state.zombies) {
+                                    if (z->hp > 0 && z->pos == Position{nx, ny}) { has_zombie = true; break; }
+                                }
+                                if (!has_zombie || state.human.stamina < 1) continue;
+                            }
                             int ovx = nx - viewX + padX;
                             int ovy = ny - viewY + padY;
                             if (ovx >= 0 && ovx < VIEW_CELLS && ovy >= 0 && ovy < VIEW_CELLS) {
@@ -1579,7 +1551,11 @@ int main() {
                                 float cx = ovx * cellSize + boardOffset + cellSize / 2.0f;
                                 float cy = ovy * cellSize + boardOffset + cellSize / 2.0f;
                                 float angle = std::atan2(dy, dx);
-                                float size = 12.0f;
+                                float size = (state.input_mode == InputMode::TargetKnife) ? 7.0f : 10.0f;
+                                if (state.input_mode == InputMode::TargetKnife) {
+                                    cx -= dx * (cellSize * 0.20f);
+                                    cy -= dy * (cellSize * 0.20f);
+                                }
                                 
                                 arrow.setPoint(0, sf::Vector2f(std::cos(angle) * size, std::sin(angle) * size));
                                 arrow.setPoint(1, sf::Vector2f(std::cos(angle + 2.0f) * size, std::sin(angle + 2.0f) * size));
@@ -1591,7 +1567,13 @@ int main() {
                                 arrow.setPosition(cx, cy);
                                 
                                 bool is_shoot = (state.input_mode == InputMode::TargetPistol || state.input_mode == InputMode::TargetShotgun);
-                                if (is_shoot) {
+                                if (state.input_mode == InputMode::MoveMode) {
+                                    arrow.setFillColor(sf::Color(255, 220, 50, 230)); //Yellow for moving
+                                    arrow.setOutlineColor(sf::Color(40, 30, 10, 200));
+                                } else if (state.input_mode == InputMode::TargetKnife) {
+                                    arrow.setFillColor(sf::Color(200, 100, 255, 250)); // Distinct melee color
+                                    arrow.setOutlineColor(sf::Color(65, 20, 85, 210));
+                                } else if (is_shoot) {
                                     arrow.setFillColor(sf::Color(255, 60, 60, 230)); // Red for shooting
                                     arrow.setOutlineColor(sf::Color(60, 10, 10, 200));
                                 } else {
@@ -2037,8 +2019,8 @@ int main() {
             // ── LEFT PANE: Weapon buttons ─────────────────────────────
             ImGui::BeginChild("##weapons_pane", ImVec2(left_w, 110.0f), false, ImGuiWindowFlags_NoScrollbar);
 
-            auto weapon_button = [&](const char* label, InputMode mode, const char* tooltip_en, const char* tooltip_vi) {
-                bool disabled = state.human.is_paralyzed || state.human.stamina == 0 || state.phase != TurnPhase::HumanTurn;
+            auto weapon_button = [&](const char* label, InputMode mode, const char* tooltip_en, const char* tooltip_vi, bool extra_disable = false) {
+                bool disabled = state.human.is_paralyzed || state.human.stamina == 0 || state.phase != TurnPhase::HumanTurn || extra_disable;
                 if (disabled) { ImGui::BeginDisabled(); }
                 if (state.input_mode == mode) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.4f, 0.0f, 1));
                 else ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_Button]);
@@ -2055,9 +2037,17 @@ int main() {
                 "Move adjacent tile. Costs 1 stamina.",
                 "Di chuyen o ke ben. Ton 1 the luc.");
             ImGui::SameLine();
+            bool no_adjacent_zombie = true;
+            for (const auto& z : state.zombies) {
+                if (z->hp > 0 && std::abs(z->pos.x - state.human.pos.x) <= 1 && std::abs(z->pos.y - state.human.pos.y) <= 1) {
+                    no_adjacent_zombie = false;
+                    break;
+                }
+            }
             weapon_button("Knife", InputMode::TargetKnife,
                 "Melee attack. 1 damage. Click an adjacent tile to strike.",
-                "Can chien. 1 sat thuong. Nhan vao o ke ben de tan cong.");
+                "Can chien. 1 sat thuong. Nhan vao o ke ben de tan cong.",
+                no_adjacent_zombie);
             ImGui::SameLine();
             {
                 bool on_ice = state.phase == TurnPhase::HumanTurn
