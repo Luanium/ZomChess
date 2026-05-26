@@ -1,3 +1,5 @@
+#define _USE_MATH_DEFINES
+
 #include "GameState.h"
 #include "GameConstants.h"
 #include "AudioManager.h"
