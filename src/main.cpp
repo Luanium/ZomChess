@@ -1234,6 +1234,39 @@ int main() {
                     }
                 }
             }
+
+            // Draw move overlay for Human
+            if (state.phase == TurnPhase::HumanTurn && !state.human.is_paralyzed && !state.human.is_frozen && state.input_mode == InputMode::MoveMode) {
+                for (int dx = -1; dx <= 1; ++dx) {
+                    for (int dy = -1; dy <= 1; ++dy) {
+                        if (dx == 0 && dy == 0) continue;
+                        int nx = state.human.pos.x + dx;
+                        int ny = state.human.pos.y + dy;
+                        if (nx >= 0 && nx < state.width && ny >= 0 && ny < state.height) {
+                            if (state.grid[nx][ny] != Terrain::Wall) {
+                                bool blocked = false;
+                                for (const auto& z : state.zombies) {
+                                    if (z->hp > 0 && z->pos == Position{nx, ny}) { blocked = true; break; }
+                                }
+                                if (!blocked) {
+                                    int cost = (state.grid[nx][ny] == Terrain::Water) ? 2 : 1;
+                                    if (state.human.stamina >= cost) {
+                                        int ovx = nx - viewX + padX;
+                                        int ovy = ny - viewY + padY;
+                                        if (ovx >= 0 && ovx < VIEW_CELLS && ovy >= 0 && ovy < VIEW_CELLS) {
+                                            sf::RectangleShape moveOverlay(sf::Vector2f(cellSize - 2.0f, cellSize - 2.0f));
+                                            moveOverlay.setPosition(ovx * cellSize + boardOffset, ovy * cellSize + boardOffset);
+                                            moveOverlay.setFillColor(sf::Color(100, 255, 100, 70));
+                                            window.draw(moveOverlay);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             if (hasFont) {
                 for (int lx = 0; lx < VIEW_CELLS; ++lx) {
                     sf::Text tx;
@@ -1360,7 +1393,7 @@ int main() {
                 window.draw(zVisual);
 
                 // Segmented HP bar at bottom of zombie tile
-                int safe_max_hp = std::max(1, z->max_hp);
+                int safe_max_hp = std::max({1, z->max_hp, z->hp});
                 float barW = cellSize - 8.0f;
                 float segmentGap = 1.0f;
                 float segmentW = (barW - (safe_max_hp - 1) * segmentGap) / static_cast<float>(safe_max_hp);
@@ -1443,7 +1476,14 @@ int main() {
             sf::RectangleShape hSquare(sf::Vector2f(cellSize - 6.0f, cellSize - 6.0f));
             hSquare.setPosition(drawX, drawY);
             hSquare.setFillColor(sf::Color::White);
-            hSquare.setOutlineThickness(0.0f);
+            float blinkProgress = std::sin(timeSec * 8.0f) * 0.5f + 0.5f;
+            sf::Color borderColor(
+                static_cast<sf::Uint8>(100 + 155 * std::sin(timeSec * 5.0f)),
+                static_cast<sf::Uint8>(100 + 155 * std::sin(timeSec * 6.0f + 2.0f)),
+                static_cast<sf::Uint8>(100 + 155 * std::sin(timeSec * 7.0f + 4.0f))
+            );
+            hSquare.setOutlineThickness(2.0f);
+            hSquare.setOutlineColor(sf::Color(borderColor.r, borderColor.g, borderColor.b, static_cast<sf::Uint8>(150 + 105 * blinkProgress)));
             if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) window.draw(hSquare);
 
             sf::ConvexShape hTriangle(3);
@@ -1455,12 +1495,12 @@ int main() {
             if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) window.draw(hTriangle);
 
             // Human HP segmented bar at bottom
-            int humanMaxHp = std::max(1, state.active_config.human_hp);
+            int humanMaxHp = std::max({1, state.active_config.human_hp, state.human.hp});
             float hBarW = cellSize - 8.0f;
             float hGap = 1.0f;
             float hSegW = (hBarW - (humanMaxHp - 1) * hGap) / static_cast<float>(humanMaxHp);
-            float hBaseX = hlx * cellSize + boardOffset + 4.0f;
-            float hBaseY = hly * cellSize + boardOffset + cellSize - 7.0f;
+            float hBaseX = drawX + 1.0f;
+            float hBaseY = drawY + cellSize - 10.0f;
             for (int hpSeg = 0; hpSeg < humanMaxHp; ++hpSeg) {
                 sf::RectangleShape seg(sf::Vector2f(std::max(1.0f, hSegW), 3.0f));
                 seg.setPosition(hBaseX + hpSeg * (hSegW + hGap), hBaseY);
@@ -1476,8 +1516,7 @@ int main() {
             for (int d = 0; d < drawnDots; ++d) {
                 sf::CircleShape dot(2.7f);
                 dot.setFillColor(sf::Color(90, 205, 255));
-                dot.setPosition(hlx * cellSize + boardOffset + 5.0f + d * 5.0f,
-                                hly * cellSize + boardOffset + cellSize - 15.0f);
+                dot.setPosition(drawX + 2.0f + d * 5.0f, drawY + cellSize - 18.0f);
                 if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) window.draw(dot);
             }
 
@@ -1497,8 +1536,7 @@ int main() {
                         tagTxt.setCharacterSize(11);
                         tagTxt.setFillColor(tags[ti].color);
                         tagTxt.setString(tags[ti].label);
-                        tagTxt.setPosition(hlx * cellSize + boardOffset + ti * tagW + tagW * 0.5f - 4.0f,
-                                           hly * cellSize + boardOffset + 2.0f);
+                        tagTxt.setPosition(drawX + ti * tagW + tagW * 0.5f - 4.0f, drawY - 1.0f);
                         if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) window.draw(tagTxt);
                     }
                 }
@@ -2057,7 +2095,11 @@ int main() {
             } // end two-pane layout block
 
             ImGui::Separator();
-            ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f), "%s: %zu", tr("Remaining Zombies", "So Zombie con lai"), state.zombies.size());
+            size_t alive_zombies = 0;
+            for (const auto& z : state.zombies) {
+                if (z->hp > 0) alive_zombies++;
+            }
+            ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f), "%s: %zu", tr("Remaining Zombies", "So Zombie con lai"), alive_zombies);
             ImGui::Text("%s:", tr("Legend", "Chu giai"));
             ImGui::SameLine(); ImGui::TextColored(ImVec4(0.2f, 0.75f, 0.3f, 1.0f), "Normal");
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr("Normal Zombie: 3 HP. Moves 1 tile/turn toward Human.", "Zombie Binh Thuong: 3 HP. Di chuyen 1 o/luot ve phia Nguoi."));
