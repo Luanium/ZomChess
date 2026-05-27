@@ -2,9 +2,11 @@
 // SoundSynth.h — Procedural PCM sound synthesis, no external files needed.
 // All sounds are generated mathematically and loaded into sf::SoundBuffer.
 
+#define _USE_MATH_DEFINES
+#include <cmath>
+
 #include <SFML/Audio.hpp>
 #include <vector>
-#include <cmath>
 #include <random>
 #include <algorithm>
 
@@ -34,6 +36,7 @@ static sf::SoundBuffer buildBuffer(const std::vector<float>& samples) {
         float s = std::max(-1.f, std::min(1.f, samples[i]));
         pcm[i] = static_cast<sf::Int16>(s * 32767.f);
     }
+    
     sf::SoundBuffer buf;
     buf.loadFromSamples(pcm.data(), pcm.size(), 1, SAMPLE_RATE);
     return buf;
