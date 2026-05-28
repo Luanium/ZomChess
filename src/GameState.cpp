@@ -582,10 +582,36 @@ bool GameState::is_blocked_by_wall(Position start, Position end) const {
         int cy2 = std::ceil(fy);
 
         if (i < steps) {
-            if (cx1 >= 0 && cx1 < width && cy1 >= 0 && cy1 < height && grid[cx1][cy1] == Terrain::Wall) return true;
-            if (x_half && cx2 >= 0 && cx2 < width && cy1 >= 0 && cy1 < height && grid[cx2][cy1] == Terrain::Wall) return true;
-            if (y_half && cx1 >= 0 && cx1 < width && cy2 >= 0 && cy2 < height && grid[cx1][cy2] == Terrain::Wall) return true;
-            if (x_half && y_half && cx2 >= 0 && cx2 < width && cy2 >= 0 && cy2 < height && grid[cx2][cy2] == Terrain::Wall) return true;
+            // For half-cell positions, require that ALL relevant adjacent cells are walls
+            // to block the path. A blast can pass through if at least one side is open.
+            if (x_half && y_half) {
+                // Path passes through a corner — block only if both adjacent cells on the path are walls
+                bool w_tl = (cx1 >= 0 && cx1 < width && cy1 >= 0 && cy1 < height && grid[cx1][cy1] == Terrain::Wall);
+                bool w_tr = (cx2 >= 0 && cx2 < width && cy1 >= 0 && cy1 < height && grid[cx2][cy1] == Terrain::Wall);
+                bool w_bl = (cx1 >= 0 && cx1 < width && cy2 >= 0 && cy2 < height && grid[cx1][cy2] == Terrain::Wall);
+                bool w_br = (cx2 >= 0 && cx2 < width && cy2 >= 0 && cy2 < height && grid[cx2][cy2] == Terrain::Wall);
+                // Block if both cells along the direction of travel are walls
+                int sdx = (dx > 0) ? 1 : -1;
+                int sdy = (dy > 0) ? 1 : -1;
+                bool side1_blocked = (sdx > 0 && sdy > 0) ? (w_tr && w_bl) : 
+                                     (sdx > 0 && sdy < 0) ? (w_tl && w_br) :
+                                     (sdx < 0 && sdy > 0) ? (w_tr && w_bl) :
+                                     (w_tl && w_br);
+                if (side1_blocked) return true;
+            } else if (x_half) {
+                // Path passes between two horizontal cells — block only if both are walls
+                bool w1 = (cx1 >= 0 && cx1 < width && cy1 >= 0 && cy1 < height && grid[cx1][cy1] == Terrain::Wall);
+                bool w2 = (cx2 >= 0 && cx2 < width && cy1 >= 0 && cy1 < height && grid[cx2][cy1] == Terrain::Wall);
+                if (w1 && w2) return true;
+            } else if (y_half) {
+                // Path passes between two vertical cells — block only if both are walls
+                bool w1 = (cx1 >= 0 && cx1 < width && cy1 >= 0 && cy1 < height && grid[cx1][cy1] == Terrain::Wall);
+                bool w2 = (cx1 >= 0 && cx1 < width && cy2 >= 0 && cy2 < height && grid[cx1][cy2] == Terrain::Wall);
+                if (w1 && w2) return true;
+            } else {
+                // Path passes through the center of a cell — standard check
+                if (cx1 >= 0 && cx1 < width && cy1 >= 0 && cy1 < height && grid[cx1][cy1] == Terrain::Wall) return true;
+            }
         }
 
         int curr_cx = std::round(fx);
@@ -598,18 +624,15 @@ bool GameState::is_blocked_by_wall(Position start, Position end) const {
 }
 
 void GameState::check_fire_interactions() {
+    // Water tile extinguishes burning
     if (grid[human.pos.x][human.pos.y] == Terrain::Water) {
         if (human.is_burning) {
             human.is_burning = false;
             add_log(tr("[FIRE] Human stepped into water! Burning extinguished.", "[FIRE] Human da buoc vao nuoc! Lua da bi dap tat."), ImVec4(0.35f, 0.75f, 1.0f, 1.0f));
         }
     } else if (grid[human.pos.x][human.pos.y] == Terrain::Fire) {
-        if (human.is_burning) {
-            human.hp = std::max(0, human.hp - 1);
-            floating_texts.push_back({human.pos, -1, 1.0f, 1.0f});
-            add_log(tr("[FIRE] Human entered fire while already burning! Suffered 1 immediate Fire damage.", "[FIRE] Human di vao o lua khi dang bi thieu dot! Bi tru 1 mau lap tuc."), ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
-            check_victory_conditions();
-        } else {
+        // Fire tiles only ignite non-burning entities (no extra damage to already burning)
+        if (!human.is_burning) {
             human.is_burning = true;
             add_log(tr("[FIRE] Human stepped into a blazing fire!", "[FIRE] Human da buoc vao mot o lua thieu dot!"), ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
         }
@@ -623,15 +646,8 @@ void GameState::check_fire_interactions() {
                     add_log(tr("[FIRE] " + z->name + " stepped into water! Burning extinguished.", "[FIRE] " + z->name + " da buoc vao nuoc! Lua da bi dap tat."), ImVec4(0.35f, 0.75f, 1.0f, 1.0f));
                 }
             } else if (grid[z->pos.x][z->pos.y] == Terrain::Fire) {
-                if (z->is_burning) {
-                    z->hp -= 1;
-                    floating_texts.push_back({z->pos, -1, 1.0f, 1.0f});
-                    add_log(tr("[FIRE] " + z->name + " entered fire while already burning! Suffered 1 immediate Fire damage.", "[FIRE] " + z->name + " di vao o lua khi dang bi thieu dot! Bi tru 1 mau lap tuc."), ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
-                    if (z->hp <= 0 && z->type == ZombieType::Exploding) {
-                        queue_explosion(z->pos.x, z->pos.y, true);
-                    }
-                    check_victory_conditions();
-                } else {
+                // Fire tiles only ignite non-burning entities (no extra damage to already burning)
+                if (!z->is_burning) {
                     z->is_burning = true;
                     add_log(tr("[FIRE] " + z->name + " stepped into a blazing fire!", "[FIRE] " + z->name + " da buoc vao mot o lua thieu dot!"), ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
                 }
@@ -639,28 +655,8 @@ void GameState::check_fire_interactions() {
         }
     }
 
-    std::vector<Position> fire_sources;
-    if (human.is_burning) fire_sources.push_back(human.pos);
-    for (const auto& z : zombies) {
-        if (z->hp > 0 && z->is_burning) fire_sources.push_back(z->pos);
-    }
-
-    for (const auto& p : fire_sources) {
-        if (!human.is_burning && distance(human.pos, p) <= 1) {
-            if (grid[human.pos.x][human.pos.y] != Terrain::Water) {
-                human.is_burning = true;
-                add_log(tr("[FIRE] Human caught fire from close proximity!", "[FIRE] Human bat lua do dung qua gan nguon lua!"), ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
-            }
-        }
-        for (auto& z : zombies) {
-            if (z->hp > 0 && !z->is_burning && distance(z->pos, p) <= 1) {
-                if (grid[z->pos.x][z->pos.y] != Terrain::Water) {
-                    z->is_burning = true;
-                    add_log(tr("[FIRE] " + z->name + " caught fire from close proximity!", "[FIRE] " + z->name + " bat lua do dung qua gan nguon lua!"), ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
-                }
-            }
-        }
-    }
+    // REMOVED: Fire proximity spreading from burning entities to adjacent entities.
+    // Only entities standing ON Fire tiles get burned, not entities adjacent to burning entities.
 }
 
 void GameState::check_mine_interactions() {
@@ -1001,6 +997,40 @@ void GameState::apply_windstorm(int dx, int dy) {
     }
     wind_log += ".";
     add_log(wind_log, ImVec4(0.65f, 0.85f, 1.0f, 1.0f));
+
+    // Windstorms make Forest tiles right after Fire tiles (in wind direction) become Fire tiles
+    std::vector<Position> wind_fire_spread;
+    for (int x = 0; x < width; ++x) {
+        for (int y = 0; y < height; ++y) {
+            if (grid[x][y] != Terrain::Fire) continue;
+            int nx = x + dx, ny = y + dy;
+            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                if (grid[nx][ny] == Terrain::Forest) {
+                    wind_fire_spread.push_back({nx, ny});
+                }
+            }
+        }
+    }
+    for (const auto& p : wind_fire_spread) {
+        set_cell_on_fire(p.x, p.y);
+        // Ignite entities standing on the newly-burning cell
+        if (human.hp > 0 && human.pos == p && !human.is_burning) {
+            human.is_burning = true;
+            add_log(tr("[FIRE] Wind-spread fire ignites Human!", "[LUA] Lua lan theo gio thieu dot Human!"), ImVec4(1.0f, 0.3f, 0.0f, 1.0f));
+        }
+        for (auto& z : zombies) {
+            if (z->hp > 0 && z->pos == p && !z->is_burning) {
+                z->is_burning = true;
+                add_log(tr("[FIRE] Wind-spread fire ignites " + z->name + "!", "[LUA] Lua lan theo gio thieu dot " + z->name + "!"), ImVec4(1.0f, 0.3f, 0.0f, 1.0f));
+            }
+        }
+    }
+    if (!wind_fire_spread.empty()) {
+        add_log(tr("[FIRE] Windstorm spreads fire to " + std::to_string(wind_fire_spread.size()) + " forest cell(s)!",
+                   "[LUA] Bao gio lan lua sang " + std::to_string(wind_fire_spread.size()) + " o rung!"), ImVec4(1.0f, 0.45f, 0.1f, 1.0f));
+        destroy_loot_at_cells(wind_fire_spread);
+    }
+
     // Sau khi gió thổi, kiểm tra loot có rơi vào ô lửa không
     check_loot_on_fire();
     check_fire_interactions();
@@ -1531,7 +1561,7 @@ void GameState::finish_environment_phase() {
     turn_banner_fx.max_duration = 1.5f;
     turn_banner_fx.banner_text = "";
     // Fire spreads once after environment phase ends
-    propagate_gradual_forest_fire();
+    //propagate_gradual_forest_fire();
     check_victory_conditions();
 }
 
@@ -1579,7 +1609,7 @@ void GameState::update_environment_logic(float dt) {
 void GameState::queue_explosion(int cx, int cy, bool is_zombie_exploding) { explosion_queue.push({cx, cy, is_zombie_exploding}); }
 
 void GameState::execute_explosion_internal(int cx, int cy, bool is_zombie_exploding) { 
-    add_log("[EXPLOSION] Detonated at (" + std::to_string(cx) + ", " + std::to_string(cy) + ")!", ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
+    add_log("[EXPLOSION] Detonated at (" + std::to_string(cx + 1) + ", " + std::to_string(cy + 1) + ")!", ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
     sfx("explosion");
     
     Terrain center_t = grid[cx][cy];
@@ -1758,11 +1788,23 @@ void GameState::execute_explosion_internal(int cx, int cy, bool is_zombie_explod
             } else {
                 if (ev.is_human) {
                     human.pos = ev.push_target;
+                    // Unfreeze entity when pushed by explosion
+                    if (human.is_frozen) {
+                        human.is_frozen = false;
+                        add_log(tr("[ICE] Explosion blast unfroze Human!", "[BANG] Suc no giai bang Human!"), ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+                    }
                     add_log("-> Human is blown back by the blast!", ImVec4(1.0f, 0.6f, 0.2f, 1.0f));
                     check_fire_interactions();
                     check_mine_interactions();
                 } else {
                     zombies[ev.zombie_idx]->pos = ev.push_target;
+                    // Unfreeze entity when pushed by explosion
+                    if (zombies[ev.zombie_idx]->is_frozen) {
+                        zombies[ev.zombie_idx]->is_frozen = false;
+                        zombies[ev.zombie_idx]->frozen_turns = 0;
+                        add_log(tr("[ICE] Explosion blast unfroze " + zombies[ev.zombie_idx]->name + "!",
+                                   "[BANG] Suc no giai bang " + zombies[ev.zombie_idx]->name + "!"), ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+                    }
                     add_log("-> Zombie #" + std::to_string(ev.zombie_idx+1) + " is blown back by the blast!", ImVec4(1.0f, 0.6f, 0.2f, 1.0f));
                     check_fire_interactions();
                 }
@@ -1838,6 +1880,17 @@ void GameState::execute_explosion_internal(int cx, int cy, bool is_zombie_explod
         add_log(tr("[ICE] Explosion melted " + std::to_string(ice_melted) + " ice cell(s) into water!",
                    "[BANG] Vu no lam tan chay " + std::to_string(ice_melted) + " o bang thanh nuoc!"),
                 ImVec4(0.4f, 0.8f, 1.0f, 1.0f));
+    }
+
+    // Đánh dấu zombie nổ nguồn đã phát nổ xong, cho phép spawn loot sau vụ nổ
+    if (is_zombie_exploding) {
+        for (auto& z : zombies) {
+            if (z->hp <= 0 && z->type == ZombieType::Exploding && !z->has_exploded
+                && z->pos.x == cx && z->pos.y == cy) {
+                z->has_exploded = true;
+                break;
+            }
+        }
     }
 
     check_victory_conditions(); 
@@ -2197,6 +2250,13 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
                     }
                 } else {
                     zombies[i]->pos = {rx, ry};
+                    // Unfreeze entity when pushed by shotgun
+                    if (zombies[i]->is_frozen) {
+                        zombies[i]->is_frozen = false;
+                        zombies[i]->frozen_turns = 0;
+                        add_log(tr("[ICE] Shotgun knockback unfroze Zombie #" + std::to_string(i + 1) + "!",
+                                   "[BANG] Luc giat shotgun giai bang Zombie #" + std::to_string(i + 1) + "!"), ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+                    }
                 }
             }
         } 
@@ -2346,6 +2406,19 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
             }
             // Heat also melts adjacent ice cells
             melt_adjacent_ice(hit_pos.x, hit_pos.y);
+        } else if (grid[hit_pos.x][hit_pos.y] == Terrain::Fire) {
+            // Molotov lands on existing fire — reset the burn duration
+            for (auto& fc : fire_cells) {
+                if (fc.pos.x == hit_pos.x && fc.pos.y == hit_pos.y) {
+                    fc.duration = GameConstants::Weapons::MOLOTOV_FIRE_DURATION;
+                    break;
+                }
+            }
+            add_log(tr("[FIRE] Molotov reignites fire at (" + std::to_string(hit_pos.x + 1) + ", " + std::to_string(hit_pos.y + 1) + ")! Burn duration reset.",
+                       "[FIRE] Bom xang nhom lai lua tai (" + std::to_string(hit_pos.x + 1) + ", " + std::to_string(hit_pos.y + 1) + ")! Thoi gian chay duoc dat lai."),
+                    ImVec4(1.0f, 0.45f, 0.1f, 1.0f));
+            // Heat from molotov melts adjacent ice cells
+            melt_adjacent_ice(hit_pos.x, hit_pos.y);
         } else if (grid[hit_pos.x][hit_pos.y] == Terrain::Dirt || grid[hit_pos.x][hit_pos.y] == Terrain::Forest) {
             // Check if a frozen entity is on the landing cell — if so, no fire spread
             bool frozen_entity_on_cell = false;
@@ -2391,10 +2464,11 @@ void GameState::start_zombie_phase() {
         human.stamina = 0;
     }
 
+    // Burning persists until extinguished by Water tile or heavy rain.
+    // At end of human turn, if still burning, take 1 HP damage (burning is NOT cleared).
     if (human.is_burning) {
         human.hp = std::max(0, human.hp - 1);
         floating_texts.push_back({human.pos, -1, 1.0f, 1.0f});
-        human.is_burning = false;
         add_log("[FIRE] Human suffered 1 Burn Damage!", ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
     }
     
@@ -2448,11 +2522,12 @@ void GameState::update_zombie_logic(float dt) {
     
     if (active_zombie_idx >= zombies.size()) { 
         if (active_zombie_substep == 0) {
+            // Burning persists until extinguished by Water tile or heavy rain.
+            // At end of each zombie's turn, if still burning, take 1 HP damage (burning is NOT cleared).
             for (auto& z : zombies) {
                 if (z->hp > 0 && z->is_burning) {
                     z->hp -= 1;
                     floating_texts.push_back({z->pos, -1, 1.0f, 1.0f});
-                    z->is_burning = false;
                     add_log("[FIRE] " + z->name + " suffered 1 Burn Damage!", ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
                     if (z->hp <= 0 && z->type == ZombieType::Exploding) queue_explosion(z->pos.x, z->pos.y, true);
                 }
@@ -2821,6 +2896,9 @@ void GameState::use_ice_pick() {
 void GameState::spawn_loot_for_newly_dead() {
     for (auto& z : zombies) {
         if (z->hp <= 0 && !z->loot_spawned) {
+            // Exploding zombie: hoãn spawn loot cho đến khi nổ xong
+            // để tránh cú nổ tự phá hủy loot của chính nó
+            if (z->type == ZombieType::Exploding && !z->has_exploded) continue;
             z->loot_spawned = true;
             spawn_loot_at(z->pos);
         }

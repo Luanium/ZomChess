@@ -2196,7 +2196,7 @@ int main() {
 
             ImGui::Spacing();
             ImGui::TextColored(ImVec4(0.9f, 0.85f, 0.4f, 1.0f), "%s", tr("Status", "Trang thai"));
-            ImGui::TextColored(ImVec4(0.95f, 0.2f, 0.2f, 1.0f), "B=Burn");
+            ImGui::TextColored(ImVec4(0.95f, 0.2f, 0.2f, 1.0f), "B=Burned");
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr("Burned: Entity takes 1 damage after 1 turn + immediate damage if stepping on Fire tile. Step on Water tile to resolve.", "Bi chay: Thuc the nhan sat thuong lua moi luot khi dung tren o lua."));
             ImGui::SameLine(0,6);
             ImGui::TextColored(ImVec4(0.95f, 0.85f, 0.25f, 1.0f), "P=Paralyzed");
