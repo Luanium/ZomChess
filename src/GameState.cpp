@@ -2710,24 +2710,29 @@ void GameState::check_victory_conditions() {
 void GameState::propagate_gradual_forest_fire() {
     std::vector<Position> to_catch_fire;
     std::vector<Position> ice_to_melt;
-    const int dirs[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+    const int ortho[4][2] = {{1,0},{-1,0},{0,1},{0,-1}};
+    const int all8[8][2]  = {{1,0},{-1,0},{0,1},{0,-1},{1,1},{1,-1},{-1,1},{-1,-1}};
     
     for (int x = 0; x < width; ++x) {
         for (int y = 0; y < height; ++y) {
-            bool near_fire = false;
-            for (const auto& d : dirs) {
-                int nx = x + d[0], ny = y + d[1];
-                if (nx >= 0 && nx < width && ny >= 0 && ny < height && grid[nx][ny] == Terrain::Fire) {
-                    near_fire = true;
-                    break;
-                }
-            }
-            if (!near_fire) continue;
-
             if (grid[x][y] == Terrain::Forest) {
-                to_catch_fire.push_back({x, y});
+                // Forest fire spreads orthogonally only (4 directions)
+                for (const auto& d : ortho) {
+                    int nx = x + d[0], ny = y + d[1];
+                    if (nx >= 0 && nx < width && ny >= 0 && ny < height && grid[nx][ny] == Terrain::Fire) {
+                        to_catch_fire.push_back({x, y});
+                        break;
+                    }
+                }
             } else if (grid[x][y] == Terrain::Ice) {
-                ice_to_melt.push_back({x, y});
+                // Ice melts from fire in all 8 directions (orthogonal + diagonal)
+                for (const auto& d : all8) {
+                    int nx = x + d[0], ny = y + d[1];
+                    if (nx >= 0 && nx < width && ny >= 0 && ny < height && grid[nx][ny] == Terrain::Fire) {
+                        ice_to_melt.push_back({x, y});
+                        break;
+                    }
+                }
             }
         }
     }
