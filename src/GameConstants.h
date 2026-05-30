@@ -195,8 +195,8 @@ namespace GameConstants {
         // Pistol parameters
         constexpr int PISTOL_STAMINA_COST = 1;
         constexpr int PISTOL_DAMAGE = 1;
-        constexpr int PISTOL_RANGE = 20;
-        constexpr double PISTOL_ACCURACY_LAMBDA = 4.3210;
+        constexpr int PISTOL_RANGE = 50;
+        constexpr double PISTOL_ACCURACY_LAMBDA = 9.876543210;
 
         // Shotgun parameters
         constexpr int SHOTGUN_STAMINA_COST = 1;
@@ -221,7 +221,7 @@ namespace GameConstants {
         constexpr int MOLOTOV_MAX_STEPS = 6;
 
         // Claymore Mine parameters
-        constexpr int MINE_EXPLOSION_RADIUS = 1;
+        constexpr int MINE_EXPLOSION_RADIUS = 2;
         constexpr int MINE_DAMAGE = 2;
 
         // Ice Pick parameters

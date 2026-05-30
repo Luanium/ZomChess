@@ -1,3 +1,13 @@
+# Changes in v1.3.0
+
+## Logic
+- Fix logic bug: when `Human` step on an `Ice` tile with frozen loot under it, `Human` no longer automatically uses `Ice Pick` to break the ice to get the loot, instead the player can choose to use `Ice Pick` or not
+- Increase the accuracy of `Pistol` and its range
+- New mechanisms for using `Mine`: `Mine` now can be triggered by shooting `Pistol` or `Shotgun` at it, or by `Lightning`, or by `Fire`, or by explosion
+
+## UI:
+- Fix the version info in the splash screen to display the correct version
+
 # Changes in v1.2.0
 ## Logic:
 - Entities now are resolved from `Frozen` status when pushed back by explosion or by `Shotgun`

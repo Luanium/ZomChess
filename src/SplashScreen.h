@@ -208,7 +208,7 @@ public:
         {
             sf::Text ver;
             ver.setFont(font);
-            ver.setString("v2.1");
+            ver.setString("v1.3.0");
             ver.setCharacterSize(18);
             ver.setFillColor(sf::Color(100, 100, 100, a));
             ver.setPosition(W - 60.0f, H - 30.0f);

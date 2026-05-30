@@ -1206,6 +1206,13 @@ void GameState::apply_lightning_strike() {
     // Hủy loot tại ô bị sét đánh trực tiếp
     destroy_loot_at_cells({strike});
 
+    // Kích nổ mìn nếu sét đánh trúng
+    if (mine_grid[strike.x][strike.y]) {
+        mine_grid[strike.x][strike.y] = false;
+        add_log("[ENV] Lightning struck a mine! Detonation!", ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
+        queue_explosion(strike.x, strike.y);
+    }
+
     if (grid[strike.x][strike.y] == Terrain::Forest) {
         // Only ignite if no living entity is standing on the cell
         if (!has_living_entity_at(strike)) {
@@ -1638,6 +1645,15 @@ void GameState::execute_explosion_internal(int cx, int cy, bool is_zombie_explod
     // Hủy loot trong vùng nổ
     destroy_loot_at_cells(active_fx.blast_cells);
 
+    // Kích nổ mìn khác trong vùng nổ (Phản ứng dây chuyền)
+    for (auto cell : active_fx.blast_cells) {
+        if (mine_grid[cell.x][cell.y]) {
+            mine_grid[cell.x][cell.y] = false;
+            add_log("[RADIO] Secondary explosion! A mine was caught in the blast!", ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
+            queue_explosion(cell.x, cell.y);
+        }
+    }
+
     auto get_entity_at = [&](Position p) -> std::pair<std::string, void*> {
         if (human.hp > 0 && human.pos == p) return {"human", &human};
         for (size_t i = 0; i < zombies.size(); ++i) {
@@ -2027,6 +2043,11 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
                 hit_pos = {cx, cy};
                 break;
             }
+            if (mine_grid[cx][cy]) {
+                hit_pos = {cx, cy};
+                hit_something = true;
+                break;
+            }
             hit_pos = {cx, cy}; 
             for (size_t i = 0; i < zombies.size(); ++i) { 
                 if (zombies[i]->hp > 0 && zombies[i]->pos == Position{cx, cy}) { 
@@ -2043,22 +2064,29 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
         active_fx.end_p = getCellCenter(hit_pos.x, hit_pos.y, cellSize, boardOffset); 
 
         bool any_target = false;
-        for (size_t i = 0; i < zombies.size(); ++i) { 
-            if (zombies[i]->hp > 0 && zombies[i]->pos == hit_pos) { 
-                any_target = true;
-                int dist = distance(human.pos, hit_pos); 
-                double chance = std::exp(-((double)(dist - 1) / GameConstants::Weapons::PISTOL_ACCURACY_LAMBDA));
-                std::uniform_real_distribution<double> dist_chance(0.0, 1.0); 
-                if (dist_chance(rng) <= chance) { 
-                    zombies[i]->hp -= GameConstants::Weapons::PISTOL_DAMAGE; 
-                    floating_texts.push_back({zombies[i]->pos, -GameConstants::Weapons::PISTOL_DAMAGE, 1.0f, 1.0f});
-                    add_log("[RADIO] Pistol round lands on Zombie #" + std::to_string(i + 1) + ".", ImVec4(1.0f, 0.95f, 0.35f, 1.0f));
-                    if (zombies[i]->hp <= 0 && zombies[i]->type == ZombieType::Exploding) queue_explosion(hit_pos.x, hit_pos.y, true); 
-                } else {
-                    add_log("[RADIO] Pistol round misses Zombie #" + std::to_string(i + 1) + ".", ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
-                }
-                break; 
-            } 
+        if (mine_grid[hit_pos.x][hit_pos.y]) {
+            any_target = true;
+            mine_grid[hit_pos.x][hit_pos.y] = false;
+            add_log("[RADIO] Pistol shot hit a mine! Detonation!", ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
+            queue_explosion(hit_pos.x, hit_pos.y);
+        } else {
+            for (size_t i = 0; i < zombies.size(); ++i) { 
+                if (zombies[i]->hp > 0 && zombies[i]->pos == hit_pos) { 
+                    any_target = true;
+                    int dist = distance(human.pos, hit_pos); 
+                    double chance = std::exp(-((double)(dist - 1) / GameConstants::Weapons::PISTOL_ACCURACY_LAMBDA));
+                    std::uniform_real_distribution<double> dist_chance(0.0, 1.0); 
+                    if (dist_chance(rng) <= chance) { 
+                        zombies[i]->hp -= GameConstants::Weapons::PISTOL_DAMAGE; 
+                        floating_texts.push_back({zombies[i]->pos, -GameConstants::Weapons::PISTOL_DAMAGE, 1.0f, 1.0f});
+                        add_log("[RADIO] Pistol round lands on Zombie #" + std::to_string(i + 1) + ".", ImVec4(1.0f, 0.95f, 0.35f, 1.0f));
+                        if (zombies[i]->hp <= 0 && zombies[i]->type == ZombieType::Exploding) queue_explosion(hit_pos.x, hit_pos.y, true); 
+                    } else {
+                        add_log("[RADIO] Pistol round misses Zombie #" + std::to_string(i + 1) + ".", ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
+                    }
+                    break; 
+                } 
+            }
         }
         if (!any_target) add_log("[RADIO] Pistol shot hits no target.", ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
     } else if (input_mode == InputMode::TargetShotgun) { 
@@ -2163,6 +2191,15 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
 
         // Hủy loot trong vùng đạn shotgun
         destroy_loot_at_cells(active_fx.blast_cells);
+
+        // Kích nổ mìn nếu bị bắn trúng
+        for (const auto& cell : active_fx.blast_cells) {
+            if (mine_grid[cell.x][cell.y]) {
+                mine_grid[cell.x][cell.y] = false;
+                add_log("[RADIO] Shotgun blast hit a mine! Detonation!", ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
+                queue_explosion(cell.x, cell.y);
+            }
+        }
 
         struct HitZombie {
             size_t index;
@@ -2767,6 +2804,14 @@ void GameState::propagate_gradual_forest_fire() {
                    "[FIRE] Lua rung lan tu tu sang " + std::to_string(to_catch_fire.size()) + " o rung tiep theo!"), ImVec4(1.0f, 0.45f, 0.1f, 1.0f));
         for (const auto& p : to_catch_fire) {
             grid[p.x][p.y] = Terrain::Fire;
+            
+            // Kích nổ mìn nếu ô này có mìn
+            if (mine_grid[p.x][p.y]) {
+                mine_grid[p.x][p.y] = false;
+                add_log("[RADIO] Fire ignited a mine! Detonation!", ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
+                queue_explosion(p.x, p.y);
+            }
+            
             bool exists = false;
             for (const auto& fc : fire_cells) {
                 if (fc.pos == p) {
@@ -2813,6 +2858,12 @@ void GameState::set_cell_on_fire(int x, int y) {
         if (!exists) {
             fire_cells.push_back({Position{x, y}, 2});
             sfx("fire");
+        }
+        // Kích nổ mìn nếu ô này có mìn
+        if (mine_grid[x][y]) {
+            mine_grid[x][y] = false;
+            add_log("[RADIO] Fire ignited a mine! Detonation!", ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
+            queue_explosion(x, y);
         }
         // Hủy loot tại ô vừa bốc lửa
         destroy_loot_at_cells({{x, y}});
@@ -2953,21 +3004,12 @@ void GameState::check_loot_pickup() {
     for (auto it = loot_drops.begin(); it != loot_drops.end(); ) {
         if (it->pos != human.pos) { ++it; continue; }
 
-        // Loot bị kẹt dưới băng: cần tốn 1 stamina để phá băng
+        // Loot bị kẹt dưới băng: người chơi phải chủ động dùng Ice Pick
         if (it->frozen_under_ice) {
-            if (human.stamina >= 1) {
-                human.stamina -= 1;
-                it->frozen_under_ice = false;
-                add_log(tr("[LOOT] You break through the ice to reach the loot! (-1 stamina)",
-                           "[LOOT] Ban pha bang de lay do! (-1 the luc)"),
-                        ImVec4(0.5f, 0.85f, 1.0f, 1.0f));
-                // Tiếp tục xuống để nhặt loot ngay
-            } else {
-                add_log(tr("[LOOT] Loot is frozen under ice. Need 1 stamina to break through!",
-                           "[LOOT] Do bi ket duoi bang. Can 1 the luc de pha bang!"),
-                        ImVec4(0.5f, 0.75f, 1.0f, 1.0f));
-                ++it; continue;
-            }
+            add_log(tr("[LOOT] Loot is frozen under ice. Use Ice Pick to break through!",
+                       "[LOOT] Do bi ket duoi bang. Dung Cuoc Pha Bang de lay!"),
+                    ImVec4(0.5f, 0.75f, 1.0f, 1.0f));
+            ++it; continue;
         }
 
         switch (it->type) {
