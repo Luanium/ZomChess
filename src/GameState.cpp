@@ -2674,15 +2674,20 @@ void GameState::update_zombie_logic(float dt) {
         int dx = std::abs(zom->pos.x - human.pos.x);
         int dy = std::abs(zom->pos.y - human.pos.y);
         if (dx <= 1 && dy <= 1 && human.hp > 0) {
-            // Human is adjacent - attempt attack
-            zom->pending_attack = true;
+            // Human is adjacent - set pending_attack and fall through to the timer-based
+            // attack handler below so the turn can actually advance.
+            if (!zom->pending_attack) {
+                zom->pending_attack = true;
+                zombie_action_timer = 0.0f; // Reset timer so the delay is measured from now
+            }
+            // Fall through to the pending_attack timer block below (no return here)
         } else {
             add_log(tr("[ICE] " + zom->name + " is frozen solid and cannot move! (Frozen until ice melts)",
                        "[BANG] " + zom->name + " bi dong cung va khong the di chuyen! (Dong bang den khi bang tan)"), ImVec4(0.6f, 0.8f, 1.0f, 1.0f));
             active_zombie_idx++;
             active_zombie_substep = 0;
+            return;
         }
-        return;
     }
     zombie_action_timer += dt;
     if (zom->pending_attack) {
