@@ -343,8 +343,10 @@ void GameState::init_game() {
     human.molotovs = active_config.molotovs;
     human.is_burning = false;
     human.is_paralyzed = false;
+    human.is_frozen = false;
 
     mine_grid.assign(width, std::vector<bool>(height, false));
+    mine_deactivated.assign(width, std::vector<bool>(height, false));
 
     if (active_config.custom_map_mode) {
         if (active_config.custom_grid.size() != static_cast<size_t>(width) || 
@@ -662,7 +664,7 @@ void GameState::check_fire_interactions() {
 }
 
 void GameState::check_mine_interactions() {
-    if (human.hp > 0 && mine_grid[human.pos.x][human.pos.y]) {
+    if (human.hp > 0 && mine_grid[human.pos.x][human.pos.y] && !mine_deactivated[human.pos.x][human.pos.y]) {
         mine_grid[human.pos.x][human.pos.y] = false;
         add_log("[RADIO] WATCH OUT! Human stepped on a mine. Stand by for detonation!", ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
         queue_explosion(human.pos.x, human.pos.y);
@@ -899,11 +901,21 @@ void GameState::melt_adjacent_ice(int cx, int cy) {
         for (auto& z : zombies) {
             if (z->hp > 0 && z->pos == Position{nx, ny} && z->is_frozen) {
                 z->is_frozen = false;
-                z->frozen_turns = 0;
                 add_log(tr("[ICE] Ice melted under " + z->name + "! Unfrozen.",
                            "[BANG] Bang tan duoi chan " + z->name + "! Giai bang."),
                         ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
             }
+        }
+    }
+}
+
+void GameState::reactivate_mines_at(const std::vector<Position>& cells) {
+    for (const auto& p : cells) {
+        if (mine_grid[p.x][p.y] && mine_deactivated[p.x][p.y]) {
+            mine_deactivated[p.x][p.y] = false;
+            add_log(tr("[MINE] Mine at (" + std::to_string(p.x + 1) + ", " + std::to_string(p.y + 1) + ") reactivated by thaw!",
+                       "[MIN] Mìn o (" + std::to_string(p.x + 1) + ", " + std::to_string(p.y + 1) + ") hoat dong lai!"),
+                    ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
         }
     }
 }
@@ -1213,14 +1225,43 @@ void GameState::apply_lightning_strike() {
         queue_explosion(strike.x, strike.y);
     }
 
-    if (grid[strike.x][strike.y] == Terrain::Forest) {
-        // Only ignite if no living entity is standing on the cell
-        if (!has_living_entity_at(strike)) {
-            add_log("[ENV] Lightning set the forest at (" + std::to_string(strike.x + 1) + ", " + std::to_string(strike.y + 1) + ") on fire!", ImVec4(1.0f, 0.45f, 0.0f, 1.0f));
-            set_cell_on_fire(strike.x, strike.y);
+    // Melt ice at strike location
+    if (grid[strike.x][strike.y] == Terrain::Ice) {
+        grid[strike.x][strike.y] = Terrain::Water;
+        terrain_transitions.push_back({strike, Terrain::Ice, Terrain::Water, 0.0f, 0.8f});
+        thaw_loot_and_grenades_at({strike});
+        
+        // Check if there's a deactivated mine on this ice cell
+        if (mine_grid[strike.x][strike.y] && mine_deactivated[strike.x][strike.y]) {
+            mine_deactivated[strike.x][strike.y] = false;
+            add_log(tr("[MINE] Mine at (" + std::to_string(strike.x + 1) + ", " + std::to_string(strike.y + 1) + ") reactivated by lightning melting ice!",
+                       "[MIN] Mìn o (" + std::to_string(strike.x + 1) + ", " + std::to_string(strike.y + 1) + ") hoat dong lai do set!"),
+                    ImVec4(1.0f, 0.7f, 0.2f, 1.0f));
         } else {
-            add_log("[ENV] Lightning struck the forest at (" + std::to_string(strike.x + 1) + ", " + std::to_string(strike.y + 1) + ") — entity present, fire suppressed!", ImVec4(1.0f, 0.85f, 0.2f, 1.0f));
+            reactivate_mines_at({strike});
         }
+        
+        add_log(tr("[ENV] Lightning melted ice at (" + std::to_string(strike.x + 1) + ", " + std::to_string(strike.y + 1) + ")!",
+                   "[MOI] Set danh tan bang o (" + std::to_string(strike.x + 1) + ", " + std::to_string(strike.y + 1) + ")!"), ImVec4(0.6f, 0.9f, 1.0f, 1.0f));
+        
+        // Unfreeze entity at the melted ice cell
+        if (human.hp > 0 && human.pos == strike && human.is_frozen) {
+            human.is_frozen = false;
+            add_log(tr("[ICE] Lightning shattered the ice! Human unfrozen.",
+                       "[BANG] Set danh vo bang! Nguoi duoc giai bang."), ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+        }
+        for (auto& z : zombies) {
+            if (z->hp > 0 && z->pos == strike && z->is_frozen) {
+                z->is_frozen = false;
+                add_log(tr("[ICE] Lightning shattered the ice! " + z->name + " unfrozen.",
+                           "[BANG] Set danh vo bang! " + z->name + " duoc giai bang."), ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+            }
+        }
+    }
+
+    if (grid[strike.x][strike.y] == Terrain::Forest) {
+        add_log("[ENV] Lightning set the forest at (" + std::to_string(strike.x + 1) + ", " + std::to_string(strike.y + 1) + ") on fire!", ImVec4(1.0f, 0.45f, 0.0f, 1.0f));
+        set_cell_on_fire(strike.x, strike.y);
     }
 
     if (human.hp > 0 && human.pos == strike) {
@@ -1242,7 +1283,6 @@ void GameState::apply_lightning_strike() {
             // Direct strike on the struck cell unfreezes the entity
             if (z->is_frozen) {
                 z->is_frozen = false;
-                z->frozen_turns = 0;
                 add_log(tr("[ICE] Lightning shattered the ice! " + z->name + " unfrozen.",
                            "[BANG] Set danh vo bang! " + z->name + " duoc giai bang."), ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
             }
@@ -1332,6 +1372,7 @@ void GameState::apply_heatwave() {
     // Unfreeze any entities that were standing on now-melted ice
     if (!melted_ice.empty()) {
         thaw_loot_and_grenades_at(melted_ice);
+        reactivate_mines_at(melted_ice);
         if (human.hp > 0 && human.is_frozen) {
             for (const auto& p : melted_ice) {
                 if (human.pos == p) {
@@ -1348,7 +1389,6 @@ void GameState::apply_heatwave() {
                 for (const auto& p : melted_ice) {
                     if (z->pos == p) {
                         z->is_frozen = false;
-                        z->frozen_turns = 0;
                         add_log(tr("[RADIO] " + z->name + " thawed out! Ice melted beneath them.",
                                    "[RADIO] " + z->name + " duoc giai bang! Bang tan duoi chan."),
                                 ImVec4(1.0f, 0.8f, 0.5f, 1.0f));
@@ -1486,10 +1526,8 @@ void GameState::apply_blizzard() {
             for (const auto& p : frozen_cells) {
                 if (z->pos == p) {
                     z->is_frozen = true;
-                    // Sprinters thaw faster (1 turn), others need 2 turns
-                    z->frozen_turns = (z->type == ZombieType::Fast) ? 1 : 2;
-                    add_log(tr("[RADIO] " + z->name + " frozen for " + std::to_string(z->frozen_turns) + " turn(s)!",
-                               "[RADIO] " + z->name + " bi dong bang " + std::to_string(z->frozen_turns) + " luot!"),
+                    add_log(tr("[RADIO] " + z->name + " frozen solid! (Frozen until ice melts)",
+                               "[RADIO] " + z->name + " bi dong cung! (Dong bang den khi bang tan)"),
                             ImVec4(0.6f, 0.8f, 1.0f, 1.0f));
                     break;
                 }
@@ -1500,6 +1538,16 @@ void GameState::apply_blizzard() {
     add_log(tr("[ENV] Blizzard! " + std::to_string(frozen_cells.size()) + " water cell(s) frozen into ice.",
                "[MT] Bao tuyet! " + std::to_string(frozen_cells.size()) + " o nuoc dong bang thanh bang."),
             ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+    
+    // Deactivate mines on frozen cells
+    for (const auto& p : frozen_cells) {
+        if (mine_grid[p.x][p.y]) {
+            mine_deactivated[p.x][p.y] = true;
+            add_log(tr("[MINE] Mine at (" + std::to_string(p.x + 1) + ", " + std::to_string(p.y + 1) + ") deactivated by ice!",
+                       "[MIN] Mìn o (" + std::to_string(p.x + 1) + ", " + std::to_string(p.y + 1) + ") bi dong bang!"),
+                    ImVec4(1.0f, 0.6f, 0.2f, 1.0f));
+        }
+    }
 }
 
 void GameState::resolve_environment_turn() {
@@ -1623,7 +1671,7 @@ void GameState::execute_explosion_internal(int cx, int cy, bool is_zombie_explod
     
     Terrain center_t = grid[cx][cy];
     int radius = is_zombie_exploding ? 1 : 2;
-    if (center_t == Terrain::Water || center_t == Terrain::Ice) {
+    if (center_t == Terrain::Water) {
         radius = std::max(0, radius - 1);
     }
 
@@ -1647,7 +1695,7 @@ void GameState::execute_explosion_internal(int cx, int cy, bool is_zombie_explod
 
     // Kích nổ mìn khác trong vùng nổ (Phản ứng dây chuyền)
     for (auto cell : active_fx.blast_cells) {
-        if (mine_grid[cell.x][cell.y]) {
+        if (mine_grid[cell.x][cell.y] && !mine_deactivated[cell.x][cell.y]) {
             mine_grid[cell.x][cell.y] = false;
             add_log("[RADIO] Secondary explosion! A mine was caught in the blast!", ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
             queue_explosion(cell.x, cell.y);
@@ -1819,7 +1867,6 @@ void GameState::execute_explosion_internal(int cx, int cy, bool is_zombie_explod
                     // Unfreeze entity when pushed by explosion
                     if (zombies[ev.zombie_idx]->is_frozen) {
                         zombies[ev.zombie_idx]->is_frozen = false;
-                        zombies[ev.zombie_idx]->frozen_turns = 0;
                         add_log(tr("[ICE] Explosion blast unfroze " + zombies[ev.zombie_idx]->name + "!",
                                    "[BANG] Suc no giai bang " + zombies[ev.zombie_idx]->name + "!"), ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
                     }
@@ -1872,11 +1919,23 @@ void GameState::execute_explosion_internal(int cx, int cy, bool is_zombie_explod
     // Ice cells in blast radius melt into water; unfreeze any entities standing on them
     int ice_melted = 0;
     std::vector<Position> explosion_melted_ice;
+    std::vector<Position> deactivated_mines_reactivated;
+    
     for (const auto& cell : active_fx.blast_cells) {
         if (grid[cell.x][cell.y] == Terrain::Ice) {
             grid[cell.x][cell.y] = Terrain::Water;
             ice_melted++;
             explosion_melted_ice.push_back(cell);
+            
+            // Check if there's a deactivated mine on this ice cell
+            if (mine_grid[cell.x][cell.y] && mine_deactivated[cell.x][cell.y]) {
+                mine_deactivated[cell.x][cell.y] = false;
+                deactivated_mines_reactivated.push_back(cell);
+                add_log(tr("[MINE] Mine at (" + std::to_string(cell.x + 1) + ", " + std::to_string(cell.y + 1) + ") reactivated by explosion melting ice!",
+                           "[MIN] Mìn o (" + std::to_string(cell.x + 1) + ", " + std::to_string(cell.y + 1) + ") hoat dong lai do vu no!"),
+                        ImVec4(1.0f, 0.5f, 0.2f, 1.0f));
+            }
+            
             // Unfreeze entities on this cell
             if (human.hp > 0 && human.pos == cell && human.is_frozen) {
                 human.is_frozen = false;
@@ -1886,7 +1945,6 @@ void GameState::execute_explosion_internal(int cx, int cy, bool is_zombie_explod
             for (auto& z : zombies) {
                 if (z->hp > 0 && z->pos == cell && z->is_frozen) {
                     z->is_frozen = false;
-                    z->frozen_turns = 0;
                     add_log(tr("[ICE] Explosion melted ice under " + z->name + "! Unfrozen.",
                                "[BANG] Vu no lam tan bang duoi chan " + z->name + "! Giai bang."), ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
                 }
@@ -1961,7 +2019,7 @@ void GameState::zombie_single_step(size_t idx) {
         std::discrete_distribution<int> dist(weights.begin(), weights.end()); 
         Position old_pos = zom->pos;
         zom->pos = valid_moves[dist(rng)]; 
-        if (mine_grid[zom->pos.x][zom->pos.y]) { 
+        if (mine_grid[zom->pos.x][zom->pos.y] && !mine_deactivated[zom->pos.x][zom->pos.y]) { 
             mine_grid[zom->pos.x][zom->pos.y] = false; 
             add_log("[RADIO] Zombie #" + std::to_string(idx + 1) + " stepped on a mine. Stand by for detonation!", ImVec4(1.0f, 0.38f, 0.22f, 1.0f));
             queue_explosion(zom->pos.x, zom->pos.y); 
@@ -2043,7 +2101,8 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
                 hit_pos = {cx, cy};
                 break;
             }
-            if (mine_grid[cx][cy]) {
+            // Mine blocks bullet only if it's not deactivated (frozen under ice)
+            if (mine_grid[cx][cy] && !mine_deactivated[cx][cy]) {
                 hit_pos = {cx, cy};
                 hit_something = true;
                 break;
@@ -2064,7 +2123,7 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
         active_fx.end_p = getCellCenter(hit_pos.x, hit_pos.y, cellSize, boardOffset); 
 
         bool any_target = false;
-        if (mine_grid[hit_pos.x][hit_pos.y]) {
+        if (mine_grid[hit_pos.x][hit_pos.y] && !mine_deactivated[hit_pos.x][hit_pos.y]) {
             any_target = true;
             mine_grid[hit_pos.x][hit_pos.y] = false;
             add_log("[RADIO] Pistol shot hit a mine! Detonation!", ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
@@ -2194,7 +2253,7 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
 
         // Kích nổ mìn nếu bị bắn trúng
         for (const auto& cell : active_fx.blast_cells) {
-            if (mine_grid[cell.x][cell.y]) {
+            if (mine_grid[cell.x][cell.y] && !mine_deactivated[cell.x][cell.y]) {
                 mine_grid[cell.x][cell.y] = false;
                 add_log("[RADIO] Shotgun blast hit a mine! Detonation!", ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
                 queue_explosion(cell.x, cell.y);
@@ -2239,7 +2298,6 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
             // Shotgun blast unfreezes frozen zombies
             if (zombies[i]->is_frozen) {
                 zombies[i]->is_frozen = false;
-                zombies[i]->frozen_turns = 0;
                 add_log(tr("[ICE] Shotgun blast shattered the ice! Zombie #" + std::to_string(i + 1) + " unfrozen.",
                            "[BANG] Dan shotgun vo bang! Zombie #" + std::to_string(i + 1) + " duoc giai bang."),
                         ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
@@ -2292,7 +2350,6 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
                     // Unfreeze entity when pushed by shotgun
                     if (zombies[i]->is_frozen) {
                         zombies[i]->is_frozen = false;
-                        zombies[i]->frozen_turns = 0;
                         add_log(tr("[ICE] Shotgun knockback unfroze Zombie #" + std::to_string(i + 1) + "!",
                                    "[BANG] Luc giat shotgun giai bang Zombie #" + std::to_string(i + 1) + "!"), ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
                     }
@@ -2376,7 +2433,6 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
                     // Frozen entity hit by molotov: unfreeze instead of ignite, no fire spread
                     if (zombies[i]->is_frozen) {
                         zombies[i]->is_frozen = false;
-                        zombies[i]->frozen_turns = 0;
                         add_log(tr("-> Molotov hit frozen " + zombies[i]->name + "! Ice melted — unfrozen but not ignited. No fire spread.",
                                    "-> Bom xang trung " + zombies[i]->name + " dang dong bang! Bang tan — giai bang nhung khong chay. Khong lan lua."),
                                 ImVec4(0.4f, 0.8f, 1.0f, 1.0f));
@@ -2426,6 +2482,7 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
             grid[hit_pos.x][hit_pos.y] = Terrain::Water;
             terrain_transitions.push_back({hit_pos, Terrain::Ice, Terrain::Water, 0.0f, 0.8f});
             thaw_loot_and_grenades_at({hit_pos});
+            reactivate_mines_at({hit_pos});
             add_log(tr("[ICE] Molotov melted the ice at (" + std::to_string(hit_pos.x + 1) + ", " + std::to_string(hit_pos.y + 1) + ")! Ice -> Water.",
                        "[BANG] Bom xang lam tan chay bang tai (" + std::to_string(hit_pos.x + 1) + ", " + std::to_string(hit_pos.y + 1) + ")! Bang -> Nuoc."),
                     ImVec4(0.4f, 0.8f, 1.0f, 1.0f));
@@ -2438,7 +2495,6 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
             for (auto& z : zombies) {
                 if (z->hp > 0 && z->pos == hit_pos && z->is_frozen) {
                     z->is_frozen = false;
-                    z->frozen_turns = 0;
                     add_log(tr("[ICE] Molotov melted ice under " + z->name + "! Unfrozen.",
                                "[BANG] Bom xang tan bang duoi chan " + z->name + "! Giai bang."), ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
                 }
@@ -2477,7 +2533,6 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
                 for (auto& z : zombies) {
                     if (z->hp > 0 && z->pos == hit_pos && z->is_frozen) {
                         z->is_frozen = false;
-                        z->frozen_turns = 0;
                         add_log(tr("[ICE] Molotov heat melted the ice around " + z->name + "! Unfrozen, no fire spread.",
                                    "[BANG] Nhiet bom xang tan bang quanh " + z->name + "! Giai bang, khong lan lua."), ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
                     }
@@ -2615,18 +2670,18 @@ void GameState::update_zombie_logic(float dt) {
         return;
     }
     if (zom->is_frozen) {
-        zom->frozen_turns--;
-        if (zom->frozen_turns <= 0) {
-            zom->is_frozen = false;
-            zom->frozen_turns = 0;
-            add_log(tr("[ICE] " + zom->name + " thawed out! Frozen effect expired.",
-                       "[BANG] " + zom->name + " da giai bang! Het hieu ung dong bang."), ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+        // Frozen zombies can still attack if human is adjacent, but cannot move
+        int dx = std::abs(zom->pos.x - human.pos.x);
+        int dy = std::abs(zom->pos.y - human.pos.y);
+        if (dx <= 1 && dy <= 1 && human.hp > 0) {
+            // Human is adjacent - attempt attack
+            zom->pending_attack = true;
         } else {
-            add_log(tr("[ICE] " + zom->name + " is frozen solid! Loses this action. (" + std::to_string(zom->frozen_turns) + " turn(s) left)",
-                       "[BANG] " + zom->name + " bi dong cung! Mat hanh dong nay. (Con " + std::to_string(zom->frozen_turns) + " luot)"), ImVec4(0.6f, 0.8f, 1.0f, 1.0f));
+            add_log(tr("[ICE] " + zom->name + " is frozen solid and cannot move! (Frozen until ice melts)",
+                       "[BANG] " + zom->name + " bi dong cung va khong the di chuyen! (Dong bang den khi bang tan)"), ImVec4(0.6f, 0.8f, 1.0f, 1.0f));
+            active_zombie_idx++;
+            active_zombie_substep = 0;
         }
-        active_zombie_idx++;
-        active_zombie_substep = 0;
         return;
     }
     zombie_action_timer += dt;
@@ -2779,6 +2834,7 @@ void GameState::propagate_gradual_forest_fire() {
         grid[p.x][p.y] = Terrain::Water;
         terrain_transitions.push_back({p, Terrain::Ice, Terrain::Water, 0.0f, 0.8f});
         thaw_loot_and_grenades_at({p});
+        reactivate_mines_at({p});
         add_log(tr("[ICE] Fire heat melted ice at (" + std::to_string(p.x + 1) + ", " + std::to_string(p.y + 1) + ")!",
                    "[BANG] Nhiet lua lam tan bang tai (" + std::to_string(p.x + 1) + ", " + std::to_string(p.y + 1) + ")!"),
                 ImVec4(0.5f, 0.85f, 1.0f, 1.0f));
@@ -2791,7 +2847,6 @@ void GameState::propagate_gradual_forest_fire() {
         for (auto& z : zombies) {
             if (z->hp > 0 && z->pos == p && z->is_frozen) {
                 z->is_frozen = false;
-                z->frozen_turns = 0;
                 add_log(tr("[ICE] Ice melted under " + z->name + "! Unfrozen.",
                            "[BANG] Bang tan duoi chan " + z->name + "! Giai bang."),
                         ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
@@ -2933,6 +2988,7 @@ void GameState::use_ice_pick() {
     grid[px][py] = Terrain::Water;
     terrain_transitions.push_back({Position{px, py}, Terrain::Ice, Terrain::Water, 0.0f, 0.8f});
     thaw_loot_and_grenades_at({{px, py}});
+    reactivate_mines_at({{px, py}});
     sfx("ice_pick");
 
     if (human.is_frozen) {

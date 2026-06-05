@@ -29,6 +29,7 @@ public:
     int height = 15;
     std::vector<std::vector<Terrain>> grid;
     std::vector<std::vector<bool>> mine_grid;
+    std::vector<std::vector<bool>> mine_deactivated;  // Mines frozen under ice and deactivated
     Human human;
     std::vector<std::unique_ptr<Zombie>> zombies;
     std::vector<FireCell> fire_cells; 
@@ -116,6 +117,9 @@ public:
 
     // Melt all ice cells adjacent (8-dir) to a given cell due to heat transfer
     void melt_adjacent_ice(int cx, int cy);
+    
+    // Reactivate mines that were deactivated by ice freeze
+    void reactivate_mines_at(const std::vector<Position>& cells);
 
     // Loot drop system
     void spawn_loot_at(Position pos);

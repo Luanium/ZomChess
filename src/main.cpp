@@ -2114,19 +2114,23 @@ int main() {
             // Row 2: Pistol + Shotgun
             weapon_button(("Pistol (" + std::to_string(state.human.pistol_ammo) + ")").c_str(), InputMode::TargetPistol,
                 "Ranged shot. Accuracy decreases with distance. Blocked by walls.",
-                "Ban xa. Do chinh xac giam theo khoang cach. Bi chan boi tuong.");
+                "Ban xa. Do chinh xac giam theo khoang cach. Bi chan boi tuong.",
+                state.human.pistol_ammo <= 0);
             ImGui::SameLine();
             weapon_button(("Shotgun (" + std::to_string(state.human.shotgun_ammo) + ")").c_str(), InputMode::TargetShotgun,
                 "Fires a 3-tile line blast hitting all targets. Pushes Human back 1 tile (recoil).",
-                "Ban 3 o thang hang, trung tat ca muc tieu. Day lui Nguoi 1 o (giat lui).");
+                "Ban 3 o thang hang, trung tat ca muc tieu. Day lui Nguoi 1 o (giat lui).",
+                state.human.shotgun_ammo <= 0);
             // Row 3: Grenade + Molotov + Mine
             weapon_button(("Grenade (" + std::to_string(state.human.grenades) + ")").c_str(), InputMode::TargetGrenade,
                 "Thrown explosive. 1-turn fuse, then AoE blast. Can be frozen under ice.",
-                "Luu dan nem. No sau 1 luot, sat thuong vung. Co the bi dong bang duoi bang.");
+                "Luu dan nem. No sau 1 luot, sat thuong vung. Co the bi dong bang duoi bang.",
+                state.human.grenades <= 0);
             ImGui::SameLine();
             weapon_button(("Molotov (" + std::to_string(state.human.molotovs) + ")").c_str(), InputMode::TargetMolotov,
                 "Throws a fire bomb 1-6 tiles. Creates a fire zone on impact.",
-                "Nem bom xang 1-6 o. Tao vung lua khi trung.");
+                "Nem bom xang 1-6 o. Tao vung lua khi trung.",
+                state.human.molotovs <= 0);
             ImGui::SameLine();
             {
                 bool mine_disabled = state.human.is_paralyzed || state.human.stamina == 0 || state.phase != TurnPhase::HumanTurn || state.human.mines == 0 || state.grid[state.human.pos.x][state.human.pos.y] == Terrain::Ice;
@@ -2766,11 +2770,11 @@ int main() {
                         "Blizzard: each Water cell has a 25%% chance to freeze. Freezing is flood-filled — the entire connected Water body freezes together.",
                         "Bao Tuyet: moi o Nuoc co 25%% kha nang dong bang. Dong bang lan theo flood-fill — toan bo vung Nuoc lien ket dong cung nhau."));
                     ImGui::BulletText("%s", tr(
-                        "Entities standing on a cell that freezes become FROZEN: they cannot move until they spend 2 stamina to break free.",
-                        "Thuc the dang dung tren o bi dong bang tro nen BI DONG CUNG: khong the di chuyen cho den khi tieu 2 the luc de tu giai."));
+                        "Entities standing on a cell that freezes become FROZEN: they cannot move until the Ice tile melts into Water.",
+                        "Thuc the dang dung tren o bi dong bang tro nen BI DONG CUNG: khong the di chuyen cho den khi o Bang tan thanh Nuoc."));
                     ImGui::BulletText("%s", tr(
-                        "Frozen Zombies skip their movement each turn (frozen_turns counts down). They are still damaged normally.",
-                        "Zombie bi dong cung bo qua di chuyen moi luot (frozen_turns dem nguoc). Chung van nhan sat thuong binh thuong."));
+                        "Frozen entities skip their movement each turn. The frozen effect is permanent until the ice beneath them melts.",
+                        "Thuc the bi dong cung bo qua di chuyen moi luot. Hieu ung dong bang lien tiep den khi bang duoi chan chung tan."));
                     ImGui::BulletText("%s", tr(
                         "Ice cells are conductive — a frozen entity on Ice can be paralyzed by a subsequent lightning strike.",
                         "O Bang dan dien — thuc the bi dong cung tren Bang co the bi te liet boi tia set tiep theo."));
@@ -2808,7 +2812,7 @@ int main() {
 
                 // ── CREDITS ───────────────────────────────────────────────────────────
                 if (ImGui::CollapsingHeader(tr("Credits", "Tin Chi"))) {
-                    ImGui::TextColored(ImVec4(0.95f, 0.9f, 0.35f, 1.0f), "ZomChess v1.0");
+                    ImGui::TextColored(ImVec4(0.95f, 0.9f, 0.35f, 1.0f), "ZomChess v1.4.0");
                     ImGui::BulletText("%s", tr("Design & Programming: Phan Anh Luan + AIs", "Thiet ke & Lap trinh: Phan Anh Luan + AI"));
                     ImGui::BulletText("%s", tr("Music: 'Ancient Rite', 'Discovery Hit', 'Impending Boom', 'The Ice Giants' — licensed for use.", "Nhac nen: 'Ancient Rite', 'Discovery Hit', 'Impending Boom', 'The Ice Giants' — duoc cap phep su dung."));
                     ImGui::BulletText("%s", tr("Built with: C++, SFML, Dear ImGui, ImGui-SFML.", "Xay dung bang: C++, SFML, Dear ImGui, ImGui-SFML."));

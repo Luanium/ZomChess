@@ -1,12 +1,28 @@
+# Changes in v1.4.0
+
+## Logic:
+- `Frozen` status is now permanent until the `Ice` tile melts into `Water` tile, or it is knocked back by shotgun or explosions, or it is striked by the lightning
+- Zombies with `Frozen` status can now bite or scratch if `Human` stays adjacent to their tiles in their turns, they just are not able to move
+- Lightning now can melt the `Ice` tile it strikes into `Water`
+- Lightning now ignites the `Forest` tile it strikes, regardless there is entity staying on that tile or not
+- Range of explosions on `Ice` tile is now the same as in `Dirt` or `Forest`
+- Mines now will be deactivated when their tile freezes, reactivated when that tile thaws, and needs extra trigger to explode
+- `Shotgun` is now not able to makes `Ice` into `Water`
+
+## UI:
+- Fix bug: some button of weapons is not deactivated when not usable
+
+
 # Changes in v1.3.0
 
-## Logic
+## Logic:
 - Fix logic bug: when `Human` step on an `Ice` tile with frozen loot under it, `Human` no longer automatically uses `Ice Pick` to break the ice to get the loot, instead the player can choose to use `Ice Pick` or not
 - Increase the accuracy of `Pistol` and its range
 - New mechanisms for using `Mine`: `Mine` now can be triggered by shooting `Pistol` or `Shotgun` at it, or by `Lightning`, or by `Fire`, or by explosion
 
 ## UI:
 - Fix the version info in the splash screen to display the correct version
+
 
 # Changes in v1.2.0
 ## Logic:

@@ -29,8 +29,7 @@ public:
     
     bool is_burning = false;
     bool is_paralyzed = false;
-    bool is_frozen = false;    // Frozen: standing on water when it freezes
-    int frozen_turns = 0;      // Turns remaining frozen (counts down each turn)
+    bool is_frozen = false;    // Frozen: standing on water when it freezes (permanent until ice melts)
     bool loot_spawned = false; // Đã spawn loot khi chết chưa
     bool has_exploded = false;  // Exploding zombie: đã phát nổ chưa (dùng để hoãn loot drop)
     bool pending_attack = false; // Delay attack after movement
