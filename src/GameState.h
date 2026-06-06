@@ -124,6 +124,8 @@ public:
     // Loot drop system
     void spawn_loot_at(Position pos);
     void check_loot_pickup();
+    void clever_zombie_check_loot_pickup(size_t idx); // Clever Zombie loot pickup on its tile
+    bool clever_zombie_use_weapon(size_t idx);         // Clever Zombie weapon action during its turn; returns true if weapon was used
     void spawn_loot_for_newly_dead(); // Gọi sau check_victory_conditions
     // Hủy loot tại các ô trong danh sách (do nổ, sét, lửa, shotgun)
     void destroy_loot_at_cells(const std::vector<Position>& cells);

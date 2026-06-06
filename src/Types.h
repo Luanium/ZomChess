@@ -10,7 +10,7 @@
 
 enum class Terrain { Dirt, Water, Wall, Fire, Forest, Ice };
 enum class InputMode { MoveMode, TargetKnife, TargetPistol, TargetShotgun, TargetGrenade, TargetMolotov, UseIcePick };
-enum class ZombieType { Normal, Fast, Exploding, Vampire, Sick };
+enum class ZombieType { Clever, Fast, Exploding, Vampire, Sick };
 enum class TurnPhase { HumanTurn, ZombieAnimating, EnvironmentAnimating };
 
 // Added Bite and Scratch FX

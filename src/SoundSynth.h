@@ -375,6 +375,104 @@ static sf::SoundBuffer makeIcePick() {
     return buildBuffer(s);
 }
 
+// ─── Human loot pickup (weapon/ammo) ────────────────────────────────────────
+// Crisp metallic clink + soft rustle — the sound of picking up gear.
+// Short and satisfying, distinct from the "heal" chime used for potions.
+static sf::SoundBuffer makeLootPickup() {
+    std::mt19937 rng(18);
+    const float dur = 0.18f;
+    int n = static_cast<int>(dur * SAMPLE_RATE);
+    std::vector<float> s(n);
+    for (int i = 0; i < n; ++i) {
+        float t = (float)i / SAMPLE_RATE;
+        // Metallic clink: two high-frequency tones with fast decay
+        float clink = std::sin(2.f * M_PI * 1400.f * t) * std::exp(-t * 45.f) * 0.5f
+                    + std::sin(2.f * M_PI * 2200.f * t) * std::exp(-t * 60.f) * 0.3f;
+        // Soft rustle: short filtered noise tail
+        float rustle = noise(rng) * std::exp(-t * 22.f) * 0.2f;
+        // Rising pitch chirp to give it a "found it!" feel
+        float chirp_t = t - 0.06f;
+        float chirp = (chirp_t > 0.f)
+            ? std::sin(2.f * M_PI * (900.f + 600.f * chirp_t / 0.12f) * chirp_t)
+              * std::exp(-chirp_t * 35.f) * 0.35f
+            : 0.f;
+        s[i] = (clink + rustle + chirp) * 0.85f;
+    }
+    return buildBuffer(s);
+}
+// Harsh rattling exhale: starts with a raspy throat-scrape burst (the "death rattle"),
+// then transitions into a low descending moan as air leaves — unmistakably undead.
+static sf::SoundBuffer makeZombieDeath() {
+    std::mt19937 rng(16);
+    const float dur = 0.70f;
+    int n = static_cast<int>(dur * SAMPLE_RATE);
+    std::vector<float> s(n);
+
+    float lp1 = 0.f, lp2 = 0.f; // two-stage low-pass for gurgle texture
+
+    for (int i = 0; i < n; ++i) {
+        float t = (float)i / SAMPLE_RATE;
+        float raw = noise(rng);
+
+        // ── Death rattle: band-passed noise burst in first 0.15 s ──────────
+        lp1 = lp1 * 0.60f + raw * 0.40f;
+        lp2 = lp2 * 0.80f + lp1 * 0.20f;
+        float rattle_band = lp1 - lp2; // narrow band ~500–1500 Hz
+        float rattle_env  = std::exp(-t * 18.f); // fast decay
+        float rattle = rattle_band * rattle_env * 0.65f;
+
+        // ── Wet gurgle: amplitude-modulated low-pass noise ─────────────────
+        float gurgle_lp = lp2 * 0.5f;
+        // Modulate at ~14 Hz to simulate the "bubbling" gurgle rhythm
+        float gurgle_mod = 0.5f + 0.5f * std::sin(2.f * M_PI * 14.f * t);
+        float gurgle_env = std::exp(-t * 6.f) * (t < 0.05f ? t / 0.05f : 1.f); // tiny attack
+        float gurgle = gurgle_lp * gurgle_mod * gurgle_env * 0.5f;
+
+        // ── Death moan: pitch-descending sine, delayed 0.1 s ───────────────
+        float mt = t - 0.10f;
+        float moan = 0.f;
+        if (mt > 0.f) {
+            // Starts at ~220 Hz (zombie vocal range), descends to ~60 Hz
+            float freq = 220.f * std::exp(-mt * 2.8f) + 60.f;
+            float moan_env = std::exp(-mt * 4.5f) * (mt < 0.04f ? mt / 0.04f : 1.f);
+            // Add slight vibrato for organic "last-breath" quality
+            float vibrato = 1.f + 0.04f * std::sin(2.f * M_PI * 6.f * mt);
+            moan = std::sin(2.f * M_PI * freq * vibrato * mt) * moan_env * 0.55f;
+        }
+
+        // ── Sharp click transient at t=0 (body impact) ────────────────────
+        float click = raw * std::exp(-t * 200.f) * 0.3f;
+
+        s[i] = (rattle + gurgle + moan + click) * 0.92f;
+    }
+    return buildBuffer(s);
+}
+
+// ─── Clever Zombie loot pickup ──────────────────────────────────────────────
+// Eerie satisfied grunt + wet smacking sound — zombie is pleased to find loot.
+// Short, punchy, clearly non-human. Different from the human "heal" chime.
+static sf::SoundBuffer makeZombieLoot() {
+    std::mt19937 rng(17);
+    const float dur = 0.30f;
+    int n = static_cast<int>(dur * SAMPLE_RATE);
+    std::vector<float> s(n);
+    float lp = 0.f;
+    for (int i = 0; i < n; ++i) {
+        float t = (float)i / SAMPLE_RATE;
+        float raw = noise(rng);
+        lp = lp * 0.75f + raw * 0.25f;
+        // Satisfied low grunt: rising then falling tone
+        float phase = t / dur;
+        float freq = 120.f + 80.f * std::sin(M_PI * phase); // 120→200→120 Hz arc
+        float grunt = std::sin(2.f * M_PI * freq * t) * 0.5f;
+        // Wet smack transient at start
+        float smack = lp * std::exp(-t * 30.f) * 0.4f;
+        float env = envelope(t, dur, 0.03f, 0.12f);
+        s[i] = (grunt + smack) * env * 0.85f;
+    }
+    return buildBuffer(s);
+}
+
 // ─── Register all sounds into AudioManager ──────────────────────────────────
 // Call once during initAudio()
 static void registerAll(class AudioManager& audio) {
@@ -394,6 +492,9 @@ static void registerAll(class AudioManager& audio) {
     audio.loadSoundFromBuffer("molotov",     makeMolotov());
     audio.loadSoundFromBuffer("rain",        makeRain());
     audio.loadSoundFromBuffer("ice_pick",    makeIcePick());
+    audio.loadSoundFromBuffer("zombie_death",  makeZombieDeath());
+    audio.loadSoundFromBuffer("zombie_loot",   makeZombieLoot());
+    audio.loadSoundFromBuffer("loot_pickup",   makeLootPickup());
 }
 
 } // namespace SoundSynth

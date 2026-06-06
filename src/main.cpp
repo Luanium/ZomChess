@@ -992,7 +992,7 @@ int main() {
             ImGui::Spacing();
 
             ImGui::TextColored(ImVec4(1, 0.3f, 0.3f, 1), "--- HOSTILE THREAT QUANTITIES ---");
-            draw_elegant_slider("Normal Zombies", &state.active_config.count_normal, 0, 20, ImVec4(0.2f, 0.8f, 0.4f, 1.0f), ImVec4(0.2f, 0.8f, 0.4f, 1.0f));
+            draw_elegant_slider("Clever Zombies", &state.active_config.count_normal, 0, 20, ImVec4(0.2f, 0.8f, 0.4f, 1.0f), ImVec4(0.2f, 0.8f, 0.4f, 1.0f));
             draw_elegant_slider("Fast Sprinters", &state.active_config.count_fast, 0, 15, ImVec4(0.35f, 0.75f, 1.0f, 1.0f), ImVec4(0.35f, 0.75f, 1.0f, 1.0f));
             draw_elegant_slider("Volatile Exploders", &state.active_config.count_exploding, 0, 15, ImVec4(0.9f, 0.5f, 0.1f, 1.0f), ImVec4(0.9f, 0.5f, 0.1f, 1.0f));
             draw_elegant_slider("Vampiric Draculas", &state.active_config.count_vampire, 0, 10, ImVec4(0.7f, 0.2f, 0.7f, 1.0f), ImVec4(0.7f, 0.2f, 0.7f, 1.0f));
@@ -1049,7 +1049,7 @@ int main() {
                 ImGui::BulletText("%s", tr("Molotov: throws fire 1-6 tiles. Mine: placed trap, 1-tile blast.", "Bom xang: nem lua 1-6 o. Min: bay dat san, no 1 o."));
                 ImGui::Spacing();
                 ImGui::TextColored(ImVec4(0.6f, 1.0f, 0.8f, 1.0f), "%s", tr("Zombie Types", "Loai Zombie"));
-                ImGui::BulletText("%s", tr("Normal: 1 move/turn. Fast: 2 moves/turn. Exploding: detonates on death.", "Binh thuong: 1 buoc/luot. Nhanh: 2 buoc/luot. No: phat no khi chet."));
+                ImGui::BulletText("%s", tr("Clever: 1 move/turn, picks up loot & uses weapons. Fast: 2 moves/turn. Exploding: detonates on death.", "Thong minh: 1 buoc/luot, nhat do & dung vu khi. Nhanh: 2 buoc/luot. No: phat no khi chet."));
                 ImGui::BulletText("%s", tr("Vampire: heals on hit. Sick: infects — reduces your stamina next turn.", "Ma ca rong: hoi phuc khi tan cong. Benh: lay nhiem — giam the luc luot sau."));
                 ImGui::Spacing();
                 ImGui::TextColored(ImVec4(0.6f, 1.0f, 0.8f, 1.0f), "%s", tr("Terrain", "Dia Hinh"));
@@ -1407,6 +1407,23 @@ int main() {
                             tagTxt.setPosition(drawX + ti * tagW + tagW * 0.5f - 4.0f, drawY - 1.0f);
                             window.draw(tagTxt);
                         }
+                    }
+
+                    // Clever Zombie weapon-ammo indicator:
+                    // Small solid black right-angle triangle in the top-right corner of the icon.
+                    if (z->type == ZombieType::Clever && z->hasWeaponAmmo()) {
+                        const float triSize = std::max(5.0f, cellSize * 0.22f);
+                        float tx = drawX + (cellSize - 6.0f) - triSize; // right edge - triSize
+                        float ty = drawY;                                 // top edge
+                        sf::ConvexShape tri;
+                        tri.setPointCount(3);
+                        // Right-angle at top-right corner: (tx+triSize, ty), (tx+triSize, ty+triSize), (tx, ty)
+                        tri.setPoint(0, sf::Vector2f(tx + triSize, ty));            // top-right (right angle)
+                        tri.setPoint(1, sf::Vector2f(tx + triSize, ty + triSize));  // bottom-right
+                        tri.setPoint(2, sf::Vector2f(tx,           ty));            // top-left
+                        tri.setFillColor(sf::Color(0, 0, 0, 220));
+                        tri.setOutlineThickness(0.f);
+                        window.draw(tri);
                     }
                 }
             }
@@ -2145,6 +2162,12 @@ int main() {
                             state.human.mines--; state.human.stamina--;
                             state.add_log(state.tr("-> Human placed a claymore mine.", "-> Nguoi cai min claymore."), ImVec4(1.0f, 0.7f, 0.3f, 1.0f));
                             sfx("mine_plant");
+                            // Thermal trigger: if placed on a Fire tile, explode immediately
+                            if (state.grid[state.human.pos.x][state.human.pos.y] == Terrain::Fire) {
+                                state.mine_grid[state.human.pos.x][state.human.pos.y] = false;
+                                state.add_log("[RADIO] Mine planted on fire — thermal trigger! Detonation!", ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
+                                state.queue_explosion(state.human.pos.x, state.human.pos.y);
+                            }
                         }
                     }
                 }
@@ -2219,8 +2242,8 @@ int main() {
             }
             ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f), "%s: %zu", tr("Remaining Zombies", "So Zombie con lai"), alive_zombies);
             ImGui::Text("%s:", tr("Legend", "Chu giai"));
-            ImGui::SameLine(); ImGui::TextColored(ImVec4(0.2f, 0.75f, 0.3f, 1.0f), "Normal");
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr("Normal Zombie: 3 HP. Moves 1 tile/turn toward Human.", "Zombie Binh Thuong: 3 HP. Di chuyen 1 o/luot ve phia Nguoi."));
+            ImGui::SameLine(); ImGui::TextColored(ImVec4(0.2f, 0.75f, 0.3f, 1.0f), "Clever");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr("Clever Zombie: 2 HP. Moves 1 tile/turn. Picks up loot & uses weapons.", "Zombie Thong Minh: 2 HP. Di chuyen 1 o/luot. Nhat do & dung vu khi."));
             ImGui::SameLine(); ImGui::TextColored(ImVec4(0.35f, 0.75f, 1.0f, 1.0f), "Fast");
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr("Fast Sprinter: 2 HP. Moves up to 2 tiles/turn. Thaws faster from ice.", "Zombie Nhanh: 2 HP. Di chuyen toi 2 o/luot. Tan bang nhanh hon."));
             ImGui::SameLine(); ImGui::TextColored(ImVec4(0.9f, 0.5f, 0.1f, 1.0f), "Exploder");
@@ -2442,15 +2465,20 @@ int main() {
 
                 // ── ZOMBIE TYPES ───────────────────────────────────────────────────────
                 if (ImGui::CollapsingHeader(tr("Zombie Types", "Cac Loai Zombie"))) {
-                    ImGui::TextColored(ImVec4(0.45f, 0.9f, 0.45f, 1.0f), "%s", tr("Normal Zombie  [HP: 2]", "Zombie Thuong  [HP: 2]"));
+                    ImGui::TextColored(ImVec4(0.45f, 0.9f, 0.45f, 1.0f), "%s", tr("Clever Zombie  [HP: 2]", "Zombie Thong Minh  [HP: 2]"));
                     ImGui::BulletText("%s", tr("Moves 1 tile per turn (8-directional, weighted toward Human).", "Di chuyen 1 o moi luot (8 huong, uu tien huong Human)."));
                     ImGui::BulletText("%s", tr("Orthogonal attack: Bite -2 HP. Diagonal attack: Scratch -1 HP.", "Tan cong ngang/doc: Can -2 HP. Tan cong cheo: Cao -1 HP."));
                     ImGui::BulletText("%s", tr("In Water: Bite deals only -1 HP; Scratch deals 0 HP.", "Trong Nuoc: Can chi gay -1 HP; Cao gay 0 HP."));
+                    ImGui::BulletText("%s", tr("Picks up loot when stepping on it (except loot frozen under Ice).", "Nhat do khi buoc len (tru do bi ket duoi Bang)."));
+                    ImGui::BulletText("%s", tr("HP potion: heals. Stamina potion: extra action. Weapons: stored & used in future turns.", "Binh mau: hoi phuc. Binh the luc: hanh dong them. Vu khi: luu va su dung sau."));
+                    ImGui::BulletText("%s", tr("Each turn: randomly does nothing, moves, or uses a weapon (then attacks if adjacent).", "Moi luot: ngau nhien khong lam gi, di chuyen, hoac dung vu khi (roi tan cong neu ke ben)."));
+                    ImGui::BulletText("%s", tr("If Frozen: cannot move or plant Mine on Ice. Can still attack if Human is adjacent.", "Neu Dong Bang: khong the di chuyen hoac dat Min tren Bang. Van tan cong duoc neu ke ben."));
+                    ImGui::BulletText("%s", tr("Triangle indicator (top-right of icon) = holding weapon ammo.", "Tam giac (goc tren phai bieu tuong) = dang giu dan vu khi."));
                     //ImGui::BulletText("%s", tr("AI uses exponential weighting (lambda=1.2) — mostly advances, rarely retreats.", "AI dung trong so mu (lambda=1.2) — chu yeu tien, hiem khi lui."));
                     ImGui::Spacing();
                     ImGui::TextColored(ImVec4(0.35f, 0.75f, 1.0f, 1.0f), "%s", tr("Fast Sprinter  [HP: 2]", "Zombie Nhanh  [HP: 2]"));
                     ImGui::BulletText("%s", tr("Takes 2 move+attack actions per turn instead of 1.", "Co 2 hanh dong di chuyen+tan cong moi luot thay vi 1."));
-                    ImGui::BulletText("%s", tr("In Water: capped to 1 action per turn (same as Normal).", "Trong Nuoc: bi gioi han con 1 hanh dong moi luot (giong Thuong)."));
+                    ImGui::BulletText("%s", tr("In Water: capped to 1 action per turn (same as Clever).", "Trong Nuoc: bi gioi han con 1 hanh dong moi luot (giong Thong Minh)."));
                     ImGui::BulletText("%s", tr("When Frozen: thaws after only 1 turn (others need 2 turns).", "Khi bi Dong Bang: tu giai sau 1 luot (loai khac can 2 luot)."));
                     ImGui::Spacing();
                     ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.1f, 1.0f), "%s", tr("Exploding Zombie  [HP: 3]", "Zombie No  [HP: 3]"));
@@ -2461,7 +2489,7 @@ int main() {
                     ImGui::Spacing();
                     ImGui::TextColored(ImVec4(0.75f, 0.2f, 0.75f, 1.0f), "%s", tr("Vampire Zombie  [HP: 4]", "Zombie Hut Mau  [HP: 4]"));
                     ImGui::BulletText("%s", tr("After each successful attack, heals +1 HP (no cap shown, but max_hp is 4).", "Sau moi don tan cong thanh cong, hoi phuc +1 HP."));
-                    ImGui::BulletText("%s", tr("Same attack pattern as Normal (Bite/Scratch). Highest base HP of all zombies.", "Cung kieu tan cong nhu Thuong (Can/Cao). HP co ban cao nhat."));
+                    ImGui::BulletText("%s", tr("Same attack pattern as Clever (Bite/Scratch). Highest base HP of all zombies.", "Cung kieu tan cong nhu Thong Minh (Can/Cao). HP co ban cao nhat."));
                     ImGui::Spacing();
                     ImGui::TextColored(ImVec4(0.85f, 0.9f, 0.2f, 1.0f), "%s", tr("Sick Zombie  [HP: 2]", "Zombie Benh  [HP: 2]"));
                     ImGui::BulletText("%s", tr("On orthogonal Bite: halves remaining turns AND inflicts -1 stamina next turn.", "Khi Can ngang/doc: giam nua so luot con lai VA tru -1 stamina luot sau."));
@@ -2615,7 +2643,7 @@ int main() {
                     ImGui::TextColored(ImVec4(0.6f, 0.85f, 1.0f, 1.0f), "%s", tr("[F] Frozen", "[F] Dong Bang"));
                     ImGui::BulletText("%s", tr("Gained by: standing on Water when Blizzard freezes it.", "Nhan duoc khi: dang dung tren Nuoc khi Bao Tuyet dong bang no."));
                     ImGui::BulletText("%s", tr("Human: costs 2 stamina to break free (click any tile). If < 2 stamina, turn is skipped.", "Human: ton 2 the luc de tu giai (click bat ky o). Neu < 2 the luc, bo qua luot."));
-                    ImGui::BulletText("%s", tr("Zombie: loses action each turn. Normal/Vampire/Sick/Exploding thaw after 2 turns. Sprinter after 1 turn.", "Zombie: mat hanh dong moi luot. Thuong/Hut Mau/Benh/No giai sau 2 luot. Sprinter sau 1 luot."));
+                    ImGui::BulletText("%s", tr("Zombie: loses action each turn. Clever/Vampire/Sick/Exploding thaw after 2 turns. Sprinter after 1 turn.", "Zombie: mat hanh dong moi luot. Thong Minh/Hut Mau/Benh/No giai sau 2 luot. Sprinter sau 1 luot."));
                     ImGui::BulletText("%s", tr("Frozen entities cannot be pushed by Wind.", "Thuc the Dong Bang mien nhiem voi Gio."));
                     ImGui::BulletText("%s", tr("Cleared by: ice melting (any cause), explosion blast, lightning direct hit, molotov heat.", "Giai bang: bang tan (bat ky nguyen nhan), vu no, set danh truc tiep, nhiet molotov."));
                     ImGui::Spacing();
@@ -2812,7 +2840,7 @@ int main() {
 
                 // ── CREDITS ───────────────────────────────────────────────────────────
                 if (ImGui::CollapsingHeader(tr("Credits", "Tin Chi"))) {
-                    ImGui::TextColored(ImVec4(0.95f, 0.9f, 0.35f, 1.0f), "ZomChess v1.4.0");
+                    ImGui::TextColored(ImVec4(0.95f, 0.9f, 0.35f, 1.0f), "ZomChess v2.0.0");
                     ImGui::BulletText("%s", tr("Design & Programming: Phan Anh Luan + AIs", "Thiet ke & Lap trinh: Phan Anh Luan + AI"));
                     ImGui::BulletText("%s", tr("Music: 'Ancient Rite', 'Discovery Hit', 'Impending Boom', 'The Ice Giants' — licensed for use.", "Nhac nen: 'Ancient Rite', 'Discovery Hit', 'Impending Boom', 'The Ice Giants' — duoc cap phep su dung."));
                     ImGui::BulletText("%s", tr("Built with: C++, SFML, Dear ImGui, ImGui-SFML.", "Xay dung bang: C++, SFML, Dear ImGui, ImGui-SFML."));

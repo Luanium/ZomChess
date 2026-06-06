@@ -254,6 +254,7 @@ namespace GameConstants {
         constexpr double AI_LAMBDA = 1.2;
         constexpr double AI_AWAY_WEIGHT = 0.05;
         constexpr double AI_PERPENDICULAR_WEIGHT = 0.3;
+        constexpr double AI_IDLE_WEIGHT = 0.04; // staying in place — very unlikely
 
         // Movement
         constexpr int MOVES_PER_TURN_NORMAL = 1;

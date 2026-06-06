@@ -34,13 +34,26 @@ public:
     bool has_exploded = false;  // Exploding zombie: đã phát nổ chưa (dùng để hoãn loot drop)
     bool pending_attack = false; // Delay attack after movement
 
+    // Clever Zombie weapon ammo (only used by ZombieType::Clever)
+    int pistol_ammo   = 0;
+    int shotgun_ammo  = 0;
+    int grenades      = 0;
+    int molotovs      = 0;
+    int mines         = 0;
+    bool extra_turn   = false; // Stamina potion grants one extra full turn
+
     Zombie(Position p, int h, std::string n, ZombieType t) 
         : pos(p), hp(h), max_hp(h), name(n), type(t) {}
     virtual ~Zombie() = default;
     virtual int getMovesPerTurn() const { return GameConstants::Zombies::MOVES_PER_TURN_NORMAL; }
+
+    // Returns true if this Clever Zombie holds any weapon ammo
+    bool hasWeaponAmmo() const {
+        return pistol_ammo > 0 || shotgun_ammo > 0 || grenades > 0 || molotovs > 0 || mines > 0;
+    }
 };
 
-class NormalZombie : public Zombie { public: using Zombie::Zombie; };
+class CleverZombie : public Zombie { public: using Zombie::Zombie; };
 class FastZombie : public Zombie { public: using Zombie::Zombie; int getMovesPerTurn() const override { return GameConstants::Zombies::MOVES_PER_TURN_FAST; } };
 class ExplodingZombie : public Zombie { public: using Zombie::Zombie; };
 class VampireZombie : public Zombie { public: using Zombie::Zombie; };

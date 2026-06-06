@@ -1,4 +1,27 @@
-# Changes in v1.4.0
+# v2.0.0
+
+## New feature: Normal Zombies are no longer "normal", they are "clever" now. Change `Normal` to `Clever` throughout the game and codebase.
+- `Clever Zombie` can now pick the loots when it steps on the tiles having the loots (except when the loots are frozen under `Ice` tiles)
+- If the loot is extra HP, then HP of `Clever Zombie` increases by that amount (its HP indicator will increases). If the loot is restoring stamina, then it has another full turn right after the end of its current turn.
+- If the loot is ammo of the weapons (`Pistol` bullet, `Shotgun` bullet, `Grenade`, `Molotov`, `Mine`), then `Clever Zombie` can use the corresponding weapons
+- In every of its turn, `Clever Zombie` can only do one of the actions (randomly): doing nothing, or moving, or using one of the weapons. Of course it can also attack `Human` (bite or scratch) right before its turn end. 
+- If `Clever Zombie` is in `Frozen` status, it just cannot move or plant `Mine` on `Ice` tile
+- When `Clever Zombie` uses , it uses as if it was `Human` (i.e. same mechanisms), except that it chooses the direction randomly with higher probability for the direction that closest to the position of `Human`
+- All the mechanisms of the weapons used by `Clever Zombie` are the same as if they are used by `Human`, the all entities may take damage
+- Increase the activeness of `Zombie`
+
+## Logic:
+- Fix bug when planting `Mine` in a `Fire` tile but `Mine` does not explode
+- Loot in `Fire` tile is now destroyed immediately
+
+## UI:
+- If a `Clever Zombie` holds weapon ammo, there will be a small black right-angle triangle at the top-right corner of its square icon to indicate. This indicator will disappear when it does not hold weapon ammo anymore
+
+## SFX:
+- New sound effects for events when `Zombie` dies, when `Human` and `Clever Zombie` pick useful loots.
+
+
+# v1.4.0
 
 ## Logic:
 - `Frozen` status is now permanent until the `Ice` tile melts into `Water` tile, or it is knocked back by shotgun or explosions, or it is striked by the lightning
@@ -13,7 +36,7 @@
 - Fix bug: some button of weapons is not deactivated when not usable
 
 
-# Changes in v1.3.0
+# v1.3.0
 
 ## Logic:
 - Fix logic bug: when `Human` step on an `Ice` tile with frozen loot under it, `Human` no longer automatically uses `Ice Pick` to break the ice to get the loot, instead the player can choose to use `Ice Pick` or not
@@ -24,7 +47,8 @@
 - Fix the version info in the splash screen to display the correct version
 
 
-# Changes in v1.2.0
+# v1.2.0
+
 ## Logic:
 - Entities now are resolved from `Frozen` status when pushed back by explosion or by `Shotgun`
 - Fix a bug in explosion-blocking logic (some zombies standing in the area of effect of `Grenade` but not be affected)
