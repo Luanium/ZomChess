@@ -1,3 +1,16 @@
+# v2.1.0
+
+## Logic:
+- Fix bug: When `Explosing Zombie` detonates in `Water`, adjacent `Wall` is destroyed even though the area of effect of the explosion is only at the tile the zombie is standing
+- Fix bug: Explosion now only destroys adjacent `Wall` tiles (assuming those `Wall` tiles is in the area of effect)
+- Fix bug: Entity right after `Wall` still gets damage from explosion even though the `Wall` should block
+- `Ice` tile right after `Wall` now will not melted into `Water` due to explosions
+
+## UI:
+- Fix: The number of available spawn tiles is now get updated when the player adjust the ratio of `Wall` tiles
+- `Wall` at the far zone (radius = 2) of the explosion is now not displayed in the blast-cell animation, similarly for `Wall` not right in front of the shotgun direction
+
+
 # v2.0.0
 
 ## New feature: Normal Zombies are no longer "normal", they are "clever" now. Change `Normal` to `Clever` throughout the game and codebase.

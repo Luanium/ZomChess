@@ -66,18 +66,41 @@ int GameState::calculate_available_spawn_cells() {
     int total_allowed = 0;
     Position h_pos = active_config.custom_map_mode ? active_config.custom_human_pos : Position{w/2, h/2};
 
-    for (int x = 0; x < w; ++x) {
-        for (int y = 0; y < h; ++y) {
-            if (active_config.custom_map_mode) {
-                Terrain t = active_config.custom_grid[x][y];
-                if (t == Terrain::Wall ) continue;
+    if (active_config.custom_map_mode) {
+        // Custom map: exact cell-by-cell count excluding actual Wall tiles
+        for (int x = 0; x < w; ++x) {
+            for (int y = 0; y < h; ++y) {
+                if (active_config.custom_grid[x][y] == Terrain::Wall) continue;
+                if (x == h_pos.x && y == h_pos.y) continue;
+                if (active_config.spawn_shield) {
+                    if (std::abs(x - h_pos.x) <= GameConstants::MapGen::SPAWN_SHIELD_RADIUS &&
+                        std::abs(y - h_pos.y) <= GameConstants::MapGen::SPAWN_SHIELD_RADIUS) continue;
+                }
+                total_allowed++;
             }
-            if (x == h_pos.x && y == h_pos.y) continue;
-            if (active_config.spawn_shield) {
-                if (std::abs(x - h_pos.x) <= GameConstants::MapGen::SPAWN_SHIELD_RADIUS && std::abs(y - h_pos.y) <= GameConstants::MapGen::SPAWN_SHIELD_RADIUS) continue;
-            }
-            total_allowed++;
         }
+    } else {
+        // Random map: estimate based on terrain ratios.
+        // Wall tiles block spawning; estimate their count from ratio_wall.
+        float total_ratio = static_cast<float>(
+            active_config.ratio_wall + active_config.ratio_water +
+            active_config.ratio_forest + active_config.ratio_dirt + active_config.ratio_ice);
+        if (total_ratio <= 0.f) total_ratio = 100.f;
+
+        int total_cells = w * h;
+        int estimated_walls = static_cast<int>(std::round(total_cells * active_config.ratio_wall / total_ratio));
+
+        // Spawn shield: (2*SPAWN_SHIELD_RADIUS+1)^2 cells minus 1 for human pos
+        int shield_r = GameConstants::MapGen::SPAWN_SHIELD_RADIUS;
+        int shield_side = 2 * shield_r + 1;
+        int shield_cells = active_config.spawn_shield
+            ? std::min(shield_side * shield_side - 1, total_cells - 1)
+            : 0;
+
+        // Available = total - estimated_walls - human tile - shield area
+        // (shield area may overlap walls, so we conservatively subtract from non-wall cells)
+        int non_wall_cells = total_cells - estimated_walls;
+        total_allowed = std::max(0, non_wall_cells - 1 - shield_cells);
     }
     return total_allowed;
 }
@@ -1686,8 +1709,13 @@ void GameState::execute_explosion_internal(int cx, int cy, bool is_zombie_explod
     for (int dx = -radius; dx <= radius; ++dx) { 
         for (int dy = -radius; dy <= radius; ++dy) { 
             int nx = cx + dx, ny = cy + dy; 
-            if (nx >= 0 && nx < width && ny >= 0 && ny < height) { 
-                if (is_blocked_by_wall(Position{cx, cy}, Position{nx, ny})) continue;
+            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                int cell_dist = std::max(std::abs(dx), std::abs(dy));
+                // Walls at exactly radius 1 are included (they will be destroyed).
+                // Walls at radius 2 (outer ring) are excluded — they block but survive.
+                if (grid[nx][ny] == Terrain::Wall && cell_dist > 1) continue;
+                // Non-wall cells at any ring: skip if blocked by a wall along the ray
+                if (grid[nx][ny] != Terrain::Wall && is_blocked_by_wall(Position{cx, cy}, Position{nx, ny})) continue;
                 active_fx.blast_cells.push_back({nx, ny}); 
             }
         }
@@ -1906,16 +1934,13 @@ void GameState::execute_explosion_internal(int cx, int cy, bool is_zombie_explod
         }
     }
 
-    for (int dx = -1; dx <= 1; ++dx) {
-        for (int dy = -1; dy <= 1; ++dy) {
-            if (dx == 0 && dy == 0) continue;
-            int nx = cx + dx, ny = cy + dy;
-            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-                if (grid[nx][ny] == Terrain::Wall) {
-                    grid[nx][ny] = Terrain::Dirt;
-                    add_log("[EXPLOSION] Wall at (" + std::to_string(nx + 1) + ", " + std::to_string(ny + 1) + ") destroyed.", ImVec4(1.0f, 0.5f, 0.2f, 1.0f));
-                }
-            }
+    // Destroy Wall tiles that are in the blast area (radius 1 only, if radius >= 1).
+    // Walls at radius 2 are excluded from blast_cells and survive.
+    // When radius == 0 (e.g. Exploding Zombie in Water), no walls are destroyed.
+    for (const auto& cell : active_fx.blast_cells) {
+        if (grid[cell.x][cell.y] == Terrain::Wall) {
+            grid[cell.x][cell.y] = Terrain::Dirt;
+            add_log("[EXPLOSION] Wall at (" + std::to_string(cell.x + 1) + ", " + std::to_string(cell.y + 1) + ") destroyed.", ImVec4(1.0f, 0.5f, 0.2f, 1.0f));
         }
     }
 
@@ -2242,6 +2267,8 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
                         int fx = human.pos.x + vx + dx_step * vx;
                         int fy = human.pos.y + vy + dy_step * vy;
                         if (fx >= 0 && fx < width && fy >= 0 && fy < height) {
+                            bool is_front_wall = (fx == first_x && fy == first_y && grid[fx][fy] == Terrain::Wall);
+                            if (!is_front_wall && grid[fx][fy] == Terrain::Wall) continue;
                             if (!is_blocked_by_wall(Position{first_x, first_y}, Position{fx, fy})) {
                                 active_fx.blast_cells.push_back({fx, fy});
                             }
@@ -2262,6 +2289,8 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
                     int fx = cx + px * s; 
                     int fy = cy + py * s; 
                     if (fx >= 0 && fx < width && fy >= 0 && fy < height) {
+                        bool is_front_wall = (fx == first_x && fy == first_y && grid[fx][fy] == Terrain::Wall);
+                        if (!is_front_wall && grid[fx][fy] == Terrain::Wall) continue;
                         if (!is_blocked_by_wall(Position{first_x, first_y}, Position{fx, fy})) {
                             active_fx.blast_cells.push_back({fx, fy});
                         }
@@ -2272,6 +2301,14 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
 
         // Hủy loot trong vùng đạn shotgun
         destroy_loot_at_cells(active_fx.blast_cells);
+
+        // Destroy any Wall tile included in blast_cells (only the direct-front wall qualifies)
+        for (const auto& cell : active_fx.blast_cells) {
+            if (grid[cell.x][cell.y] == Terrain::Wall) {
+                grid[cell.x][cell.y] = Terrain::Dirt;
+                add_log("[RADIO] Shotgun blast destroyed wall at (" + std::to_string(cell.x + 1) + ", " + std::to_string(cell.y + 1) + ")!", ImVec4(1.0f, 0.7f, 0.3f, 1.0f));
+            }
+        }
 
         // Kích nổ mìn nếu bị bắn trúng
         for (const auto& cell : active_fx.blast_cells) {
@@ -3376,15 +3413,22 @@ bool GameState::clever_zombie_use_weapon(size_t idx) {
         active_fx.start_p = getCellCenter(zom->pos.x, zom->pos.y, 40.0f, 20.0f);
 
         // Build blast cells (same cone logic as human shotgun)
+        // Only the wall directly in front (first step) is included and destroyed.
+        // All other wall tiles are excluded and block the blast.
+        int sg_first_x = zom->pos.x + vx;
+        int sg_first_y = zom->pos.y + vy;
         if (vx != 0 && vy != 0) {
             for (int dx_step = 0; dx_step <= 3; ++dx_step) {
                 for (int dy_step = 0; dy_step <= 3; ++dy_step) {
                     if (dx_step + dy_step <= 3) {
                         int fx = zom->pos.x + vx * (1 + dx_step);
                         int fy = zom->pos.y + vy * (1 + dy_step);
-                        if (fx >= 0 && fx < width && fy >= 0 && fy < height)
+                        if (fx >= 0 && fx < width && fy >= 0 && fy < height) {
+                            bool is_front_wall = (fx == sg_first_x && fy == sg_first_y && grid[fx][fy] == Terrain::Wall);
+                            if (!is_front_wall && grid[fx][fy] == Terrain::Wall) continue;
                             if (!is_blocked_by_wall(zom->pos, {fx, fy}))
                                 active_fx.blast_cells.push_back({fx, fy});
+                        }
                     }
                 }
             }
@@ -3396,14 +3440,26 @@ bool GameState::clever_zombie_use_weapon(size_t idx) {
                 int spread = step - 1;
                 for (int s = -spread; s <= spread; ++s) {
                     int fx = cx + px * s, fy = cy + py * s;
-                    if (fx >= 0 && fx < width && fy >= 0 && fy < height)
+                    if (fx >= 0 && fx < width && fy >= 0 && fy < height) {
+                        bool is_front_wall = (fx == sg_first_x && fy == sg_first_y && grid[fx][fy] == Terrain::Wall);
+                        if (!is_front_wall && grid[fx][fy] == Terrain::Wall) continue;
                         if (!is_blocked_by_wall(zom->pos, {fx, fy}))
                             active_fx.blast_cells.push_back({fx, fy});
+                    }
                 }
             }
         }
 
         destroy_loot_at_cells(active_fx.blast_cells);
+        // Destroy any Wall tile in blast_cells (only the direct-front wall qualifies)
+        for (const auto& cell : active_fx.blast_cells) {
+            if (grid[cell.x][cell.y] == Terrain::Wall) {
+                grid[cell.x][cell.y] = Terrain::Dirt;
+                add_log("-> " + zom->name + " shotgun blast destroyed wall at (" +
+                        std::to_string(cell.x + 1) + ", " + std::to_string(cell.y + 1) + ")!",
+                        ImVec4(1.0f, 0.7f, 0.3f, 1.0f));
+            }
+        }
         // Explode mines in blast
         for (const auto& cell : active_fx.blast_cells) {
             if (mine_grid[cell.x][cell.y] && !mine_deactivated[cell.x][cell.y]) {
