@@ -255,6 +255,7 @@ bool GameState::export_challenge_file(const std::string& path) {
     outFile << "SHIELD "          << (active_config.spawn_shield ? 1 : 0) << "\n";
     outFile << "CUSTOM_MAP "      << (active_config.custom_map_mode ? 1 : 0) << "\n";
     outFile << "ENABLE_ENV "      << (active_config.enable_environment ? 1 : 0) << "\n";
+    outFile << "FIXED_STAMINA "   << (active_config.fixed_stamina ? 1 : 0) << "\n";
     outFile << "RATIO_WALL "      << active_config.ratio_wall << "\n";
     outFile << "RATIO_WATER "     << active_config.ratio_water << "\n";
     outFile << "RATIO_FOREST "    << active_config.ratio_forest << "\n";
@@ -317,6 +318,7 @@ bool GameState::import_challenge_file(const std::string& path) {
         else if (key == "SHIELD")       active_config.spawn_shield = (val == 1);
         else if (key == "CUSTOM_MAP")   active_config.custom_map_mode = (val == 1);
         else if (key == "ENABLE_ENV")   active_config.enable_environment = (val == 1);
+        else if (key == "FIXED_STAMINA") active_config.fixed_stamina = (val == 1);
         else if (key == "CUST_HUMAN_X") active_config.custom_human_pos.x = val;
         else if (key == "CUST_HUMAN_Y") active_config.custom_human_pos.y = val;
         else if (key == "RATIO_WALL")   active_config.ratio_wall = val;
@@ -352,6 +354,11 @@ void GameState::init_game() {
     current_turn = 1; 
     phase = TurnPhase::HumanTurn; 
     input_mode = InputMode::MoveMode;
+    kills_this_turn = 0;
+    multikill_banner.clear();
+    pending_multikill_banner.clear();
+    pending_multikill_count = 0;
+    multikill_banner_timer = 0.0f;
 
     width = active_config.map_width;
     height = active_config.map_height;
@@ -1621,8 +1628,30 @@ void GameState::start_environment_phase() {
 void GameState::finish_environment_phase() {
     if (!game_over) {
         current_turn++;
+        kills_this_turn = 0; // Reset at start of each new human turn
+        pending_multikill_banner.clear();
+        for (auto& z : zombies) if (z->hp > 0) z->kill_counted = false;
+
+        // Detonate grenades thrown by Human — they explode at the start of Human's turn
+        bool grenade_exploded = false;
+        active_grenades.erase(std::remove_if(active_grenades.begin(), active_grenades.end(),
+            [&](GrenadeTimer& g) {
+                if (!g.active || !g.thrown_by_human || g.frozen_under_ice) return false;
+                kills_this_turn = 0; // each grenade detonation is its own substep
+                pending_multikill_banner.clear();
+                for (auto& z : zombies) if (z->hp > 0) z->kill_counted = false;
+                add_log("[RADIO] Grenade detonates at the start of Human's turn!", ImVec4(1.0f, 0.45f, 0.1f, 1.0f));
+                queue_explosion(g.pos.x, g.pos.y);
+                grenade_exploded = true;
+                return true;
+            }), active_grenades.end());
+
         std::uniform_int_distribution<int> dist_stam(1, 6);
-        human.stamina = human.is_paralyzed ? 0 : dist_stam(rng);
+        if (active_config.fixed_stamina) {
+            human.stamina = human.is_paralyzed ? 0 : active_config.initial_stamina;
+        } else {
+            human.stamina = human.is_paralyzed ? 0 : dist_stam(rng);
+        }
         if (human.is_paralyzed) {
             add_log("[SHOCK] Human is paralyzed this turn and cannot act.", ImVec4(0.45f, 0.9f, 1.0f, 1.0f));
         }
@@ -1666,23 +1695,23 @@ void GameState::update_environment_logic(float dt) {
         return;
     }
     
-    // Environment event has finished! Now tick grenades before starting human turn.
+    // Grenade countdown in environment phase is removed — grenades now detonate
+    // at the start of the owner's next turn (human or clever zombie).
+    // Only clean up grenades that somehow have turns_left <= 0 (safety fallback).
     bool triggered_explosion = false;
-    for (auto& g : active_grenades) {
-        if (g.active) {
-            g.turns_left--;
-            if (g.turns_left <= 0) {
+    active_grenades.erase(std::remove_if(active_grenades.begin(), active_grenades.end(),
+        [&](GrenadeTimer& g) {
+            if (!g.active) return true;
+            if (!g.frozen_under_ice && g.turns_left <= 0) {
                 add_log("[RADIO] Grenade timer expires. Detonation!", ImVec4(1.0f, 0.45f, 0.1f, 1.0f));
                 queue_explosion(g.pos.x, g.pos.y);
-                g.active = false;
                 triggered_explosion = true;
+                return true;
             }
-        }
-    }
-    active_grenades.erase(std::remove_if(active_grenades.begin(), active_grenades.end(), [](const GrenadeTimer& g) { return !g.active; }), active_grenades.end());
+            return false;
+        }), active_grenades.end());
     
     if (triggered_explosion) {
-        // Wait for grenade explosion animation to finish!
         return;
     }
     
@@ -2095,7 +2124,11 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
     if (human.stamina < 1) { 
         input_mode = InputMode::MoveMode; 
         return; 
-    } 
+    }
+    // Reset per substep — accumulate kills from this action + all chains
+    kills_this_turn = 0;
+    pending_multikill_banner.clear();
+    for (auto& z : zombies) if (z->hp > 0) z->kill_counted = false;
     Position target{tx, ty}; 
     sf::Vector2f hCenter = getCellCenter(human.pos.x, human.pos.y, cellSize, boardOffset); 
     sf::Vector2f tCenter = getCellCenter(tx, ty, cellSize, boardOffset); 
@@ -2447,6 +2480,7 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
             g.active = true; 
             g.pos = {cx, cy}; 
             g.turns_left = 1; // Explodes after 1 ZombieAnimating phases
+            g.thrown_by_human = true;
             active_grenades.push_back(g);
             
             // Trigger grenade throw flying animation
@@ -2690,17 +2724,16 @@ void GameState::update_zombie_logic(float dt) {
             propagate_gradual_forest_fire();
 
             if (!active_config.enable_environment) {
-                for (auto& g : active_grenades) {
-                    if (g.active) {
-                        g.turns_left--;
-                        if (g.turns_left <= 0) {
-                            add_log("[RADIO] Grenade timer expires. Detonation!", ImVec4(1.0f, 0.45f, 0.1f, 1.0f));
-                            queue_explosion(g.pos.x, g.pos.y);
-                            g.active = false;
-                        }
-                    }
-                }
-                active_grenades.erase(std::remove_if(active_grenades.begin(), active_grenades.end(), [](const GrenadeTimer& g) { return !g.active; }), active_grenades.end());
+                // When environment is disabled, still detonate owner grenades at turn end (fallback)
+                bool triggered = false;
+                active_grenades.erase(std::remove_if(active_grenades.begin(), active_grenades.end(),
+                    [&](GrenadeTimer& g) {
+                        if (!g.active || g.frozen_under_ice) return false;
+                        add_log("[RADIO] Grenade timer expires. Detonation!", ImVec4(1.0f, 0.45f, 0.1f, 1.0f));
+                        queue_explosion(g.pos.x, g.pos.y);
+                        triggered = true;
+                        return true;
+                    }), active_grenades.end());
             }
             
             if (active_fx.type != FXType::None || !attack_animations.empty()) {
@@ -2814,6 +2847,21 @@ void GameState::update_zombie_logic(float dt) {
     if (zombie_action_timer >= std::max(0.05f, ZOMBIE_STEP_DELAY)) { 
         zombie_action_timer = 0.0f; 
         
+        // Detonate any grenade thrown by this zombie at the start of its first substep
+        if (active_zombie_substep == 0) {
+            bool grenade_exploded = false;
+            active_grenades.erase(std::remove_if(active_grenades.begin(), active_grenades.end(),
+                [&](GrenadeTimer& g) {
+                    if (!g.active || g.thrown_by_human || g.frozen_under_ice) return false;
+                    if (g.owner_zombie_idx != active_zombie_idx) return false;
+                    add_log("-> " + zom->name + " grenade detonates!", ImVec4(1.0f, 0.45f, 0.1f, 1.0f));
+                    queue_explosion(g.pos.x, g.pos.y);
+                    grenade_exploded = true;
+                    return true;
+                }), active_grenades.end());
+            if (grenade_exploded) return; // wait for explosion animation
+        }
+
         size_t old_idx = active_zombie_idx;
         zombie_single_step(active_zombie_idx); 
 
@@ -2867,7 +2915,29 @@ void GameState::check_victory_conditions() {
         for (const auto& z : zombies) { if (z->hp > 0) { all_dead = false; break; } } 
         if (all_dead) game_won = true; 
     }
-    // Spawn loot for any zombie that just died
+    // Count newly-dead zombies using kill_counted (independent of loot_spawned)
+    for (auto& z : zombies) {
+        if (z->hp <= 0 && !z->kill_counted) {
+            z->kill_counted = true;
+            kills_this_turn++;
+        }
+    }
+    // Queue multikill banner — will display once animations settle
+    if (kills_this_turn >= 2) {
+        std::string banner;
+        switch (kills_this_turn) {
+            case 2:  banner = "DOUBLE KILL!";   break;
+            case 3:  banner = "TRIPLE KILL!";   break;
+            case 4:  banner = "QUADRA KILL!";   break;
+            case 5:  banner = "PENTA KILL!";    break;
+            case 6:  banner = "HEXA KILL!";     break;
+            case 7:  banner = "ULTRA KILL!";    break;
+            case 8:  banner = "MONSTER KILL!";  break;
+            default: banner = "GODLIKE!!!";     break;
+        }
+        pending_multikill_banner = banner;
+        pending_multikill_count  = kills_this_turn;
+    }
     spawn_loot_for_newly_dead();
 }
 
@@ -3284,11 +3354,11 @@ bool GameState::clever_zombie_use_weapon(size_t idx) {
     std::vector<int> options;
     std::vector<double> option_weights;
 
-    // "move instead" always available — given very low weight (5%) so armed zombie stays aggressive
+    // "move instead" always available — 60% weight so the zombie moves more than it shoots
     options.push_back(0);
-    option_weights.push_back(0.05);
+    option_weights.push_back(0.60);
 
-    // Each available weapon shares the remaining 95% equally
+    // Each available weapon shares the remaining 40% equally
     std::vector<int> weapon_opts;
     if (zom->pistol_ammo  > 0) weapon_opts.push_back(1);
     if (zom->shotgun_ammo > 0) weapon_opts.push_back(2);
@@ -3299,7 +3369,7 @@ bool GameState::clever_zombie_use_weapon(size_t idx) {
         if (!zom->is_frozen || !on_ice) weapon_opts.push_back(5);
     }
 
-    double weapon_share = weapon_opts.empty() ? 0.0 : 0.95 / weapon_opts.size();
+    double weapon_share = weapon_opts.empty() ? 0.0 : 0.40 / weapon_opts.size();
     for (int w : weapon_opts) {
         options.push_back(w);
         option_weights.push_back(weapon_share);
@@ -3310,26 +3380,12 @@ bool GameState::clever_zombie_use_weapon(size_t idx) {
     int choice = options[pick(rng)];
     if (choice == 0) return false; // chose to move normally
 
-    // ── Compute direction toward human (with random bias) ─────────────────
-    // 8 possible directions, weighted: exact toward-human direction gets weight 4,
-    // adjacent directions get weight 2, others get weight 1.
-    const int dirs[8][2] = {{1,0},{-1,0},{0,1},{0,-1},{1,1},{1,-1},{-1,1},{-1,-1}};
+    // ── Direction: always the closest 8-direction toward Human ──────────
+    // The zombie smells Human and aims its weapon in that direction.
+    // No randomness — it commits to the scent.
     int hdx = human.pos.x - zom->pos.x;
     int hdy = human.pos.y - zom->pos.y;
-    auto [best_vx, best_vy] = get_8_direction(hdx, hdy);
-
-    std::vector<double> dir_weights;
-    for (int i = 0; i < 8; ++i) {
-        int dvx = dirs[i][0], dvy = dirs[i][1];
-        double w = 1.0;
-        if (dvx == best_vx && dvy == best_vy) w = 4.0;
-        else if (std::abs(dvx - best_vx) <= 1 && std::abs(dvy - best_vy) <= 1) w = 2.0;
-        dir_weights.push_back(w);
-    }
-    std::discrete_distribution<int> dir_dist(dir_weights.begin(), dir_weights.end());
-    int di = dir_dist(rng);
-    int vx = dirs[di][0];
-    int vy = dirs[di][1];
+    auto [vx, vy] = get_8_direction(hdx, hdy);
 
     // ── Execute chosen weapon ─────────────────────────────────────────────
     switch (choice) {
@@ -3532,6 +3588,8 @@ bool GameState::clever_zombie_use_weapon(size_t idx) {
             g.active = true;
             g.pos = landing_pos;
             g.turns_left = 1;
+            g.thrown_by_human = false;
+            g.owner_zombie_idx = idx;
             active_grenades.push_back(g);
             active_fx.type = FXType::GrenadeFly;
             active_fx.timer = GameConstants::Timing::FX_GRENADE_FLY_DURATION;

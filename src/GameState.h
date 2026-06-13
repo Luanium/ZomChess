@@ -71,6 +71,14 @@ public:
 
     std::vector<LootDrop> loot_drops; // Loot rơi khi zombie chết
 
+    // Multi-kill tracking (reset each substep)
+    int kills_this_turn = 0;
+    std::string multikill_banner;          // currently displayed banner
+    std::string pending_multikill_banner;  // queued until animations finish
+    int pending_multikill_count = 0;       // kill count for the pending banner
+    float multikill_banner_timer = 0.0f;
+    static constexpr float MULTIKILL_BANNER_DURATION = 2.5f;
+
     // Audio management
     bool music_enabled = true;
     bool sfx_enabled = true;

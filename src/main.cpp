@@ -406,6 +406,9 @@ int main() {
                                             if (state.human.stamina >= cost) {
                                                 int move_dx = tx - state.human.pos.x;
                                                 int move_dy = ty - state.human.pos.y;
+                                                state.kills_this_turn = 0; // reset per substep
+                                                state.pending_multikill_banner.clear();
+                                                for (auto& z : state.zombies) if (z->hp > 0) z->kill_counted = false;
                                                 state.human.pos = {tx, ty};
                                                 state.human.stamina -= cost;
                                                 sfx("footstep");
@@ -504,6 +507,25 @@ int main() {
             // Update loot blink timers
             for (auto& ld : state.loot_drops) {
                 ld.blink_timer += dtSeconds;
+            }
+            // Tick multikill banner timer (runs during any phase)
+            if (state.multikill_banner_timer > 0.0f) {
+                state.multikill_banner_timer -= dtSeconds;
+                if (state.multikill_banner_timer <= 0.0f) {
+                    state.multikill_banner_timer = 0.0f;
+                    state.multikill_banner.clear();
+                    state.pending_multikill_count = 0; // clear frozen count when banner expires
+                }
+            }
+            // Promote pending multikill banner once all animations have settled
+            if (!state.pending_multikill_banner.empty() &&
+                state.active_fx.type == FXType::None &&
+                state.attack_animations.empty() &&
+                state.explosion_queue.empty()) {
+                state.multikill_banner       = state.pending_multikill_banner;
+                state.multikill_banner_timer = GameState::MULTIKILL_BANNER_DURATION;
+                // pending_multikill_count is already set — keep it as the frozen display value
+                state.pending_multikill_banner.clear();
             }
             state.update_zombie_logic(dtSeconds);
             state.update_environment_logic(dtSeconds);
@@ -633,8 +655,8 @@ int main() {
             };
 
             int prev_w = state.active_config.map_width; int prev_h = state.active_config.map_height;
-            draw_elegant_slider("Map Width (Horizontal)", &state.active_config.map_width, 10, 25, ImVec4(0.2f, 0.7f, 0.9f, 1.0f));
-            draw_elegant_slider("Map Height (Vertical)", &state.active_config.map_height, 10, 16, ImVec4(0.2f, 0.7f, 0.9f, 1.0f));
+            draw_elegant_slider("Map Width (Horizontal)", &state.active_config.map_width, GameConstants::Difficulty::SliderBounds::MAP_WIDTH_MIN, GameConstants::Difficulty::SliderBounds::MAP_WIDTH_MAX, ImVec4(0.2f, 0.7f, 0.9f, 1.0f));
+            draw_elegant_slider("Map Height (Vertical)", &state.active_config.map_height, GameConstants::Difficulty::SliderBounds::MAP_HEIGHT_MIN, GameConstants::Difficulty::SliderBounds::MAP_HEIGHT_MAX, ImVec4(0.2f, 0.7f, 0.9f, 1.0f));
             if (state.active_config.map_width != prev_w || state.active_config.map_height != prev_h) {
                 state.active_config.custom_grid.assign(state.active_config.map_width, std::vector<Terrain>(state.active_config.map_height, Terrain::Dirt));
                 state.active_config.custom_human_pos = {1, 1};
@@ -793,14 +815,16 @@ int main() {
 
             ImGui::Spacing();
             ImGui::TextColored(ImVec4(1, 0.8f, 0, 1), "--- HUMAN OPERATIVE STATS ---");
-            draw_elegant_slider("Vital HP", &state.active_config.human_hp, 1, 20, ImVec4(0.9f, 0.8f, 0.4f, 1.0f));
-            draw_elegant_slider("Turn 1 Stamina", &state.active_config.initial_stamina, 1, 6, ImVec4(0.9f, 0.8f, 0.4f, 1.0f));
-            draw_elegant_slider("Pistol Ammo", &state.active_config.pistol_ammo, 0, 50, ImVec4(0.9f, 0.8f, 0.4f, 1.0f));
-            draw_elegant_slider("Shotgun Shells", &state.active_config.shotgun_ammo, 0, 30, ImVec4(0.9f, 0.8f, 0.4f, 1.0f));
-            draw_elegant_slider("Grenades", &state.active_config.grenades, 0, 10, ImVec4(0.9f, 0.8f, 0.4f, 1.0f));
-            draw_elegant_slider("Claymore Mines", &state.active_config.mines, 0, 10, ImVec4(0.9f, 0.8f, 0.4f, 1.0f));
-            draw_elegant_slider("Molotov Bombs", &state.active_config.molotovs, 0, 10, ImVec4(0.9f, 0.8f, 0.4f, 1.0f));
-            draw_elegant_slider("Operation Max Turns", &state.active_config.turn_limit, 10, 200, ImVec4(0.9f, 0.8f, 0.4f, 1.0f));
+            draw_elegant_slider("Vital HP", &state.active_config.human_hp, GameConstants::Difficulty::SliderBounds::HUMAN_HP_MIN, GameConstants::Difficulty::SliderBounds::HUMAN_HP_MAX, ImVec4(0.9f, 0.8f, 0.4f, 1.0f));
+            draw_elegant_slider("Turn 1 Stamina", &state.active_config.initial_stamina, GameConstants::Difficulty::SliderBounds::INITIAL_STAMINA_MIN, GameConstants::Difficulty::SliderBounds::INITIAL_STAMINA_MAX, ImVec4(0.9f, 0.8f, 0.4f, 1.0f));
+            ImGui::Checkbox(tr("Fixed Stamina (same every turn)", "The luc co dinh (bang nhau moi luot)"), &state.active_config.fixed_stamina);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr("If checked, stamina each turn equals Turn 1 Stamina. Otherwise rolled randomly 1-6.", "Neu tick, the luc moi luot bang Turn 1 Stamina. Neu khong, tung ngau nhien 1-6."));
+            draw_elegant_slider("Pistol Ammo", &state.active_config.pistol_ammo, GameConstants::Difficulty::SliderBounds::PISTOL_AMMO_MIN, GameConstants::Difficulty::SliderBounds::PISTOL_AMMO_MAX, ImVec4(0.9f, 0.8f, 0.4f, 1.0f));
+            draw_elegant_slider("Shotgun Shells", &state.active_config.shotgun_ammo, GameConstants::Difficulty::SliderBounds::SHOTGUN_AMMO_MIN, GameConstants::Difficulty::SliderBounds::SHOTGUN_AMMO_MAX, ImVec4(0.9f, 0.8f, 0.4f, 1.0f));
+            draw_elegant_slider("Grenades", &state.active_config.grenades, GameConstants::Difficulty::SliderBounds::GRENADES_MIN, GameConstants::Difficulty::SliderBounds::GRENADES_MAX, ImVec4(0.9f, 0.8f, 0.4f, 1.0f));
+            draw_elegant_slider("Claymore Mines", &state.active_config.mines, GameConstants::Difficulty::SliderBounds::MINES_MIN, GameConstants::Difficulty::SliderBounds::MINES_MAX, ImVec4(0.9f, 0.8f, 0.4f, 1.0f));
+            draw_elegant_slider("Molotov Bombs", &state.active_config.molotovs, GameConstants::Difficulty::SliderBounds::MOLOTOVS_MIN, GameConstants::Difficulty::SliderBounds::MOLOTOVS_MAX, ImVec4(0.9f, 0.8f, 0.4f, 1.0f));
+            draw_elegant_slider("Operation Max Turns", &state.active_config.turn_limit, GameConstants::Difficulty::SliderBounds::TURN_LIMIT_MIN, GameConstants::Difficulty::SliderBounds::TURN_LIMIT_MAX, ImVec4(0.9f, 0.8f, 0.4f, 1.0f));
 
             ImGui::NextColumn();
 
@@ -992,11 +1016,11 @@ int main() {
             ImGui::Spacing();
 
             ImGui::TextColored(ImVec4(1, 0.3f, 0.3f, 1), "--- HOSTILE THREAT QUANTITIES ---");
-            draw_elegant_slider("Clever Zombies", &state.active_config.count_normal, 0, 20, ImVec4(0.2f, 0.8f, 0.4f, 1.0f), ImVec4(0.2f, 0.8f, 0.4f, 1.0f));
-            draw_elegant_slider("Fast Sprinters", &state.active_config.count_fast, 0, 15, ImVec4(0.35f, 0.75f, 1.0f, 1.0f), ImVec4(0.35f, 0.75f, 1.0f, 1.0f));
-            draw_elegant_slider("Volatile Exploders", &state.active_config.count_exploding, 0, 15, ImVec4(0.9f, 0.5f, 0.1f, 1.0f), ImVec4(0.9f, 0.5f, 0.1f, 1.0f));
-            draw_elegant_slider("Vampiric Draculas", &state.active_config.count_vampire, 0, 10, ImVec4(0.7f, 0.2f, 0.7f, 1.0f), ImVec4(0.7f, 0.2f, 0.7f, 1.0f));
-            draw_elegant_slider("Sick Carriers", &state.active_config.count_sick, 0, 15, ImVec4(0.85f, 0.78f, 0.3f, 1.0f), ImVec4(0.85f, 0.78f, 0.3f, 1.0f));
+            draw_elegant_slider("Clever Zombies", &state.active_config.count_normal, 0, GameConstants::Difficulty::SliderBounds::COUNT_CLEVER_MAX, ImVec4(0.2f, 0.8f, 0.4f, 1.0f), ImVec4(0.2f, 0.8f, 0.4f, 1.0f));
+            draw_elegant_slider("Fast Sprinters", &state.active_config.count_fast, 0, GameConstants::Difficulty::SliderBounds::COUNT_FAST_MAX, ImVec4(0.35f, 0.75f, 1.0f, 1.0f), ImVec4(0.35f, 0.75f, 1.0f, 1.0f));
+            draw_elegant_slider("Volatile Exploders", &state.active_config.count_exploding, 0, GameConstants::Difficulty::SliderBounds::COUNT_EXPLODING_MAX, ImVec4(0.9f, 0.5f, 0.1f, 1.0f), ImVec4(0.9f, 0.5f, 0.1f, 1.0f));
+            draw_elegant_slider("Vampiric Draculas", &state.active_config.count_vampire, 0, GameConstants::Difficulty::SliderBounds::COUNT_VAMPIRE_MAX, ImVec4(0.7f, 0.2f, 0.7f, 1.0f), ImVec4(0.7f, 0.2f, 0.7f, 1.0f));
+            draw_elegant_slider("Sick Carriers", &state.active_config.count_sick, 0, GameConstants::Difficulty::SliderBounds::COUNT_SICK_MAX, ImVec4(0.85f, 0.78f, 0.3f, 1.0f), ImVec4(0.85f, 0.78f, 0.3f, 1.0f));
 
             int available_slots = state.calculate_available_spawn_cells();
             int total_zoms = state.active_config.count_normal + state.active_config.count_fast + state.active_config.count_exploding + state.active_config.count_vampire + state.active_config.count_sick;
@@ -1313,17 +1337,7 @@ int main() {
                 int zly = z->pos.y - viewY + padY;
                 if (zlx < 0 || zlx >= VIEW_CELLS || zly < 0 || zly >= VIEW_CELLS) continue;
                 if (z->hp <= 0) {
-                    // Nếu có loot ở đây thì không vẽ ô đen (loot "?" đã được vẽ ở layer trước)
-                    bool has_loot = false;
-                    for (const auto& ld : state.loot_drops) {
-                        if (ld.pos == z->pos) { has_loot = true; break; }
-                    }
-                    if (!has_loot) {
-                        sf::RectangleShape deadZ(sf::Vector2f(cellSize - 8.0f, cellSize - 8.0f));
-                        deadZ.setFillColor(sf::Color(15, 15, 15, 160));
-                        deadZ.setPosition(zlx * cellSize + boardOffset + 4.0f, zly * cellSize + boardOffset + 4.0f);
-                        window.draw(deadZ);
-                    }
+                    // Dead zombie: no icon drawn — loot "?" already renders on this tile if present
                     continue;
                 }
                 
@@ -1367,6 +1381,18 @@ int main() {
                 else if (z->type == ZombieType::Sick) zVisual.setFillColor(sf::Color(210, 190, 65));
                 else zVisual.setFillColor(sf::Color(45, 175, 90));
                 window.draw(zVisual);
+
+                // Active zombie indicator: bright blinking outline on the zombie whose turn it is
+                if (state.phase == TurnPhase::ZombieAnimating && i == state.active_zombie_idx) {
+                    float pulse = std::sin(timeSec * 12.0f) * 0.5f + 0.5f; // 0..1 fast pulse
+                    sf::Uint8 alpha = static_cast<sf::Uint8>(180 + 75 * pulse);
+                    sf::RectangleShape activeBorder(sf::Vector2f(cellSize - 6.0f, cellSize - 6.0f));
+                    activeBorder.setPosition(drawX, drawY);
+                    activeBorder.setFillColor(sf::Color::Transparent);
+                    activeBorder.setOutlineThickness(2.5f);
+                    activeBorder.setOutlineColor(sf::Color(255, 255, 60, alpha)); // bright yellow
+                    window.draw(activeBorder);
+                }
 
                 // Segmented HP bar at bottom of zombie tile
                 int safe_max_hp = std::max({1, z->max_hp, z->hp});
@@ -1611,10 +1637,64 @@ int main() {
                 shroud.setFillColor(sf::Color(0, 0, 0, 254));
                 shroud.setPosition(boardOffset, boardOffset);
                 window.draw(shroud);
-                sf::RectangleShape humanSpot(sf::Vector2f(cellSize - 6.0f, cellSize - 6.0f));
-                humanSpot.setFillColor(sf::Color(225, 235, 245));
-                humanSpot.setPosition(hlx * cellSize + boardOffset + 3.0f, hly * cellSize + boardOffset + 3.0f);
-                if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) window.draw(humanSpot);
+
+                // Redraw full human icon on top of the shroud (same as the normal render above)
+                if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) {
+                    // Recompute drawX/drawY (slide animation already applied above)
+                    float spotX = hlx * cellSize + boardOffset + 3.0f;
+                    float spotY = hly * cellSize + boardOffset + 3.0f;
+                    // If ice slide is active, use the animated position
+                    if (state.ice_slide_animation.active && state.ice_slide_animation.is_human &&
+                        state.ice_slide_animation.current_step < (int)state.ice_slide_animation.path.size()) {
+                        Position sp = state.ice_slide_animation.path[state.ice_slide_animation.current_step];
+                        int slx2 = sp.x - viewX + padX, sly2 = sp.y - viewY + padY;
+                        if (slx2 >= 0 && slx2 < VIEW_CELLS && sly2 >= 0 && sly2 < VIEW_CELLS) {
+                            spotX = slx2 * cellSize + boardOffset + 3.0f;
+                            spotY = sly2 * cellSize + boardOffset + 3.0f;
+                        }
+                    }
+                    float sCx = spotX + (cellSize - 6.0f) * 0.5f;
+                    float sCy = spotY + (cellSize - 6.0f) * 0.5f;
+
+                    // White square with animated border
+                    sf::RectangleShape spotSquare(sf::Vector2f(cellSize - 6.0f, cellSize - 6.0f));
+                    spotSquare.setPosition(spotX, spotY);
+                    spotSquare.setFillColor(sf::Color::White);
+                    spotSquare.setOutlineThickness(2.0f);
+                    spotSquare.setOutlineColor(sf::Color(borderColor.r, borderColor.g, borderColor.b,
+                        static_cast<sf::Uint8>(150 + 105 * blinkProgress)));
+                    window.draw(spotSquare);
+
+                    // Triangle icon
+                    sf::ConvexShape spotTri(3);
+                    spotTri.setPoint(0, sf::Vector2f(0.0f, -5.0f));
+                    spotTri.setPoint(1, sf::Vector2f(-4.0f, 3.0f));
+                    spotTri.setPoint(2, sf::Vector2f(4.0f, 3.0f));
+                    spotTri.setPosition(sCx, sCy);
+                    spotTri.setFillColor(sf::Color(100, 100, 100));
+                    window.draw(spotTri);
+
+                    // HP bar
+                    int cloudMaxHp = std::max({1, state.active_config.human_hp, state.human.hp});
+                    float cBarW = cellSize - 8.0f;
+                    float cGap = 1.0f;
+                    float cSegW = (cBarW - (cloudMaxHp - 1) * cGap) / static_cast<float>(cloudMaxHp);
+                    for (int hpSeg = 0; hpSeg < cloudMaxHp; ++hpSeg) {
+                        sf::RectangleShape seg(sf::Vector2f(std::max(1.0f, cSegW), 3.0f));
+                        seg.setPosition(spotX + 1.0f + hpSeg * (cSegW + cGap), spotY + cellSize - 10.0f);
+                        seg.setFillColor(hpSeg < state.human.hp ? sf::Color(70, 205, 90) : sf::Color(55, 55, 55));
+                        window.draw(seg);
+                    }
+
+                    // Stamina dots
+                    int cStam = std::min(14, std::max(0, state.human.stamina));
+                    for (int d = 0; d < cStam; ++d) {
+                        sf::CircleShape dot(2.7f);
+                        dot.setFillColor(sf::Color(90, 205, 255));
+                        dot.setPosition(spotX + 2.0f + d * 5.0f, spotY + cellSize - 18.0f);
+                        window.draw(dot);
+                    }
+                }
             }
 
             if (state.turn_banner_fx.type != FXType::None) {
@@ -1635,6 +1715,60 @@ int main() {
                     msg.setPosition(boardOffset + VIEW_CELLS * cellSize * 0.5f, boardOffset + VIEW_CELLS * cellSize * 0.5f);
                     window.draw(msg);
                 }
+            }
+
+            // Multikill banner — escalating praise overlay
+            if (!state.multikill_banner.empty() && state.multikill_banner_timer > 0.0f && hasFont) {
+                float ratio = state.multikill_banner_timer / GameState::MULTIKILL_BANNER_DURATION;
+                // Fade in quickly, hold, then fade out
+                float fade = (ratio > 0.85f) ? (1.0f - ratio) / 0.15f   // fade in (first 15%)
+                           : (ratio < 0.25f) ? ratio / 0.25f              // fade out (last 25%)
+                           : 1.0f;
+                sf::Uint8 a = static_cast<sf::Uint8>(255 * fade);
+
+                // Choose colour by kill count — escalates from yellow to red to magenta
+                sf::Color textCol;
+                int k = state.pending_multikill_count; // frozen at banner-promotion time
+                if      (k >= 9) textCol = sf::Color(255,  60, 255, a); // magenta — GODLIKE
+                else if (k >= 7) textCol = sf::Color(255,  80,  40, a); // hot orange — ULTRA/MONSTER
+                else if (k >= 5) textCol = sf::Color(255, 160,  20, a); // amber — PENTA/HEXA
+                else if (k >= 3) textCol = sf::Color(255, 240,  40, a); // yellow — TRIPLE/QUADRA
+                else             textCol = sf::Color(200, 255, 100, a); // lime — DOUBLE
+
+                // Shadow pass
+                sf::Text shadow;
+                shadow.setFont(boardFont);
+                shadow.setCharacterSize(52);
+                shadow.setString(state.multikill_banner);
+                shadow.setFillColor(sf::Color(0, 0, 0, static_cast<sf::Uint8>(a * 0.6f)));
+                sf::FloatRect sr = shadow.getLocalBounds();
+                shadow.setOrigin(sr.left + sr.width / 2.0f, sr.top + sr.height / 2.0f);
+                float bannerCX = boardOffset + VIEW_CELLS * cellSize * 0.5f;
+                float bannerCY = boardOffset + VIEW_CELLS * cellSize * 0.5f;
+                shadow.setPosition(bannerCX + 2.0f, bannerCY - 22.0f + 2.0f);
+                window.draw(shadow);
+
+                // Main text
+                sf::Text msg;
+                msg.setFont(boardFont);
+                msg.setCharacterSize(52);
+                msg.setString(state.multikill_banner);
+                msg.setFillColor(textCol);
+                sf::FloatRect mr = msg.getLocalBounds();
+                msg.setOrigin(mr.left + mr.width / 2.0f, mr.top + mr.height / 2.0f);
+                msg.setPosition(bannerCX, bannerCY - 22.0f);
+                window.draw(msg);
+
+                // Sub-label: kill count
+                sf::Text sub;
+                sub.setFont(boardFont);
+                sub.setCharacterSize(22);
+                sub.setString(std::to_string(k) + " kills in one action");
+                sub.setFillColor(sf::Color(255, 210, 60, a)); // bright gold — good contrast on dark board
+                sf::FloatRect subr = sub.getLocalBounds();
+                sub.setOrigin(subr.left + subr.width / 2.0f, subr.top + subr.height / 2.0f);
+                sub.setPosition(bannerCX, bannerCY + 22.0f);
+                window.draw(sub);
             }
 
             // Handle FX
@@ -2158,6 +2292,9 @@ int main() {
                         if (state.mine_grid[state.human.pos.x][state.human.pos.y]) {
                             state.add_log(state.tr("[SYSTEM] Cannot place mine: a mine is already here!", "[HE THONG] Khong the cai min: o nay da co min!"), ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
                         } else {
+                            state.kills_this_turn = 0; // reset per substep
+                            state.pending_multikill_banner.clear();
+                            for (auto& z : state.zombies) if (z->hp > 0) z->kill_counted = false;
                             state.mine_grid[state.human.pos.x][state.human.pos.y] = true;
                             state.human.mines--; state.human.stamina--;
                             state.add_log(state.tr("-> Human placed a claymore mine.", "-> Nguoi cai min claymore."), ImVec4(1.0f, 0.7f, 0.3f, 1.0f));
@@ -2840,7 +2977,7 @@ int main() {
 
                 // ── CREDITS ───────────────────────────────────────────────────────────
                 if (ImGui::CollapsingHeader(tr("Credits", "Tin Chi"))) {
-                    ImGui::TextColored(ImVec4(0.95f, 0.9f, 0.35f, 1.0f), "ZomChess v2.0.0");
+                    ImGui::TextColored(ImVec4(0.95f, 0.9f, 0.35f, 1.0f), "ZomChess v2.2.0");
                     ImGui::BulletText("%s", tr("Design & Programming: Phan Anh Luan + AIs", "Thiet ke & Lap trinh: Phan Anh Luan + AI"));
                     ImGui::BulletText("%s", tr("Music: 'Ancient Rite', 'Discovery Hit', 'Impending Boom', 'The Ice Giants' — licensed for use.", "Nhac nen: 'Ancient Rite', 'Discovery Hit', 'Impending Boom', 'The Ice Giants' — duoc cap phep su dung."));
                     ImGui::BulletText("%s", tr("Built with: C++, SFML, Dear ImGui, ImGui-SFML.", "Xay dung bang: C++, SFML, Dear ImGui, ImGui-SFML."));

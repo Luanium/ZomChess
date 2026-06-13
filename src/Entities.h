@@ -33,6 +33,7 @@ public:
     bool loot_spawned = false; // Đã spawn loot khi chết chưa
     bool has_exploded = false;  // Exploding zombie: đã phát nổ chưa (dùng để hoãn loot drop)
     bool pending_attack = false; // Delay attack after movement
+    bool kill_counted = false;   // Has this death been counted toward kills_this_turn
 
     // Clever Zombie weapon ammo (only used by ZombieType::Clever)
     int pistol_ammo   = 0;

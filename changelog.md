@@ -1,3 +1,19 @@
+# v2.2.0
+
+## Logic:
+- `Clever Zombie` is now more clever in using the weapons it picked
+- Fix: `Grenade` thrown by `Clever Zombie` explode immediately, now it waits until the beginning of the turn of that `Zombie` to explode
+
+## UI:
+- Remove the black square icon marking where a `Zombie` died
+- Fix: `Human` icon is only a white square when there is `Clouds` without the others decorations
+- Add highlights effects for multikills
+- Add blinking border to `Zombie` icons when it is in its turn
+
+## Setting:
+- Now allow user to choose whether `Stamina` point every turn is fixed or given randomly (also saved as a setting in `.zom` file with values from 1 to 6 for if fixed and 0 if random)
+- Reset the limits of scrollbars in Hub
+
 # v2.1.0
 
 ## Logic:

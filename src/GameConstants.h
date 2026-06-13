@@ -159,27 +159,37 @@ namespace GameConstants {
 
         // Slider bounds for custom configuration in the menu
         namespace SliderBounds {
-            constexpr int HUMAN_HP_MIN       = 1;
-            constexpr int HUMAN_HP_MAX       = 20;
-            constexpr int INITIAL_STAMINA_MIN = 1;
-            constexpr int INITIAL_STAMINA_MAX = 6;
-            constexpr int PISTOL_AMMO_MIN    = 0;
-            constexpr int PISTOL_AMMO_MAX    = 50;
-            constexpr int SHOTGUN_AMMO_MIN   = 0;
-            constexpr int SHOTGUN_AMMO_MAX   = 50;
-            constexpr int GRENADES_MIN       = 0;
-            constexpr int GRENADES_MAX       = 20;
-            constexpr int MINES_MIN          = 0;
-            constexpr int MINES_MAX          = 20;
-            constexpr int MOLOTOVS_MIN       = 0;
-            constexpr int MOLOTOVS_MAX       = 20;
-            constexpr int TURN_LIMIT_MIN     = 5;
-            constexpr int TURN_LIMIT_MAX     = 200;
-            constexpr int COUNT_NORMAL_MAX   = 50;
-            constexpr int COUNT_FAST_MAX     = 50;
-            constexpr int COUNT_EXPLODING_MAX = 50;
-            constexpr int COUNT_VAMPIRE_MAX  = 50;
-            constexpr int COUNT_SICK_MAX     = 50;
+            // Map dimensions
+            constexpr int MAP_WIDTH_MIN        = 10;
+            constexpr int MAP_WIDTH_MAX        = 20;
+            constexpr int MAP_HEIGHT_MIN       = 10;
+            constexpr int MAP_HEIGHT_MAX       = 20;
+
+            // Human stats
+            constexpr int HUMAN_HP_MIN         = 1;
+            constexpr int HUMAN_HP_MAX         = 20;
+            constexpr int INITIAL_STAMINA_MIN  = 1;
+            constexpr int INITIAL_STAMINA_MAX  = 6;
+            constexpr int PISTOL_AMMO_MIN      = 0;
+            constexpr int PISTOL_AMMO_MAX      = 50;
+            constexpr int SHOTGUN_AMMO_MIN     = 0;
+            constexpr int SHOTGUN_AMMO_MAX     = 50;
+            constexpr int GRENADES_MIN         = 0;
+            constexpr int GRENADES_MAX         = 20;
+            constexpr int MINES_MIN            = 0;
+            constexpr int MINES_MAX            = 20;
+            constexpr int MOLOTOVS_MIN         = 0;
+            constexpr int MOLOTOVS_MAX         = 20;
+            constexpr int TURN_LIMIT_MIN       = 1;
+            constexpr int TURN_LIMIT_MAX       = 100;
+
+            // Zombie counts
+            constexpr int COUNT_CLEVER_MAX     = 50;
+            constexpr int COUNT_FAST_MAX       = 50;
+            constexpr int COUNT_EXPLODING_MAX  = 50;
+            constexpr int COUNT_VAMPIRE_MAX    = 50;
+            constexpr int COUNT_SICK_MAX       = 50;
+            constexpr int COUNT_NORMAL_MAX     = COUNT_CLEVER_MAX; // alias for compatibility
         }
     }
 

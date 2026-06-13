@@ -53,6 +53,7 @@ struct GameConfig {
     bool spawn_shield = true;
     bool custom_map_mode = false;
     bool enable_environment = true;
+    bool fixed_stamina = false; // If true, stamina each turn = initial_stamina (no random roll)
 
     // Weather probabilities (must sum to 100)
     int env_prob_clear     = GameConstants::Defaults::ENV_PROB_CLEAR;
@@ -77,6 +78,8 @@ struct GrenadeTimer {
     Position pos{0, 0};
     int turns_left = 2;
     bool frozen_under_ice = false; // Bị kẹt dưới băng (ô nước bị đóng băng)
+    bool thrown_by_human = true;   // true = human threw it, false = clever zombie threw it
+    size_t owner_zombie_idx = 0;   // index in zombies[] if thrown_by_human == false
 };
 
 struct FireCell {
