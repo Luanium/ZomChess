@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <string>
 #include <vector>
+#include <unordered_set>
 
 // Filesystem and native path helpers are not available / useful in WebAssembly.
 #ifndef __EMSCRIPTEN__
@@ -1783,6 +1784,230 @@ static void main_loop() {
                 shroud.setPosition(boardOffset, boardOffset);
                 window.draw(shroud);
 
+                // Build a set of map cells illuminated by fire (fire tile + all 8 neighbours)
+                // Also includes burning entities — they carry their own flame
+                std::unordered_set<int> fire_lit; // key = x * 1000 + y (grid is < 1000 wide)
+                auto fire_key = [&](int x, int y){ return x * 1000 + y; };
+                const int all8[8][2] = {{1,0},{-1,0},{0,1},{0,-1},{1,1},{1,-1},{-1,1},{-1,-1}};
+                for (int x = 0; x < state.width; ++x) {
+                    for (int y = 0; y < state.height; ++y) {
+                        if (state.grid[x][y] != Terrain::Fire) continue;
+                        fire_lit.insert(fire_key(x, y));
+                        for (const auto& d : all8) {
+                            int nx = x + d[0], ny = y + d[1];
+                            if (nx >= 0 && nx < state.width && ny >= 0 && ny < state.height)
+                                fire_lit.insert(fire_key(nx, ny));
+                        }
+                    }
+                }
+                // Burning zombies are self-illuminating — add their tile
+                for (const auto& z : state.zombies) {
+                    if (z->hp > 0 && z->is_burning)
+                        fire_lit.insert(fire_key(z->pos.x, z->pos.y));
+                }
+                // Burning human is also self-illuminating
+                if (state.human.hp > 0 && state.human.is_burning)
+                    fire_lit.insert(fire_key(state.human.pos.x, state.human.pos.y));
+
+                // Redraw tiles in fire-lit cells
+                for (int lx = 0; lx < VIEW_CELLS; ++lx) {
+                    for (int ly = 0; ly < VIEW_CELLS; ++ly) {
+                        int x = viewX + (lx - padX);
+                        int y = viewY + (ly - padY);
+                        if (x < 0 || x >= state.width || y < 0 || y >= state.height) continue;
+                        if (!fire_lit.count(fire_key(x, y))) continue;
+
+                        sf::RectangleShape cell(sf::Vector2f(cellSize - 2.0f, cellSize - 2.0f));
+                        cell.setPosition(lx * cellSize + boardOffset, ly * cellSize + boardOffset);
+
+                        if (state.grid[x][y] == Terrain::Wall) {
+                            cell.setFillColor(sf::Color(60, 62, 66));
+                        } else if (state.grid[x][y] == Terrain::Water) {
+                            sf::Color finalColor(35, 75, 115);
+                            for (const auto& trans : state.terrain_transitions) {
+                                if (trans.pos.x == x && trans.pos.y == y && trans.to_terrain == Terrain::Water) {
+                                    float progress = trans.timer / trans.max_duration;
+                                    sf::Color fromColor = (trans.from_terrain == Terrain::Ice) ? sf::Color(160, 210, 240) : sf::Color(105, 60, 35);
+                                    sf::Color toColor(35, 75, 115);
+                                    finalColor = sf::Color(
+                                        static_cast<sf::Uint8>(fromColor.r + progress * (toColor.r - fromColor.r)),
+                                        static_cast<sf::Uint8>(fromColor.g + progress * (toColor.g - fromColor.g)),
+                                        static_cast<sf::Uint8>(fromColor.b + progress * (toColor.b - fromColor.b)));
+                                    break;
+                                }
+                            }
+                            cell.setFillColor(finalColor);
+                        } else if (state.grid[x][y] == Terrain::Fire) {
+                            int pulse = static_cast<int>(25.0f * std::sin(timeSec * 12.0f));
+                            cell.setFillColor(sf::Color(220 + pulse, 100 + pulse / 2, 20));
+                        } else if (state.grid[x][y] == Terrain::Forest) {
+                            cell.setFillColor(sf::Color(34, 110, 48));
+                        } else if (state.grid[x][y] == Terrain::Ice) {
+                            int pulse = static_cast<int>(15.0f * std::sin(timeSec * 3.0f + x * 0.7f + y * 0.5f));
+                            cell.setFillColor(sf::Color(std::min(255, 160 + pulse), std::min(255, 210 + pulse/2), 240));
+                        } else {
+                            cell.setFillColor(sf::Color(105, 60, 35));
+                        }
+                        window.draw(cell);
+
+                        // Mine on lit tile
+                        if (state.mine_grid[x][y]) {
+                            sf::CircleShape mine(6.0f); mine.setFillColor(sf::Color(230, 40, 40)); mine.setOrigin(6.0f, 6.0f);
+                            mine.setPosition(lx * cellSize + boardOffset + cellSize/2, ly * cellSize + boardOffset + cellSize/2);
+                            window.draw(mine);
+                        }
+                    }
+                }
+
+                // Grenades on lit tiles
+                for (const auto& g : state.active_grenades) {
+                    if (!g.active) continue;
+                    if (!fire_lit.count(fire_key(g.pos.x, g.pos.y))) continue;
+                    int glx = g.pos.x - viewX + padX;
+                    int gly = g.pos.y - viewY + padY;
+                    if (glx < 0 || glx >= VIEW_CELLS || gly < 0 || gly >= VIEW_CELLS) continue;
+                    sf::CircleShape gren(8.0f, 4); gren.setFillColor(sf::Color(50, 210, 50)); gren.setOrigin(8.0f, 8.0f);
+                    gren.setPosition(glx * cellSize + boardOffset + cellSize/2, gly * cellSize + boardOffset + cellSize/2);
+                    window.draw(gren);
+                }
+
+                // Loot drops on lit tiles
+                if (hasFont) {
+                    for (const auto& ld : state.loot_drops) {
+                        if (!fire_lit.count(fire_key(ld.pos.x, ld.pos.y))) continue;
+                        int llx = ld.pos.x - viewX + padX;
+                        int lly = ld.pos.y - viewY + padY;
+                        if (llx < 0 || llx >= VIEW_CELLS || lly < 0 || lly >= VIEW_CELLS) continue;
+                        float blink = std::sin(ld.blink_timer * 4.0f) * 0.5f + 0.5f;
+                        sf::Uint8 bgAlpha = static_cast<sf::Uint8>(120 + blink * 80);
+                        sf::RectangleShape lootBg(sf::Vector2f(cellSize - 8.0f, cellSize - 8.0f));
+                        lootBg.setPosition(llx * cellSize + boardOffset + 4.0f, lly * cellSize + boardOffset + 4.0f);
+                        lootBg.setFillColor(sf::Color(80, 60, 20, bgAlpha));
+                        lootBg.setOutlineThickness(1.5f);
+                        lootBg.setOutlineColor(sf::Color(220, 180, 60, bgAlpha));
+                        window.draw(lootBg);
+                        sf::Text qMark; qMark.setFont(boardFont); qMark.setString("?");
+                        qMark.setCharacterSize(static_cast<unsigned int>(cellSize * 0.55f));
+                        sf::Uint8 txtAlpha = static_cast<sf::Uint8>(180 + blink * 75);
+                        qMark.setFillColor(sf::Color(255, 220, 60, txtAlpha));
+                        sf::FloatRect qBounds = qMark.getLocalBounds();
+                        qMark.setOrigin(qBounds.left + qBounds.width / 2.0f, qBounds.top + qBounds.height / 2.0f);
+                        qMark.setPosition(llx * cellSize + boardOffset + cellSize / 2.0f, lly * cellSize + boardOffset + cellSize / 2.0f);
+                        window.draw(qMark);
+                    }
+                }
+
+                // Zombies on lit tiles
+                for (size_t i = 0; i < state.zombies.size(); ++i) {
+                    const auto& z = state.zombies[i];
+                    if (z->hp <= 0) continue;
+                    if (!fire_lit.count(fire_key(z->pos.x, z->pos.y))) continue;
+                    int zlx = z->pos.x - viewX + padX;
+                    int zly = z->pos.y - viewY + padY;
+                    if (zlx < 0 || zlx >= VIEW_CELLS || zly < 0 || zly >= VIEW_CELLS) continue;
+
+                    float zdrawX = zlx * cellSize + boardOffset + 3.0f;
+                    float zdrawY = zly * cellSize + boardOffset + 3.0f;
+
+                    // Ice slide animation offset
+                    if (state.ice_slide_animation.active && !state.ice_slide_animation.is_human && state.ice_slide_animation.zombie_idx == i) {
+                        if (state.ice_slide_animation.current_step < state.ice_slide_animation.path.size()) {
+                            Position slide_pos = state.ice_slide_animation.path[state.ice_slide_animation.current_step];
+                            int slide_lx = slide_pos.x - viewX + padX;
+                            int slide_ly = slide_pos.y - viewY + padY;
+                            if (slide_lx >= 0 && slide_lx < VIEW_CELLS && slide_ly >= 0 && slide_ly < VIEW_CELLS) {
+                                zdrawX = slide_lx * cellSize + boardOffset + 3.0f;
+                                zdrawY = slide_ly * cellSize + boardOffset + 3.0f;
+                            }
+                        }
+                    }
+                    // Wind push animation offset
+                    if (state.active_fx.type == FXType::Wind) {
+                        for (auto p : state.active_fx.blast_cells) {
+                            if (p.x == z->pos.x && p.y == z->pos.y) {
+                                float progress = 1.0f - (state.active_fx.timer / state.active_fx.max_duration);
+                                zdrawX += (progress - 1.0f) * state.active_fx.dx * cellSize;
+                                zdrawY += (progress - 1.0f) * state.active_fx.dy * cellSize;
+                                break;
+                            }
+                        }
+                    }
+
+                    sf::RectangleShape zVisual(sf::Vector2f(cellSize - 6.0f, cellSize - 6.0f));
+                    zVisual.setPosition(zdrawX, zdrawY);
+                    if (z->type == ZombieType::Fast)           zVisual.setFillColor(sf::Color(55, 168, 255));
+                    else if (z->type == ZombieType::Exploding) zVisual.setFillColor(sf::Color(220, 110, 15));
+                    else if (z->type == ZombieType::Vampire)   zVisual.setFillColor(sf::Color(130, 30, 130));
+                    else if (z->type == ZombieType::Sick)      zVisual.setFillColor(sf::Color(210, 190, 65));
+                    else                                        zVisual.setFillColor(sf::Color(45, 175, 90));
+                    window.draw(zVisual);
+
+                    // Active zombie indicator
+                    if (state.phase == TurnPhase::ZombieAnimating && i == state.active_zombie_idx) {
+                        float pulse = std::sin(timeSec * 12.0f) * 0.5f + 0.5f;
+                        sf::Uint8 alpha = static_cast<sf::Uint8>(180 + 75 * pulse);
+                        sf::RectangleShape activeBorder(sf::Vector2f(cellSize - 6.0f, cellSize - 6.0f));
+                        activeBorder.setPosition(zdrawX, zdrawY);
+                        activeBorder.setFillColor(sf::Color::Transparent);
+                        activeBorder.setOutlineThickness(2.5f);
+                        activeBorder.setOutlineColor(sf::Color(255, 255, 60, alpha));
+                        window.draw(activeBorder);
+                    }
+
+                    // HP bar
+                    int safe_max_hp = std::max({1, z->max_hp, z->hp});
+                    float zBarW = cellSize - 8.0f;
+                    float zSegGap = 1.0f;
+                    float zSegW = (zBarW - (safe_max_hp - 1) * zSegGap) / static_cast<float>(safe_max_hp);
+                    for (int hpSeg = 0; hpSeg < safe_max_hp; ++hpSeg) {
+                        sf::RectangleShape seg(sf::Vector2f(std::max(1.0f, zSegW), 3.0f));
+                        seg.setPosition(zdrawX + 1.0f + hpSeg * (zSegW + zSegGap), zdrawY + cellSize - 10.0f);
+                        seg.setFillColor(hpSeg < z->hp ? sf::Color(185, 36, 36) : sf::Color(55, 55, 55));
+                        window.draw(seg);
+                    }
+
+                    if (hasFont) {
+                        // Number label
+                        sf::Text zIdStr; zIdStr.setFont(boardFont); zIdStr.setString(std::to_string(i + 1)); zIdStr.setCharacterSize(14);
+                        sf::FloatRect textRect = zIdStr.getLocalBounds(); zIdStr.setOrigin(textRect.left + textRect.width/2.0f, textRect.top + textRect.height/2.0f);
+                        zIdStr.setFillColor(sf::Color::White);
+                        zIdStr.setPosition(zdrawX + (cellSize - 6.0f)/2.0f, zdrawY + (cellSize - 6.0f)/2.0f);
+                        window.draw(zIdStr);
+
+                        // Status tags (B / P / F)
+                        bool blinkOn = std::sin(timeSec * 10.0f) > 0.0f;
+                        if (blinkOn && (z->is_burning || z->is_paralyzed || z->is_frozen)) {
+                            struct TagInfo { const char* label; sf::Color color; };
+                            std::vector<TagInfo> tags;
+                            if (z->is_burning)   tags.push_back({"B", sf::Color(230, 40,  40)});
+                            if (z->is_paralyzed) tags.push_back({"P", sf::Color(242, 214, 61)});
+                            if (z->is_frozen)    tags.push_back({"F", sf::Color(160, 230, 255)});
+                            float tagW = (cellSize - 6.0f) / static_cast<float>(tags.size());
+                            for (int ti = 0; ti < (int)tags.size(); ++ti) {
+                                sf::Text tagTxt; tagTxt.setFont(boardFont); tagTxt.setCharacterSize(11);
+                                tagTxt.setFillColor(tags[ti].color);
+                                tagTxt.setString(tags[ti].label);
+                                tagTxt.setPosition(zdrawX + ti * tagW + tagW * 0.5f - 4.0f, zdrawY - 1.0f);
+                                window.draw(tagTxt);
+                            }
+                        }
+
+                        // Clever zombie weapon-ammo triangle indicator
+                        if (z->type == ZombieType::Clever && z->hasWeaponAmmo()) {
+                            const float triSize = std::max(5.0f, cellSize * 0.22f);
+                            float tx = zdrawX + (cellSize - 6.0f) - triSize;
+                            float ty = zdrawY;
+                            sf::ConvexShape tri; tri.setPointCount(3);
+                            tri.setPoint(0, sf::Vector2f(tx + triSize, ty));
+                            tri.setPoint(1, sf::Vector2f(tx + triSize, ty + triSize));
+                            tri.setPoint(2, sf::Vector2f(tx,           ty));
+                            tri.setFillColor(sf::Color(0, 0, 0, 220));
+                            tri.setOutlineThickness(0.f);
+                            window.draw(tri);
+                        }
+                    }
+                }
+
                 // Redraw full human icon on top of the shroud (same as the normal render above)
                 if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) {
                     // Recompute drawX/drawY (slide animation already applied above)
@@ -1838,6 +2063,94 @@ static void main_loop() {
                         dot.setFillColor(sf::Color(90, 205, 255));
                         dot.setPosition(spotX + 2.0f + d * 5.0f, spotY + cellSize - 18.0f);
                         window.draw(dot);
+                    }
+
+                    // Status tags (B / P / F) — same as normal render
+                    if (hasFont) {
+                        bool blinkOn = std::sin(timeSec * 10.0f) > 0.0f;
+                        if (blinkOn && (state.human.is_burning || state.human.is_paralyzed || state.human.is_frozen)) {
+                            struct TagInfo { const char* label; sf::Color color; };
+                            std::vector<TagInfo> tags;
+                            if (state.human.is_burning)   tags.push_back({"B", sf::Color(230, 40,  40)});
+                            if (state.human.is_paralyzed) tags.push_back({"P", sf::Color(242, 214, 61)});
+                            if (state.human.is_frozen)    tags.push_back({"F", sf::Color(160, 230, 255)});
+                            float tagW = (cellSize - 6.0f) / static_cast<float>(tags.size());
+                            for (int ti = 0; ti < (int)tags.size(); ++ti) {
+                                sf::Text tagTxt; tagTxt.setFont(boardFont); tagTxt.setCharacterSize(11);
+                                tagTxt.setFillColor(tags[ti].color);
+                                tagTxt.setString(tags[ti].label);
+                                tagTxt.setPosition(spotX + ti * tagW + tagW * 0.5f - 4.0f, spotY - 1.0f);
+                                window.draw(tagTxt);
+                            }
+                        }
+                    }
+                }
+
+                // Directional arrows — Human can self-locate in the dark, drawn on top of the shroud
+                if (state.phase == TurnPhase::HumanTurn && !state.human.is_paralyzed &&
+                        ((state.input_mode == InputMode::MoveMode && !state.human.is_frozen) ||
+                         state.input_mode == InputMode::TargetKnife || (!state.human.is_frozen &&
+                        (state.input_mode == InputMode::TargetPistol || state.input_mode == InputMode::TargetShotgun ||
+                         state.input_mode == InputMode::TargetGrenade || state.input_mode == InputMode::TargetMolotov)))) {
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        for (int dy = -1; dy <= 1; ++dy) {
+                            if (dx == 0 && dy == 0) continue;
+                            int nx = state.human.pos.x + dx;
+                            int ny = state.human.pos.y + dy;
+                            if (nx < 0 || nx >= state.width || ny < 0 || ny >= state.height) continue;
+                            if (state.input_mode == InputMode::MoveMode) {
+                                if (state.grid[nx][ny] == Terrain::Wall) continue;
+                                bool blocked = false;
+                                for (const auto& z : state.zombies) {
+                                    if (z->hp > 0 && z->pos == Position{nx, ny}) { blocked = true; break; }
+                                }
+                                if (blocked) continue;
+                                int cost = (state.grid[nx][ny] == Terrain::Water) ? 2 : 1;
+                                if (state.human.stamina < cost) continue;
+                            }
+                            if (state.input_mode == InputMode::TargetKnife) {
+                                bool has_zombie = false;
+                                for (const auto& z : state.zombies) {
+                                    if (z->hp > 0 && z->pos == Position{nx, ny}) { has_zombie = true; break; }
+                                }
+                                if (!has_zombie || state.human.stamina < 1) continue;
+                            }
+                            int ovx = nx - viewX + padX;
+                            int ovy = ny - viewY + padY;
+                            if (ovx < 0 || ovx >= VIEW_CELLS || ovy < 0 || ovy >= VIEW_CELLS) continue;
+                            sf::ConvexShape arrow(4);
+                            float cx = ovx * cellSize + boardOffset + cellSize / 2.0f;
+                            float cy = ovy * cellSize + boardOffset + cellSize / 2.0f;
+                            float angle = std::atan2(dy, dx);
+                            float size = (state.input_mode == InputMode::TargetKnife) ? 7.0f : 10.0f;
+                            if (state.input_mode == InputMode::TargetKnife) {
+                                cx -= dx * (cellSize * 0.20f);
+                                cy -= dy * (cellSize * 0.20f);
+                            }
+                            arrow.setPoint(0, sf::Vector2f(std::cos(angle) * size, std::sin(angle) * size));
+                            arrow.setPoint(1, sf::Vector2f(std::cos(angle + 2.0f) * size, std::sin(angle + 2.0f) * size));
+                            arrow.setPoint(2, sf::Vector2f(std::cos(angle + 3.14159f) * (size * 0.1f), std::sin(angle + 3.14159f) * (size * 0.1f)));
+                            arrow.setPoint(3, sf::Vector2f(std::cos(angle - 2.0f) * size, std::sin(angle - 2.0f) * size));
+                            float pulse = std::sin(timeSec * 15.0f) * 0.15f + 1.0f;
+                            arrow.setScale(pulse, pulse);
+                            arrow.setPosition(cx, cy);
+                            bool is_shoot = (state.input_mode == InputMode::TargetPistol || state.input_mode == InputMode::TargetShotgun);
+                            if (state.input_mode == InputMode::MoveMode) {
+                                arrow.setFillColor(sf::Color(255, 220, 50, 230));
+                                arrow.setOutlineColor(sf::Color(40, 30, 10, 200));
+                            } else if (state.input_mode == InputMode::TargetKnife) {
+                                arrow.setFillColor(sf::Color(200, 100, 255, 250));
+                                arrow.setOutlineColor(sf::Color(65, 20, 85, 210));
+                            } else if (is_shoot) {
+                                arrow.setFillColor(sf::Color(255, 60, 60, 230));
+                                arrow.setOutlineColor(sf::Color(60, 10, 10, 200));
+                            } else {
+                                arrow.setFillColor(sf::Color(60, 255, 60, 230));
+                                arrow.setOutlineColor(sf::Color(10, 60, 10, 200));
+                            }
+                            arrow.setOutlineThickness(1.5f);
+                            window.draw(arrow);
+                        }
                     }
                 }
             }
@@ -3122,7 +3435,7 @@ static void main_loop() {
 
                 // ── CREDITS ───────────────────────────────────────────────────────────
                 if (ImGui::CollapsingHeader(tr("Credits", "Tin Chi"))) {
-                    ImGui::TextColored(ImVec4(0.95f, 0.9f, 0.35f, 1.0f), "ZomChess v2.2.0");
+                    ImGui::TextColored(ImVec4(0.95f, 0.9f, 0.35f, 1.0f), "ZomChess v2.3.0");
                     ImGui::BulletText("%s", tr("Design & Programming: Phan Anh Luan + AIs", "Thiet ke & Lap trinh: Phan Anh Luan + AI"));
                     ImGui::BulletText("%s", tr("Music: 'Ancient Rite', 'Discovery Hit', 'Impending Boom', 'The Ice Giants' — licensed for use.", "Nhac nen: 'Ancient Rite', 'Discovery Hit', 'Impending Boom', 'The Ice Giants' — duoc cap phep su dung."));
                     ImGui::BulletText("%s", tr("Built with: C++, SFML, Dear ImGui, ImGui-SFML.", "Xay dung bang: C++, SFML, Dear ImGui, ImGui-SFML."));

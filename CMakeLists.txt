@@ -1,98 +1,148 @@
 cmake_minimum_required(VERSION 3.14)
 project(ZomChess LANGUAGES CXX)
 
-if(POLICY CMP0169)
-    cmake_policy(SET CMP0169 OLD)
-endif()
-
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# ─── Source files (shared between native and Emscripten builds) ───────────────
 set(ZOMCHESS_SOURCES
     src/main.cpp
     src/GameState.cpp
     src/AudioManager.cpp
 )
 
-include(FetchContent)
-
-# 1. Tải ImGui
-FetchContent_Declare(
-    imgui
-    GIT_REPOSITORY https://github.com/ocornut/imgui.git
-    GIT_TAG        v1.90.4
-)
-FetchContent_GetProperties(imgui)
-if(NOT imgui_POPULATED)
-    FetchContent_Populate(imgui)
-endif()
-set(IMGUI_DIR ${imgui_SOURCE_DIR} CACHE PATH "" FORCE)
-
-# KHÓA CHẶT TÍNH NĂNG TỰ TÌM KIẾM CỦA IMGUI-SFML CHO CẢ 2 MÔI TRƯỜNG
-set(IMGUI_SFML_FIND_SFML OFF CACHE BOOL "" FORCE)
-
-# 2. Chuẩn bị ImGui-SFML
-FetchContent_Declare(
-    imgui-sfml
-    GIT_REPOSITORY https://github.com/SFML/imgui-sfml.git
-    GIT_TAG        v2.6
-)
-
-# 3. MÔI TRƯỜNG WEB (GitHub Actions)
+# ─── Emscripten (WebAssembly) build ──────────────────────────────────────────
+# Detected automatically when you invoke CMake via emcmake.
 if (EMSCRIPTEN)
-    FetchContent_Declare(
-        SFML
-        URL https://github.com/vancegroup/SFML/archive/refs/heads/emscripten.tar.gz
-    )
-    set(SFML_BUILD_AUDIO ON CACHE BOOL "" FORCE)
-    set(SFML_BUILD_GRAPHICS ON CACHE BOOL "" FORCE)
-    set(SFML_BUILD_WINDOW ON CACHE BOOL "" FORCE)
-    set(SFML_BUILD_SYSTEM ON CACHE BOOL "" FORCE)
-    set(SFML_BUILD_NETWORK OFF CACHE BOOL "" FORCE)
-    FetchContent_MakeAvailable(SFML)
+    message(STATUS "Configuring for Emscripten / WebAssembly")
 
-    if(NOT TARGET SFML::System)
-        add_library(SFML::System ALIAS sfml-system)
-        add_library(SFML::Window ALIAS sfml-window)
-        add_library(SFML::Graphics ALIAS sfml-graphics)
-        add_library(SFML::Audio ALIAS sfml-audio)
+    # Fetch Dear ImGui (same version as native build)
+    include(FetchContent)
+    FetchContent_Declare(
+        imgui
+        GIT_REPOSITORY https://github.com/ocornut/imgui.git
+        GIT_TAG        v1.90.4
+    )
+    FetchContent_GetProperties(imgui)
+    if(NOT imgui_POPULATED)
+        FetchContent_Populate(imgui)
     endif()
 
-    set(IMGUI_SFML_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    # ImGui-SFML uses system SFML; under Emscripten we point it at the ports.
+    set(IMGUI_DIR ${imgui_SOURCE_DIR} CACHE PATH "" FORCE)
+    set(IMGUI_SFML_FIND_SFML OFF CACHE INTERNAL "")
+    set(IMGUI_SFML_SHARED_LIBS OFF CACHE INTERNAL "")
+
+    FetchContent_Declare(
+        imgui-sfml
+        GIT_REPOSITORY https://github.com/SFML/imgui-sfml.git
+        GIT_TAG        v2.6
+    )
     FetchContent_MakeAvailable(imgui-sfml)
 
     add_executable(ZomChess ${ZOMCHESS_SOURCES})
     target_include_directories(ZomChess PRIVATE src)
-    target_link_libraries(ZomChess PRIVATE sfml-graphics sfml-window sfml-system sfml-audio ImGui-SFML::ImGui-SFML)
-    target_compile_options(ZomChess PRIVATE -sUSE_SDL=2 -O2)
-    set_target_properties(ZomChess PROPERTIES OUTPUT_NAME "ZomChess" SUFFIX ".html")
-    
+    target_link_libraries(ZomChess PRIVATE ImGui-SFML::ImGui-SFML)
+
+    # Emscripten ports: SFML depends on SDL2 under the hood when built via ports.
+    # Use -sUSE_SDL=2 so Emscripten fetches & compiles SDL2 automatically.
+    # SFML 2.x with Emscripten is typically provided via the emscripten-ports fork;
+    # the flags below match that setup.
+    target_compile_options(ZomChess PRIVATE
+        -sUSE_SDL=2
+        -O2
+    )
+
+    # Output file names: ZomChess.html / ZomChess.js / ZomChess.wasm
+    set_target_properties(ZomChess PROPERTIES
+        OUTPUT_NAME "ZomChess"
+        SUFFIX ".html"
+    )
+
+    # --preload-file embeds the assets directory into the virtual MEMFS so the
+    # browser can read them (music OGG files, font files, etc.).
+    # Adjust the path if your working directory differs.
     target_link_options(ZomChess PRIVATE
-        -sUSE_SDL=2 -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=67108864
-        -sSTACK_SIZE=1048576 -sEXPORTED_RUNTIME_METHODS=['ccall','cwrap']
-        -sNO_EXIT_RUNTIME=1 -lopenal --preload-file ${CMAKE_SOURCE_DIR}/assets@/assets -O2
+        # Core runtime
+        -sUSE_SDL=2
+        -sALLOW_MEMORY_GROWTH=1
+        -sINITIAL_MEMORY=67108864     # 64 MB initial heap
+        -sSTACK_SIZE=1048576          # 1 MB stack
+        -sEXPORTED_RUNTIME_METHODS=['ccall','cwrap']
+        -sNO_EXIT_RUNTIME=1
+
+        # OpenAL (for SFML Audio)
+        -lopenal
+
+        # Embed assets into the virtual filesystem
+        --preload-file ${CMAKE_SOURCE_DIR}/assets@/assets
+
+        # Use the default Emscripten shell as the HTML wrapper
+        # (remove or replace with --shell-file to use a custom shell)
+        # --shell-file ${CMAKE_SOURCE_DIR}/web/shell.html
+
+        # Full optimisation in release-style builds
+        -O2
     )
 
+    # Copy the generated web files to a dedicated output directory for clarity
     add_custom_command(TARGET ZomChess POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}/web_build
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_BINARY_DIR}
+            ${CMAKE_SOURCE_DIR}/web_build
+        COMMENT "Copying web build artifacts to web_build/"
     )
 
-# 4. MÔI TRƯỜNG PC (Linux của bạn)
+# ─── Native (desktop) build ───────────────────────────────────────────────────
 else()
-    # Tự chủ động tìm SFML của Linux. ImGui-SFML sẽ im lặng xài ké do đã bị tắt FIND_SFML ở trên.
+    # 1. Find system SFML package
     find_package(SFML 2.5 COMPONENTS graphics window system audio REQUIRED)
-    
-    set(IMGUI_SFML_SHARED_LIBS ON CACHE BOOL "" FORCE)
+
+    # 2. Fetch the core Dear ImGui library first
+    include(FetchContent)
+    FetchContent_Declare(
+        imgui
+        GIT_REPOSITORY https://github.com/ocornut/imgui.git
+        GIT_TAG        v1.90.4 # Stable version compatible with ImGui-SFML v2.6
+    )
+    FetchContent_GetProperties(imgui)
+    if(NOT imgui_POPULATED)
+        FetchContent_Populate(imgui)
+    endif()
+
+    # 3. Configure ImGui-SFML variables to point to the fetched ImGui core
+    # and bypass internal SFML static search issues.
+    set(IMGUI_DIR ${imgui_SOURCE_DIR} CACHE PATH "Path to ImGui source code" FORCE)
+    set(IMGUI_SFML_FIND_SFML OFF CACHE INTERNAL "Disable internal SFML search in ImGui-SFML")
+    set(IMGUI_SFML_SHARED_LIBS ON CACHE INTERNAL "Force ImGui-SFML to link dynamically")
+
+    # 4. Fetch ImGui-SFML wrapper
+    FetchContent_Declare(
+        imgui-sfml
+        GIT_REPOSITORY https://github.com/SFML/imgui-sfml.git
+        GIT_TAG        v2.6
+    )
     FetchContent_MakeAvailable(imgui-sfml)
 
+    # 5. Build executable target
     add_executable(ZomChess ${ZOMCHESS_SOURCES})
+
     target_include_directories(ZomChess PRIVATE src)
-    
+
+    # 6. Link SFML audio component for music and sound effects
     target_link_libraries(ZomChess PRIVATE
-        sfml-graphics sfml-window sfml-system sfml-audio ImGui-SFML::ImGui-SFML
+        sfml-graphics
+        sfml-window
+        sfml-system
+        sfml-audio
+        ImGui-SFML::ImGui-SFML
     )
 
+    # 7. Copy assets folder to build directory after build
     add_custom_command(TARGET ZomChess POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/assets $<TARGET_FILE_DIR:ZomChess>/assets
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_SOURCE_DIR}/assets
+            $<TARGET_FILE_DIR:ZomChess>/assets
+        COMMENT "Copying assets to build directory"
     )
 endif()

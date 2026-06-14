@@ -1,3 +1,20 @@
+# v2.3.0
+
+## Logic:
+- Fix: `Zombie` in `Burn` now loses 1 HP right at the end of its own turn, not at the end of turns of all `Zombie`
+- Fix: `Ice` tiles were not melted immediately when their adjacent tile turns into `Fire`
+
+## UI:
+- Now entities in `Burn`, `Fire` tiles and their adjacent tiles as well as things standing/lying on those tiles are also visible in `Dark Clouds` environment
+- Add directional arrows for `Human` in `Dark Clouds`
+
+
+# v2.2.1
+
+## Logic:
+- Fix bug in displaying the multikill banners
+
+
 # v2.2.0
 
 ## Logic:

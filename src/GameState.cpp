@@ -2713,16 +2713,7 @@ void GameState::update_zombie_logic(float dt) {
     
     if (active_zombie_idx >= zombies.size()) { 
         if (active_zombie_substep == 0) {
-            // Burning persists until extinguished by Water tile or heavy rain.
-            // At end of each zombie's turn, if still burning, take 1 HP damage (burning is NOT cleared).
-            for (auto& z : zombies) {
-                if (z->hp > 0 && z->is_burning) {
-                    z->hp -= 1;
-                    floating_texts.push_back({z->pos, -1, 1.0f, 1.0f});
-                    add_log("[FIRE] " + z->name + " suffered 1 Burn Damage!", ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
-                    if (z->hp <= 0 && z->type == ZombieType::Exploding) queue_explosion(z->pos.x, z->pos.y, true);
-                }
-            }
+            // Burning is now applied per-zombie at the end of each individual turn.
             
             // Fire spreads once after ALL zombies have finished their turns
             propagate_gradual_forest_fire();
@@ -2761,6 +2752,13 @@ void GameState::update_zombie_logic(float dt) {
     if (zom->is_paralyzed) {
         add_log("[SHOCK] " + zom->name + " is paralyzed and loses this action.", ImVec4(0.45f, 0.9f, 1.0f, 1.0f));
         zom->is_paralyzed = false;
+        // Apply burn damage only if no extra turn is pending
+        if (!zom->extra_turn && zom->is_burning) {
+            zom->hp -= 1;
+            floating_texts.push_back({zom->pos, -1, 1.0f, 1.0f});
+            add_log("[FIRE] " + zom->name + " suffered 1 Burn Damage!", ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
+            if (zom->hp <= 0 && zom->type == ZombieType::Exploding) queue_explosion(zom->pos.x, zom->pos.y, true);
+        }
         active_zombie_idx++;
         active_zombie_substep = 0;
         return;
@@ -2780,6 +2778,13 @@ void GameState::update_zombie_logic(float dt) {
         } else {
             add_log(tr("[ICE] " + zom->name + " is frozen solid and cannot move! (Frozen until ice melts)",
                        "[BANG] " + zom->name + " bi dong cung va khong the di chuyen! (Dong bang den khi bang tan)"), ImVec4(0.6f, 0.8f, 1.0f, 1.0f));
+            // Apply burn damage only if no extra turn is pending
+            if (!zom->extra_turn && zom->is_burning) {
+                zom->hp -= 1;
+                floating_texts.push_back({zom->pos, -1, 1.0f, 1.0f});
+                add_log("[FIRE] " + zom->name + " suffered 1 Burn Damage!", ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
+                if (zom->hp <= 0 && zom->type == ZombieType::Exploding) queue_explosion(zom->pos.x, zom->pos.y, true);
+            }
             active_zombie_idx++;
             active_zombie_substep = 0;
             return;
@@ -2840,6 +2845,14 @@ void GameState::update_zombie_logic(float dt) {
                         human_sick_stamina_penalty = true;
                     }
                 }
+                check_victory_conditions();
+            }
+            // Apply burn damage only if no extra turn is pending
+            if (zom->hp > 0 && !zom->extra_turn && zom->is_burning) {
+                zom->hp -= 1;
+                floating_texts.push_back({zom->pos, -1, 1.0f, 1.0f});
+                add_log("[FIRE] " + zom->name + " suffered 1 Burn Damage!", ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
+                if (zom->hp <= 0 && zom->type == ZombieType::Exploding) queue_explosion(zom->pos.x, zom->pos.y, true);
                 check_victory_conditions();
             }
             active_zombie_idx++;
@@ -2905,6 +2918,14 @@ void GameState::update_zombie_logic(float dt) {
                 zombie_action_timer = 0.0f;
                 add_log("-> " + zom->name + " takes an extra turn!", ImVec4(0.4f, 0.9f, 1.0f, 1.0f));
             } else {
+                // Apply burn damage — this is the final turn (no extra turn pending)
+                if (zom->hp > 0 && zom->is_burning) {
+                    zom->hp -= 1;
+                    floating_texts.push_back({zom->pos, -1, 1.0f, 1.0f});
+                    add_log("[FIRE] " + zom->name + " suffered 1 Burn Damage!", ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
+                    if (zom->hp <= 0 && zom->type == ZombieType::Exploding) queue_explosion(zom->pos.x, zom->pos.y, true);
+                    check_victory_conditions();
+                }
                 active_zombie_idx++; active_zombie_substep = 0;
             }
         }
@@ -3011,6 +3032,9 @@ void GameState::propagate_gradual_forest_fire() {
         for (const auto& p : to_catch_fire) {
             grid[p.x][p.y] = Terrain::Fire;
             
+            // Melt adjacent ice immediately when this tile ignites
+            melt_adjacent_ice(p.x, p.y);
+            
             // Kích nổ mìn nếu ô này có mìn
             if (mine_grid[p.x][p.y]) {
                 mine_grid[p.x][p.y] = false;
@@ -3065,6 +3089,8 @@ void GameState::set_cell_on_fire(int x, int y) {
             fire_cells.push_back({Position{x, y}, 2});
             sfx("fire");
         }
+        // Melt adjacent ice immediately when a tile ignites
+        melt_adjacent_ice(x, y);
         // Kích nổ mìn nếu ô này có mìn
         if (mine_grid[x][y]) {
             mine_grid[x][y] = false;
