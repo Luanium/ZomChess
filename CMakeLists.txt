@@ -40,6 +40,10 @@ if (EMSCRIPTEN)
 
     set(IMGUI_SFML_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
+    # BƯỚC SỬA LỖI QUAN TRỌNG: Mở khóa giới hạn tìm kiếm của Emscripten
+    # Bắt buộc phải có dòng này để imgui-sfml tìm được imgui.cpp trên thư mục máy host
+    set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE BOTH)
+
     FetchContent_MakeAvailable(imgui-sfml)
 
     add_executable(ZomChess ${ZOMCHESS_SOURCES})
@@ -51,9 +55,10 @@ if (EMSCRIPTEN)
         -O2
     )
 
+    # Đã đổi SUFFIX thành .js để dễ dàng nhúng vào Website Franchise
     set_target_properties(ZomChess PROPERTIES
         OUTPUT_NAME "ZomChess"
-        SUFFIX ".html"
+        SUFFIX ".js"
     )
 
     target_link_options(ZomChess PRIVATE
