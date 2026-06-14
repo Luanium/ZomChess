@@ -4,35 +4,55 @@ project(ZomChess LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# ─── 1. Source files (Dùng chung cho cả PC và Web) ───────────────────────────
+# ─── 1. Danh sách file nguồn (Dùng chung) ────────────────────────────────────
 set(ZOMCHESS_SOURCES
     src/main.cpp
     src/GameState.cpp
     src/AudioManager.cpp
 )
 
-# ─── 2. Tải thư viện Dear ImGui gốc (Dùng chung) ─────────────────────────────
 include(FetchContent)
 
+# ─── 2. Tải và cấu hình Dear ImGui (Dùng Populate để lấy đường dẫn chuẩn) ─────
 FetchContent_Declare(
     imgui
     GIT_REPOSITORY https://github.com/ocornut/imgui.git
     GIT_TAG        v1.90.4
 )
-FetchContent_MakeAvailable(imgui)
+FetchContent_GetProperties(imgui)
+if(NOT imgui_POPULATED)
+    FetchContent_Populate(imgui)
+endif()
 
-# Chỉ đường cho imgui-sfml biết vị trí của ImGui
+# Cung cấp đường dẫn tuyệt đối chứa imgui.cpp cho imgui-sfml
 set(IMGUI_DIR ${imgui_SOURCE_DIR} CACHE PATH "Path to ImGui top-level source" FORCE)
 
 # ─── 3. CẤU HÌNH BIÊN DỊCH BẢN WEB (EMSCRIPTEN) ──────────────────────────────
 if (EMSCRIPTEN)
     message(STATUS "Configuring for Emscripten / WebAssembly")
 
-    # Ép CMake tìm kiếm SFML bản Web do GitHub Actions chuẩn bị sẵn
-    find_package(SFML 2.5 COMPONENTS graphics window system audio REQUIRED)
+    # Tải bản SFML dành riêng cho WebAssembly trực tiếp qua CMake
+    FetchContent_Declare(
+        SFML
+        GIT_REPOSITORY https://github.com/Lautaro-Garcia/SFML.git
+        GIT_TAG        master
+    )
+    set(SFML_BUILD_AUDIO ON CACHE BOOL "" FORCE)
+    set(SFML_BUILD_GRAPHICS ON CACHE BOOL "" FORCE)
+    set(SFML_BUILD_WINDOW ON CACHE BOOL "" FORCE)
+    set(SFML_BUILD_SYSTEM ON CACHE BOOL "" FORCE)
+    set(SFML_BUILD_NETWORK OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(SFML)
 
+    # Định nghĩa các Alias target để imgui-sfml có thể liên kết tự động
+    add_library(SFML::System ALIAS sfml-system)
+    add_library(SFML::Window ALIAS sfml-window)
+    add_library(SFML::Graphics ALIAS sfml-graphics)
+    add_library(SFML::Audio ALIAS sfml-audio)
+
+    # Tắt tính năng tự tìm SFML bên ngoài của imgui-sfml vì ta đã nạp ở trên
+    set(IMGUI_SFML_FIND_SFML OFF CACHE BOOL "" FORCE)
     set(IMGUI_SFML_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-    set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE BOTH)
 
     FetchContent_Declare(
         imgui-sfml
@@ -44,7 +64,6 @@ if (EMSCRIPTEN)
     add_executable(ZomChess ${ZOMCHESS_SOURCES})
     target_include_directories(ZomChess PRIVATE src)
     
-    # Liên kết đầy đủ các module SFML Web và giao diện ImGui
     target_link_libraries(ZomChess PRIVATE
         sfml-graphics
         sfml-window
@@ -60,7 +79,7 @@ if (EMSCRIPTEN)
 
     set_target_properties(ZomChess PROPERTIES
         OUTPUT_NAME "ZomChess"
-        SUFFIX ".js"
+        SUFFIX ".html"
     )
 
     target_link_options(ZomChess PRIVATE
@@ -82,10 +101,11 @@ if (EMSCRIPTEN)
         COMMENT "Copying web build artifacts to web_build/"
     )
 
-# ─── 4. CẤU HÌNH BIÊN DỊCH BẢN PC NATIVE (Giữ nguyên cho máy Linux của bạn) ──
+# ─── 4. CẤU HÌNH BIÊN DỊCH BẢN PC (Giữ nguyên cho máy Linux local) ────────────
 else()
     find_package(SFML 2.5 COMPONENTS graphics window system audio REQUIRED)
 
+    set(IMGUI_SFML_FIND_SFML ON CACHE BOOL "" FORCE)
     set(IMGUI_SFML_SHARED_LIBS ON CACHE BOOL "" FORCE)
 
     FetchContent_Declare(

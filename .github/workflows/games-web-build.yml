@@ -10,79 +10,53 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Lấy mã nguồn game của bạn
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Khởi tạo môi trường ảo EmscriptenCompiler
       - name: Setup emsdk
         uses: mymindstorm/setup-emsdk@v14
         with:
           version: 3.1.59
+          actions-cache-folder: .emsdk-cache
 
-      # 3. Cài đặt công cụ build hệ thống
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends cmake ninja-build git fonts-noto
 
-      # 4. TỰ ĐỘNG BIÊN DỊCH THƯ VIỆN SFML CHO WEB (Giải quyết tận gốc lỗi thiếu file)
-      - name: Build SFML for WebAssembly
-        run: |
-          git clone --depth 1 -b emscripten https://github.com/vancegroup/SFML.git sfml-src
-          mkdir -p sfml-build
-          cd sfml-build
-          emcmake cmake ../sfml-src \
-            -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/sfml_install \
-            -DSFML_BUILD_AUDIO=ON \
-            -DSFML_BUILD_GRAPHICS=ON \
-            -DSFML_BUILD_WINDOW=ON \
-            -DSFML_BUILD_SYSTEM=ON \
-            -DSFML_BUILD_NETWORK=OFF
-          cmake --build . --target install --parallel
-
-      # 5. Chuẩn bị Font chữ hệ thống
       - name: Copy fonts into assets/fonts
         run: |
           mkdir -p assets/fonts
           NOTO=$(find /usr/share/fonts -name "NotoSans-Bold.ttf" 2>/dev/null | head -1)
           [ -n "$NOTO" ] && cp "$NOTO" assets/fonts/NotoSans-Bold.ttf || true
 
-      # 6. Cấu hình game và nạp đường dẫn SFML Web vừa build ở trên vào
       - name: CMake configure (emcmake)
         run: |
           mkdir -p build_web
           cd build_web
-          emcmake cmake .. \
-            -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DSFML_DIR=${{ github.workspace }}/sfml_install/lib/cmake/SFML
+          emcmake cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release
 
-      # 7. Biên dịch game thành WebAssembly
       - name: CMake build
         run: |
           cd build_web
           cmake --build . --parallel
 
-      # 8. Thu gom các file thành phẩm (.js, .wasm, .data)
       - name: Collect web artifacts
         run: |
           mkdir -p web_dist
-          [ -f build_web/ZomChess.js ] && cp build_web/ZomChess.js web_dist/ZomChess.js || true
-          [ -f build_web/ZomChess.wasm ] && cp build_web/ZomChess.wasm web_dist/ZomChess.wasm || true
+          cp build_web/ZomChess.html  web_dist/index.html
+          cp build_web/ZomChess.js    web_dist/ZomChess.js
+          cp build_web/ZomChess.wasm  web_dist/ZomChess.wasm
           [ -f build_web/ZomChess.data ] && cp build_web/ZomChess.data web_dist/ZomChess.data || true
           [ -d assets ] && cp -r assets web_dist/assets || true
 
-      # 9. Đẩy file lên GitHub lưu trữ phòng hờ
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ZomChess-WebAssembly
           path: web_dist/
+          retention-days: 30
 
-      # 10. Đẩy code Web lên nhánh ẩn gh-pages phục vụ deploy công khai
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
@@ -90,3 +64,4 @@ jobs:
           publish_dir: ./web_dist
           publish_branch: gh-pages
           force_orphan: true
+          commit_message: "ci: deploy WebAssembly build from ${{ github.sha }}"
