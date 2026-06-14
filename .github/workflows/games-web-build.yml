@@ -31,10 +31,11 @@ jobs:
             fonts-noto \
             fonts-dejavu
 
-      # ── 3b. Tải mã nguồn Dear ImGui (Bổ sung để sửa lỗi dòng 24) ────────────
-      - name: Clone Dear ImGui source dependency
+      # ── 3b. Tạo trước thư mục build và đặt sẵn ImGui vào tầm ngắm ───────────
+      - name: Pre-download ImGui into CMake build directory
         run: |
-          git clone --depth 1 -b docking https://github.com/ocornut/imgui.git ${GITHUB_WORKSPACE}/imgui
+          mkdir -p build_web/_deps/imgui-src
+          git clone --depth 1 -b docking https://github.com/ocornut/imgui.git build_web/_deps/imgui-src
 
       # ── 4. Prepare font assets required by the web build ───────────────────
       - name: Copy fonts into assets/fonts
@@ -45,15 +46,14 @@ jobs:
           [ -n "$NOTO" ] && cp "$NOTO" assets/fonts/NotoSans-Bold.ttf || true
           [ -n "$DEJA" ] && cp "$DEJA" assets/fonts/DejaVuSans-Bold.ttf || true
 
-      # ── 5. Configure with Emscripten (Đã truyền thêm vị trí thư viện ImGui) ──
+      # ── 5. Configure with Emscripten ────────────────────────────────────────
       - name: CMake configure (emcmake)
         run: |
-          mkdir -p build_web
           cd build_web
           emcmake cmake .. \
             -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DIMGUI_DIR=${GITHUB_WORKSPACE}/imgui
+            -DFETCHCONTENT_SOURCE_DIR_IMGUI=${{ github.workspace }}/build_web/_deps/imgui-src
 
       # ── 6. Build ─────────────────────────────────────────────────────────────
       - name: CMake build
