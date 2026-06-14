@@ -4,14 +4,14 @@ project(ZomChess LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# ─── Source files (shared between native and Emscripten builds) ───────────────
+# ─── 1. Source files (Dùng chung cho cả PC và Web) ───────────────────────────
 set(ZOMCHESS_SOURCES
     src/main.cpp
     src/GameState.cpp
     src/AudioManager.cpp
 )
 
-# ─── Shared: fetch Dear ImGui first (both builds need it) ────────────────────
+# ─── 2. Tải thư viện Dear ImGui gốc (Dùng chung) ─────────────────────────────
 include(FetchContent)
 
 FetchContent_Declare(
@@ -21,41 +21,43 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(imgui)
 
-# IMGUI_DIR must be set BEFORE imgui-sfml is configured so that
-# imgui-sfml's find_package(imgui) can locate imgui.cpp correctly.
+# Chỉ đường cho imgui-sfml biết vị trí của ImGui
 set(IMGUI_DIR ${imgui_SOURCE_DIR} CACHE PATH "Path to ImGui top-level source" FORCE)
 
-# Disable imgui-sfml's internal SFML search — we supply SFML ourselves.
-set(IMGUI_SFML_FIND_SFML OFF CACHE BOOL "" FORCE)
-
-FetchContent_Declare(
-    imgui-sfml
-    GIT_REPOSITORY https://github.com/SFML/imgui-sfml.git
-    GIT_TAG        v2.6
-)
-
-# ─── Emscripten (WebAssembly) build ──────────────────────────────────────────
+# ─── 3. CẤU HÌNH BIÊN DỊCH BẢN WEB (EMSCRIPTEN) ──────────────────────────────
 if (EMSCRIPTEN)
     message(STATUS "Configuring for Emscripten / WebAssembly")
 
-    set(IMGUI_SFML_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    # Ép CMake tìm kiếm SFML bản Web do GitHub Actions chuẩn bị sẵn
+    find_package(SFML 2.5 COMPONENTS graphics window system audio REQUIRED)
 
-    # BƯỚC SỬA LỖI QUAN TRỌNG: Mở khóa giới hạn tìm kiếm của Emscripten
-    # Bắt buộc phải có dòng này để imgui-sfml tìm được imgui.cpp trên thư mục máy host
+    set(IMGUI_SFML_SHARED_LIBS OFF CACHE BOOL "" FORCE)
     set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE BOTH)
 
+    FetchContent_Declare(
+        imgui-sfml
+        GIT_REPOSITORY https://github.com/SFML/imgui-sfml.git
+        GIT_TAG        v2.6
+    )
     FetchContent_MakeAvailable(imgui-sfml)
 
     add_executable(ZomChess ${ZOMCHESS_SOURCES})
     target_include_directories(ZomChess PRIVATE src)
-    target_link_libraries(ZomChess PRIVATE ImGui-SFML::ImGui-SFML)
+    
+    # Liên kết đầy đủ các module SFML Web và giao diện ImGui
+    target_link_libraries(ZomChess PRIVATE
+        sfml-graphics
+        sfml-window
+        sfml-system
+        sfml-audio
+        ImGui-SFML::ImGui-SFML
+    )
 
     target_compile_options(ZomChess PRIVATE
         -sUSE_SDL=2
         -O2
     )
 
-    # Đã đổi SUFFIX thành .js để dễ dàng nhúng vào Website Franchise
     set_target_properties(ZomChess PROPERTIES
         OUTPUT_NAME "ZomChess"
         SUFFIX ".js"
@@ -80,16 +82,20 @@ if (EMSCRIPTEN)
         COMMENT "Copying web build artifacts to web_build/"
     )
 
-# ─── Native (desktop) build ───────────────────────────────────────────────────
+# ─── 4. CẤU HÌNH BIÊN DỊCH BẢN PC NATIVE (Giữ nguyên cho máy Linux của bạn) ──
 else()
     find_package(SFML 2.5 COMPONENTS graphics window system audio REQUIRED)
 
     set(IMGUI_SFML_SHARED_LIBS ON CACHE BOOL "" FORCE)
 
+    FetchContent_Declare(
+        imgui-sfml
+        GIT_REPOSITORY https://github.com/SFML/imgui-sfml.git
+        GIT_TAG        v2.6
+    )
     FetchContent_MakeAvailable(imgui-sfml)
 
     add_executable(ZomChess ${ZOMCHESS_SOURCES})
-
     target_include_directories(ZomChess PRIVATE src)
 
     target_link_libraries(ZomChess PRIVATE
