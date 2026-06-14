@@ -7,21 +7,32 @@
 #include "AudioManager.h"
 #include "SplashScreen.h"
 #include <cmath>
-#include <filesystem>
 #include <algorithm>
 #include <string>
 #include <vector>
-#if defined(_WIN32)
-  #include <windows.h>
-#elif defined(__APPLE__)
-  #include <mach-o/dyld.h>
+
+// Filesystem and native path helpers are not available / useful in WebAssembly.
+#ifndef __EMSCRIPTEN__
+  #include <filesystem>
+  namespace fs = std::filesystem;
+  #if defined(_WIN32)
+    #include <windows.h>
+  #elif defined(__APPLE__)
+    #include <mach-o/dyld.h>
+  #endif
 #endif
 
-namespace fs = std::filesystem;
+#ifdef __EMSCRIPTEN__
+  #include <emscripten.h>
+  #include <emscripten/html5.h>
+#endif
 
 // Cross-platform: get the directory containing the running executable.
+// Not meaningful in WebAssembly — returns empty string there.
 static std::string get_exe_dir() {
-#if defined(_WIN32)
+#ifdef __EMSCRIPTEN__
+    return "";
+#elif defined(_WIN32)
     char buf[MAX_PATH] = {};
     DWORD len = GetModuleFileNameA(nullptr, buf, MAX_PATH);
     if (len == 0) return "";
@@ -42,6 +53,10 @@ static std::string get_exe_dir() {
 }
 
 // ── Embedded ImGui File Browser ───────────────────────────────────────────────
+// The file browser relies on std::filesystem which is not available in
+// WebAssembly. It is compiled out under Emscripten and all call sites are
+// also guarded with #ifndef __EMSCRIPTEN__.
+#ifndef __EMSCRIPTEN__
 struct FileBrowser {
     enum class Mode { Open, Save };
 
@@ -277,267 +292,391 @@ struct FileBrowser {
     const std::string& result() const { return selected_path; }
 };
 // ─────────────────────────────────────────────────────────────────────────────
+#endif // !__EMSCRIPTEN__
 
 // Shorthand helper for sound effects
 static inline void sfx(const std::string& name) {
     AudioManager::getInstance().playSound(name);
 }
 
+// ── App-wide context (kept alive across frames for emscripten_set_main_loop) ──
+// All state that was previously declared as locals in main() lives here so it
+// persists between the per-frame callback invocations required by Emscripten.
+namespace {
+
+enum class Lang { EN, VI };
+
+enum class AppPhase { Splash, Game };
+
+struct AppContext {
+    // Window & rendering
+    sf::RenderWindow window;
+    sf::Font         boardFont;
+    bool             hasFont = false;
+
+    // Clocks
+    sf::Clock deltaClock;
+    sf::Clock splashClock;
+    sf::Clock animationClock;
+
+    // Language
+    Lang ui_lang = Lang::EN;
+
+    // Phase (Splash first, then Game)
+    AppPhase phase = AppPhase::Splash;
+
+    // Splash
+    SplashScreen splash;
+
+    // Game
+    GameState state;
+    float cellSize    = 40.0f;
+    float boardOffset = 20.0f;
+    static constexpr int VIEW_CELLS = 15;
+    int   viewX = 0;
+    int   viewY = 0;
+    bool  view_initialized = false;
+
+    // Per-frame UI state (would have been `static` locals inside the loop)
+    bool  show_guide_popup        = false;
+    bool  show_confirm_return_hub = false;
+    bool  show_confirm_exit_game  = false;
+    float panelWidthCache         = 380.0f;
+
+#ifndef __EMSCRIPTEN__
+    FileBrowser save_browser;
+    FileBrowser load_browser;
+#endif
+};
+
+// Single global instance — pointer so we control construction timing.
+AppContext* g_app = nullptr;
+
+// Helper: language-aware string selector
+inline const char* tr(const AppContext& ctx, const char* en, const char* vi) {
+    return (ctx.ui_lang == Lang::VI) ? vi : en;
+}
+
+} // anonymous namespace
+
+// ── Forward declaration of the per-frame callback ────────────────────────────
+static void main_loop();
+
 int main() {
-    enum class Lang { EN, VI };
-    static Lang ui_lang = Lang::EN;
-    auto tr = [&](const char* en, const char* vi) { return (ui_lang == Lang::VI) ? vi : en; };
-    sf::RenderWindow window(sf::VideoMode(1400, 658), "ZomChess Game", sf::Style::Titlebar | sf::Style::Close);
-    window.setFramerateLimit(60);
-    if (!ImGui::SFML::Init(window)) return -1;
+    g_app = new AppContext();
+    AppContext& app = *g_app;
+
+    // Window creation — Emscripten ignores Style flags gracefully
+    app.window.create(sf::VideoMode(1400, 658), "ZomChess Game",
+                      sf::Style::Titlebar | sf::Style::Close);
+
+#ifndef __EMSCRIPTEN__
+    // On desktop, cap the framerate via SFML.  On the web the browser's
+    // requestAnimationFrame already provides a ~60 fps cadence.
+    app.window.setFramerateLimit(60);
+#endif
+
+    if (!ImGui::SFML::Init(app.window)) return -1;
 
     SetupTacticalImGuiTheme();
 
-    sf::Font boardFont;
-    bool hasFont = false;
+    // Font loading — on the web fonts must be bundled via --preload-file.
     const char* fontCandidates[] = {
+#ifdef __EMSCRIPTEN__
+        "assets/fonts/NotoSans-Bold.ttf",
+        "assets/fonts/DejaVuSans-Bold.ttf",
+#else
         "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
         "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+#endif
     };
     for (const char* fp : fontCandidates) {
-        if (boardFont.loadFromFile(fp)) { hasFont = true; break; }
+        if (app.boardFont.loadFromFile(fp)) { app.hasFont = true; break; }
     }
 
-    // ── Splash Screen ──────────────────────────────────────────────────
-    {
-        SplashScreen splash;
-        splash.init(window.getSize().x, window.getSize().y);
-        sf::Clock splashClock;
+    // Initialise splash
+    app.splash.init(app.window.getSize().x, app.window.getSize().y);
+    app.splashClock.restart();
 
-        while (window.isOpen()) {
-            sf::Event ev;
-            while (window.pollEvent(ev)) {
-                if (ev.type == sf::Event::Closed) { window.close(); return 0; }
-                splash.handle_event(ev);
-            }
+    // Audio is initialised after splash to avoid blocking startup
+    app.state.initAudio();
+    app.state.playBackgroundMusic("menu");
 
-            float dt = splashClock.restart().asSeconds();
-            if (!splash.update(dt)) break; // splash finished
-
-            window.clear(sf::Color(10, 11, 14));
-            if (hasFont) splash.draw(window, boardFont);
-            window.display();
-        }
-    }
-    if (!window.isOpen()) return 0;
-    // ──────────────────────────────────────────────────────────────────
-
-    GameState state;
-    state.initAudio();
-    state.playBackgroundMusic("menu");
-
-    FileBrowser save_browser, load_browser;
+#ifndef __EMSCRIPTEN__
     {
         std::string ed = get_exe_dir();
-        save_browser.exe_dir = ed;
-        load_browser.exe_dir = ed;
+        app.save_browser.exe_dir = ed;
+        app.load_browser.exe_dir = ed;
     }
-    
-    sf::Clock deltaClock;
-    sf::Clock animationClock; 
+#endif
 
-    float cellSize = 40.0f;
-    float boardOffset = 20.0f;
-    const int VIEW_CELLS = 15;
-    int viewX = 0;
-    int viewY = 0;
-    bool view_initialized = false;
+#ifdef __EMSCRIPTEN__
+    // 0 = use browser's requestAnimationFrame; 1 = simulate infinite loop
+    emscripten_set_main_loop(main_loop, 0, 1);
+#else
+    while (app.window.isOpen()) {
+        main_loop();
+    }
+    ImGui::SFML::Shutdown();
+    delete g_app;
+    g_app = nullptr;
+#endif
+    return 0;
+}
 
-    while (window.isOpen()) {
-        static bool show_guide_popup = false;
-        static bool show_confirm_return_hub = false;
-        static bool show_confirm_exit_game = false;
-        static float panelWidthCache = 380.0f;
-        sf::Event event;
-        while (window.pollEvent(event)) {
-            ImGui::SFML::ProcessEvent(window, event);
+// ── Per-frame callback ────────────────────────────────────────────────────────
+static void main_loop() {
+    AppContext& app = *g_app;
 
-            if (event.type == sf::Event::Closed) {
-                if (state.current_scene == GameScene::Playing || state.current_scene == GameScene::MapEditor) {
-                    // Close any open dialog first to avoid ImGui popup stack corruption
-                    show_confirm_return_hub = false;
-                    show_confirm_exit_game = true;
-                } else {
-                    window.close();
-                }
+    // ── SPLASH PHASE ─────────────────────────────────────────────────────────
+    if (app.phase == AppPhase::Splash) {
+        sf::Event ev;
+        while (app.window.pollEvent(ev)) {
+            if (ev.type == sf::Event::Closed) {
+                app.window.close();
+#ifdef __EMSCRIPTEN__
+                emscripten_cancel_main_loop();
+#endif
+                return;
             }
+            app.splash.handle_event(ev);
+        }
 
-            if (state.current_scene == GameScene::Playing && !ImGui::GetIO().WantCaptureMouse && event.type == sf::Event::MouseButtonPressed) {
-                if (event.mouseButton.button == sf::Mouse::Left && !state.game_over && !state.game_won && state.phase == TurnPhase::HumanTurn && !state.human.is_paralyzed) {
-                    int lx = (event.mouseButton.x - boardOffset) / cellSize;
-                    int ly = (event.mouseButton.y - boardOffset) / cellSize;
-                    int padX = (state.width < VIEW_CELLS) ? (VIEW_CELLS - state.width) / 2 : 0;
-                    int padY = (state.height < VIEW_CELLS) ? (VIEW_CELLS - state.height) / 2 : 0;
-                    int tx = viewX + (lx - padX);
-                    int ty = viewY + (ly - padY);
+        float dt = app.splashClock.restart().asSeconds();
+        if (!app.splash.update(dt)) {
+            // Splash finished — switch to game phase
+            app.phase = AppPhase::Game;
+            app.deltaClock.restart();
+            return;
+        }
 
-                    if (lx >= 0 && lx < VIEW_CELLS && ly >= 0 && ly < VIEW_CELLS &&
-                        tx >= 0 && tx < state.width && ty >= 0 && ty < state.height) {
-                        if (state.input_mode == InputMode::MoveMode) {
-                            if (state.human.stamina == 0) {
-                                state.add_log(tr("[SYSTEM] Zero stamina! End turn!", "[HE THONG] Het stamina! Ket thuc luot!"), ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
-                                state.turn_banner_fx.type = FXType::Electricity;
-                                state.turn_banner_fx.timer = 1.0f;
-                                state.turn_banner_fx.max_duration = 1.0f;
-                                state.turn_banner_fx.banner_text = (ui_lang == Lang::VI) ? "HET STAMINA! KET THUC LUOT!" : "ZERO STAMINA! END TURN!";
-                                state.start_zombie_phase();
-                            } else if (state.human.is_frozen) {
-                                // If frozen, player must use Ice Pick — movement is blocked
-                                state.add_log(tr("[SYSTEM] You are frozen! Use the Ice Pick to break free.",
-                                               "[HE THONG] Ban bi dong bang! Dung Cuoc Pha Bang de thoat ra."),
-                                            ImVec4(0.6f, 0.85f, 1.0f, 1.0f));
-                            } else {
-                                int dx = std::abs(tx - state.human.pos.x);
-                                int dy = std::abs(ty - state.human.pos.y);
-                                if (dx <= 1 && dy <= 1 && (dx != 0 || dy != 0)) {
-                                    if (state.grid[tx][ty] != Terrain::Wall) {
-                                        bool blocked = false;
-                                        for (const auto& z : state.zombies) {
-                                            if (z->hp > 0 && z->pos == Position{tx, ty}) { blocked = true; break; }
-                                        }
-                                        if (!blocked) {
-                                            int cost = (state.grid[tx][ty] == Terrain::Water) ? 2 : 1;
-                                            if (state.human.stamina >= cost) {
-                                                int move_dx = tx - state.human.pos.x;
-                                                int move_dy = ty - state.human.pos.y;
-                                                state.kills_this_turn = 0; // reset per substep
-                                                state.pending_multikill_banner.clear();
-                                                for (auto& z : state.zombies) if (z->hp > 0) z->kill_counted = false;
-                                                state.human.pos = {tx, ty};
-                                                state.human.stamina -= cost;
-                                                sfx("footstep");
-                                                state.check_fire_interactions();
-                                                state.check_mine_interactions();
-                                                state.check_loot_pickup();
-                                                // Ice slide check — try_ice_slide also calls check_fire/mine internally
-                                                if (state.human.hp > 0 && state.grid[state.human.pos.x][state.human.pos.y] == Terrain::Ice) {
-                                                    bool stun = false;
-                                                    state.try_ice_slide(true, 0, move_dx, move_dy, stun);
-                                                    if (stun) {
-                                                        state.start_zombie_phase();
-                                                    }
-                                                }
-                                            } else {
-                                                state.add_log(tr("[SYSTEM] Not enough stamina!", "[HE THONG] Khong du stamina!"), ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
-                                                state.turn_banner_fx.type = FXType::Electricity;
-                                                state.turn_banner_fx.timer = 1.0f;
-                                                state.turn_banner_fx.max_duration = 1.0f;
-                                                state.turn_banner_fx.banner_text = (ui_lang == Lang::VI) ? "KHONG DU STAMINA!" : "NOT ENOUGH STAMINA!";
+        app.window.clear(sf::Color(10, 11, 14));
+        if (app.hasFont) app.splash.draw(app.window, app.boardFont);
+        app.window.display();
+        return;
+    }
+
+    // ── GAME PHASE ───────────────────────────────────────────────────────────
+    AppContext& ctx = app; // alias for brevity below
+    auto tr_f = [&](const char* en, const char* vi) { return tr(ctx, en, vi); };
+
+    sf::Event event;
+    while (app.window.pollEvent(event)) {
+        ImGui::SFML::ProcessEvent(app.window, event);
+
+        if (event.type == sf::Event::Closed) {
+            if (app.state.current_scene == GameScene::Playing ||
+                app.state.current_scene == GameScene::MapEditor) {
+                app.show_confirm_return_hub = false;
+                app.show_confirm_exit_game  = true;
+            } else {
+                app.window.close();
+#ifdef __EMSCRIPTEN__
+                emscripten_cancel_main_loop();
+#endif
+            }
+        }
+
+        if (app.state.current_scene == GameScene::Playing &&
+            !ImGui::GetIO().WantCaptureMouse &&
+            event.type == sf::Event::MouseButtonPressed) {
+
+            if (event.mouseButton.button == sf::Mouse::Left &&
+                !app.state.game_over && !app.state.game_won &&
+                app.state.phase == TurnPhase::HumanTurn &&
+                !app.state.human.is_paralyzed) {
+
+                int lx = (event.mouseButton.x - app.boardOffset) / app.cellSize;
+                int ly = (event.mouseButton.y - app.boardOffset) / app.cellSize;
+                int padX = (app.state.width  < AppContext::VIEW_CELLS) ? (AppContext::VIEW_CELLS - app.state.width)  / 2 : 0;
+                int padY = (app.state.height < AppContext::VIEW_CELLS) ? (AppContext::VIEW_CELLS - app.state.height) / 2 : 0;
+                int tx = app.viewX + (lx - padX);
+                int ty = app.viewY + (ly - padY);
+
+                if (lx >= 0 && lx < AppContext::VIEW_CELLS &&
+                    ly >= 0 && ly < AppContext::VIEW_CELLS &&
+                    tx >= 0 && tx < app.state.width &&
+                    ty >= 0 && ty < app.state.height) {
+
+                    if (app.state.input_mode == InputMode::MoveMode) {
+                        if (app.state.human.stamina == 0) {
+                            app.state.add_log(tr_f("[SYSTEM] Zero stamina! End turn!", "[HE THONG] Het stamina! Ket thuc luot!"), ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
+                            app.state.turn_banner_fx.type = FXType::Electricity;
+                            app.state.turn_banner_fx.timer = 1.0f;
+                            app.state.turn_banner_fx.max_duration = 1.0f;
+                            app.state.turn_banner_fx.banner_text = (app.ui_lang == Lang::VI) ? "HET STAMINA! KET THUC LUOT!" : "ZERO STAMINA! END TURN!";
+                            app.state.start_zombie_phase();
+                        } else if (app.state.human.is_frozen) {
+                            app.state.add_log(tr_f("[SYSTEM] You are frozen! Use the Ice Pick to break free.",
+                                                   "[HE THONG] Ban bi dong bang! Dung Cuoc Pha Bang de thoat ra."),
+                                              ImVec4(0.6f, 0.85f, 1.0f, 1.0f));
+                        } else {
+                            int dx = std::abs(tx - app.state.human.pos.x);
+                            int dy = std::abs(ty - app.state.human.pos.y);
+                            if (dx <= 1 && dy <= 1 && (dx != 0 || dy != 0)) {
+                                if (app.state.grid[tx][ty] != Terrain::Wall) {
+                                    bool blocked = false;
+                                    for (const auto& z : app.state.zombies) {
+                                        if (z->hp > 0 && z->pos == Position{tx, ty}) { blocked = true; break; }
+                                    }
+                                    if (!blocked) {
+                                        int cost = (app.state.grid[tx][ty] == Terrain::Water) ? 2 : 1;
+                                        if (app.state.human.stamina >= cost) {
+                                            int move_dx = tx - app.state.human.pos.x;
+                                            int move_dy = ty - app.state.human.pos.y;
+                                            app.state.kills_this_turn = 0;
+                                            app.state.pending_multikill_banner.clear();
+                                            for (auto& z : app.state.zombies) if (z->hp > 0) z->kill_counted = false;
+                                            app.state.human.pos = {tx, ty};
+                                            app.state.human.stamina -= cost;
+                                            sfx("footstep");
+                                            app.state.check_fire_interactions();
+                                            app.state.check_mine_interactions();
+                                            app.state.check_loot_pickup();
+                                            if (app.state.human.hp > 0 &&
+                                                app.state.grid[app.state.human.pos.x][app.state.human.pos.y] == Terrain::Ice) {
+                                                bool stun = false;
+                                                app.state.try_ice_slide(true, 0, move_dx, move_dy, stun);
+                                                if (stun) app.state.start_zombie_phase();
                                             }
+                                        } else {
+                                            app.state.add_log(tr_f("[SYSTEM] Not enough stamina!", "[HE THONG] Khong du stamina!"), ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
+                                            app.state.turn_banner_fx.type = FXType::Electricity;
+                                            app.state.turn_banner_fx.timer = 1.0f;
+                                            app.state.turn_banner_fx.max_duration = 1.0f;
+                                            app.state.turn_banner_fx.banner_text = (app.ui_lang == Lang::VI) ? "KHONG DU STAMINA!" : "NOT ENOUGH STAMINA!";
                                         }
                                     }
                                 }
                             }
-                        } else {
-                            state.handle_weapon_click(tx, ty, cellSize, boardOffset);
                         }
-                    }
-                }
-            }
-
-            if (state.current_scene == GameScene::MapEditor && !ImGui::GetIO().WantCaptureMouse) {
-                if (sf::Mouse::isButtonPressed(sf::Mouse::Left) || event.type == sf::Event::MouseButtonPressed) {
-                    sf::Vector2i mousePos = sf::Mouse::getPosition(window);
-                    int tx = (mousePos.x - boardOffset) / cellSize;
-                    int ty = (mousePos.y - boardOffset) / cellSize;
-
-                    if (tx >= 0 && tx < state.active_config.map_width && ty >= 0 && ty < state.active_config.map_height) {
-                        state.active_config.custom_grid[tx][ty] = state.editor_selected_terrain;
-                        if (state.editor_selected_terrain == Terrain::Dirt && sf::Keyboard::isKeyPressed(sf::Keyboard::LShift)) {
-                            state.active_config.custom_human_pos = {tx, ty};
-                        }
+                    } else {
+                        app.state.handle_weapon_click(tx, ty, app.cellSize, app.boardOffset);
                     }
                 }
             }
         }
 
-        sf::Time dtTime = deltaClock.restart();
-        float dtSeconds = dtTime.asSeconds();
-        ImGui::SFML::Update(window, dtTime);
-
-        if (state.current_scene == GameScene::Playing) {
-            state.use_vietnamese = (ui_lang == Lang::VI);
-            if (state.human.stamina == 0 && state.input_mode != InputMode::MoveMode) {
-                state.input_mode = InputMode::MoveMode;
-            }
-            cellSize = 40.0f;
-            boardOffset = 20.0f;
-            int maxViewX = std::max(0, state.width - VIEW_CELLS);
-            int maxViewY = std::max(0, state.height - VIEW_CELLS);
-            if (!view_initialized) {
-                viewX = std::max(0, std::min(state.human.pos.x - VIEW_CELLS / 2, maxViewX));
-                viewY = std::max(0, std::min(state.human.pos.y - VIEW_CELLS / 2, maxViewY));
-                view_initialized = true;
-            } else {
-                viewX = std::max(0, std::min(viewX, maxViewX));
-                viewY = std::max(0, std::min(viewY, maxViewY));
-            }
-            if (state.turn_banner_fx.type != FXType::None) {
-                state.turn_banner_fx.timer -= dtSeconds;
-                if (state.turn_banner_fx.timer <= 0.0f) {
-                    state.turn_banner_fx.type = FXType::None;
-                    state.turn_banner_fx.banner_text = "";
+        if (app.state.current_scene == GameScene::MapEditor &&
+            !ImGui::GetIO().WantCaptureMouse) {
+            if (sf::Mouse::isButtonPressed(sf::Mouse::Left) ||
+                event.type == sf::Event::MouseButtonPressed) {
+                sf::Vector2i mousePos = sf::Mouse::getPosition(app.window);
+                int tx = (mousePos.x - app.boardOffset) / app.cellSize;
+                int ty = (mousePos.y - app.boardOffset) / app.cellSize;
+                if (tx >= 0 && tx < app.state.active_config.map_width &&
+                    ty >= 0 && ty < app.state.active_config.map_height) {
+                    app.state.active_config.custom_grid[tx][ty] = app.state.editor_selected_terrain;
+                    if (app.state.editor_selected_terrain == Terrain::Dirt &&
+                        sf::Keyboard::isKeyPressed(sf::Keyboard::LShift)) {
+                        app.state.active_config.custom_human_pos = {tx, ty};
+                    }
                 }
             }
-            if (state.active_fx.type != FXType::None) {
-                state.active_fx.timer -= dtSeconds;
-                if (state.active_fx.timer <= 0.0f) state.active_fx.type = FXType::None;
-            }
-            if (state.active_fx.type == FXType::None && !state.explosion_queue.empty()) {
-                auto ev = state.explosion_queue.front();
-                state.explosion_queue.pop();
-                state.execute_explosion_internal(ev.cx, ev.cy, ev.is_zombie_exploding);
-            }
-            for (auto it = state.attack_animations.begin(); it != state.attack_animations.end();) {
-                it->timer -= dtSeconds;
-                if (it->timer <= 0.0f) it = state.attack_animations.erase(it);
-                else ++it;
-            }
-            for (auto it = state.floating_texts.begin(); it != state.floating_texts.end();) {
-                it->timer -= dtSeconds;
-                if (it->timer <= 0.0f) it = state.floating_texts.erase(it);
-                else ++it;
-            }
-            // Update loot blink timers
-            for (auto& ld : state.loot_drops) {
-                ld.blink_timer += dtSeconds;
-            }
-            // Tick multikill banner timer (runs during any phase)
-            if (state.multikill_banner_timer > 0.0f) {
-                state.multikill_banner_timer -= dtSeconds;
-                if (state.multikill_banner_timer <= 0.0f) {
-                    state.multikill_banner_timer = 0.0f;
-                    state.multikill_banner.clear();
-                    state.pending_multikill_count = 0; // clear frozen count when banner expires
-                }
-            }
-            // Promote pending multikill banner once all animations have settled
-            if (!state.pending_multikill_banner.empty() &&
-                state.active_fx.type == FXType::None &&
-                state.attack_animations.empty() &&
-                state.explosion_queue.empty()) {
-                state.multikill_banner       = state.pending_multikill_banner;
-                state.multikill_banner_timer = GameState::MULTIKILL_BANNER_DURATION;
-                // pending_multikill_count is already set — keep it as the frozen display value
-                state.pending_multikill_banner.clear();
-            }
-            state.update_zombie_logic(dtSeconds);
-            state.update_environment_logic(dtSeconds);
         }
+    } // end event loop
 
-        window.clear(sf::Color(22, 23, 25));
+    sf::Time dtTime = app.deltaClock.restart();
+    float dtSeconds = dtTime.asSeconds();
+    ImGui::SFML::Update(app.window, dtTime);
+
+    // Convenience aliases so the massive UI code below needs fewer changes
+    GameState&       state       = app.state;
+    sf::RenderWindow& window     = app.window;
+    Lang&            ui_lang     = app.ui_lang;
+    sf::Font&        boardFont   = app.boardFont;
+    bool&            hasFont     = app.hasFont;
+    float&           cellSize    = app.cellSize;
+    float&           boardOffset = app.boardOffset;
+    constexpr int    VIEW_CELLS  = AppContext::VIEW_CELLS;
+    int&             viewX       = app.viewX;
+    int&             viewY       = app.viewY;
+    bool&            view_initialized      = app.view_initialized;
+    bool&            show_guide_popup      = app.show_guide_popup;
+    bool&            show_confirm_return_hub = app.show_confirm_return_hub;
+    bool&            show_confirm_exit_game  = app.show_confirm_exit_game;
+    float&           panelWidthCache       = app.panelWidthCache;
+    sf::Clock&       animationClock        = app.animationClock;
+    auto tr = [&](const char* en, const char* vi) { return (ui_lang == Lang::VI) ? vi : en; };
+
+    if (state.current_scene == GameScene::Playing) {
         state.use_vietnamese = (ui_lang == Lang::VI);
+        if (state.human.stamina == 0 && state.input_mode != InputMode::MoveMode) {
+            state.input_mode = InputMode::MoveMode;
+        }
+        cellSize = 40.0f;
+        boardOffset = 20.0f;
+        int maxViewX = std::max(0, state.width - VIEW_CELLS);
+        int maxViewY = std::max(0, state.height - VIEW_CELLS);
+        if (!view_initialized) {
+            viewX = std::max(0, std::min(state.human.pos.x - VIEW_CELLS / 2, maxViewX));
+            viewY = std::max(0, std::min(state.human.pos.y - VIEW_CELLS / 2, maxViewY));
+            view_initialized = true;
+        } else {
+            viewX = std::max(0, std::min(viewX, maxViewX));
+            viewY = std::max(0, std::min(viewY, maxViewY));
+        }
+        if (state.turn_banner_fx.type != FXType::None) {
+            state.turn_banner_fx.timer -= dtSeconds;
+            if (state.turn_banner_fx.timer <= 0.0f) {
+                state.turn_banner_fx.type = FXType::None;
+                state.turn_banner_fx.banner_text = "";
+            }
+        }
+        if (state.active_fx.type != FXType::None) {
+            state.active_fx.timer -= dtSeconds;
+            if (state.active_fx.timer <= 0.0f) state.active_fx.type = FXType::None;
+        }
+        if (state.active_fx.type == FXType::None && !state.explosion_queue.empty()) {
+            auto ev = state.explosion_queue.front();
+            state.explosion_queue.pop();
+            state.execute_explosion_internal(ev.cx, ev.cy, ev.is_zombie_exploding);
+        }
+        for (auto it = state.attack_animations.begin(); it != state.attack_animations.end();) {
+            it->timer -= dtSeconds;
+            if (it->timer <= 0.0f) it = state.attack_animations.erase(it);
+            else ++it;
+        }
+        for (auto it = state.floating_texts.begin(); it != state.floating_texts.end();) {
+            it->timer -= dtSeconds;
+            if (it->timer <= 0.0f) it = state.floating_texts.erase(it);
+            else ++it;
+        }
+        // Update loot blink timers
+        for (auto& ld : state.loot_drops) {
+            ld.blink_timer += dtSeconds;
+        }
+        // Tick multikill banner timer (runs during any phase)
+        if (state.multikill_banner_timer > 0.0f) {
+            state.multikill_banner_timer -= dtSeconds;
+            if (state.multikill_banner_timer <= 0.0f) {
+                state.multikill_banner_timer = 0.0f;
+                state.multikill_banner.clear();
+                state.pending_multikill_count = 0; // clear frozen count when banner expires
+            }
+        }
+        // Promote pending multikill banner once all animations have settled
+        if (!state.pending_multikill_banner.empty() &&
+            state.active_fx.type == FXType::None &&
+            state.attack_animations.empty() &&
+            state.explosion_queue.empty()) {
+            state.multikill_banner       = state.pending_multikill_banner;
+            state.multikill_banner_timer = GameState::MULTIKILL_BANNER_DURATION;
+            // pending_multikill_count is already set — keep it as the frozen display value
+            state.pending_multikill_banner.clear();
+        }
+        state.update_zombie_logic(dtSeconds);
+        state.update_environment_logic(dtSeconds);
+    }
 
-        if (state.current_scene == GameScene::MainMenu) {
-            ImGui::SetNextWindowPos(ImVec2(0, 0));
-            ImGui::SetNextWindowSize(ImVec2(1400, 658));
-            ImGui::Begin("SYSTEM HUB", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
+    window.clear(sf::Color(22, 23, 25));
+    state.use_vietnamese = (ui_lang == Lang::VI);
+
+    if (state.current_scene == GameScene::MainMenu) {
+        ImGui::SetNextWindowPos(ImVec2(0, 0));
+        ImGui::SetNextWindowSize(ImVec2(1400, 658));
+        ImGui::Begin("SYSTEM HUB", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
 
             ImGui::TextColored(ImVec4(0.2f, 0.95f, 0.9f, 1), "%s", tr("QUICK PLAY", "CHOI NHANH"));
             ImGui::SameLine();
@@ -1031,12 +1170,16 @@ int main() {
 
             ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
             ImGui::TextColored(ImVec4(0, 1, 0.5f, 1), "--- IMPORT / EXPORT DATA HUB ---");
+#ifndef __EMSCRIPTEN__
             ImGui::InputText("Save path", state.export_filename, IM_ARRAYSIZE(state.export_filename));
             if (ImGui::Button("Save Configuration & Map File", ImVec2(400, 30)))
-                save_browser.open(FileBrowser::Mode::Save, state.export_filename);
+                app.save_browser.open(FileBrowser::Mode::Save, state.export_filename);
             ImGui::InputText("Load path", state.import_filename, IM_ARRAYSIZE(state.import_filename));
             if (ImGui::Button("Load External Shared Challenge", ImVec2(400, 30)))
-                load_browser.open(FileBrowser::Mode::Open, state.import_filename);
+                app.load_browser.open(FileBrowser::Mode::Open, state.import_filename);
+#else
+            ImGui::TextDisabled("(File import/export is not available in the Web version)");
+#endif
 
             ImGui::Columns(1); ImGui::Separator(); ImGui::Spacing();
 
@@ -1096,18 +1239,20 @@ int main() {
             ImGui::End();
 
             // ── File browsers — drawn as standalone windows, outside SYSTEM HUB ──
-            if (save_browser.draw(tr("Save Challenge File", "Luu File Thach Thuc"))) {
-                const std::string& path = save_browser.result();
+#ifndef __EMSCRIPTEN__
+            if (app.save_browser.draw(tr("Save Challenge File", "Luu File Thach Thuc"))) {
+                const std::string& path = app.save_browser.result();
                 strncpy(state.export_filename, path.c_str(), sizeof(state.export_filename) - 1);
                 state.export_filename[sizeof(state.export_filename) - 1] = '\0';
                 state.export_challenge_file(path);
             }
-            if (load_browser.draw(tr("Load Challenge File", "Tai File Thach Thuc"))) {
-                const std::string& path = load_browser.result();
+            if (app.load_browser.draw(tr("Load Challenge File", "Tai File Thach Thuc"))) {
+                const std::string& path = app.load_browser.result();
                 strncpy(state.import_filename, path.c_str(), sizeof(state.import_filename) - 1);
                 state.import_filename[sizeof(state.import_filename) - 1] = '\0';
                 state.import_challenge_file(path);
             }
+#endif
         }
         else if (state.current_scene == GameScene::MapEditor) {
             int mw = state.active_config.map_width; int mh = state.active_config.map_height;
@@ -3013,10 +3158,7 @@ int main() {
             ImGui::End();
         }
 
-        ImGui::SFML::Render(window);
-        window.display();
-    }
-
-    ImGui::SFML::Shutdown();
-    return 0;
-}
+    // ── End of game phase frame ───────────────────────────────────────────────
+    ImGui::SFML::Render(window);
+    window.display();
+} // end main_loop()

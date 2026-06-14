@@ -1,0 +1,92 @@
+name: Build WebAssembly
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-wasm:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. Checkout source ──────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Install Emscripten SDK ───────────────────────────────────────────
+      - name: Setup emsdk
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.59
+          actions-cache-folder: .emsdk-cache
+
+      # ── 3. Install build dependencies ──────────────────────────────────────
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            cmake \
+            ninja-build \
+            git \
+            fonts-noto \
+            fonts-dejavu
+
+      # ── 4. Prepare font assets required by the web build ───────────────────
+      - name: Copy fonts into assets/fonts
+        run: |
+          mkdir -p assets/fonts
+          # Try Noto first, then DejaVu as fallback
+          NOTO=$(find /usr/share/fonts -name "NotoSans-Bold.ttf" 2>/dev/null | head -1)
+          DEJA=$(find /usr/share/fonts -name "DejaVuSans-Bold.ttf" 2>/dev/null | head -1)
+          [ -n "$NOTO" ] && cp "$NOTO" assets/fonts/NotoSans-Bold.ttf || true
+          [ -n "$DEJA" ] && cp "$DEJA" assets/fonts/DejaVuSans-Bold.ttf || true
+
+      # ── 5. Configure with Emscripten ────────────────────────────────────────
+      - name: CMake configure (emcmake)
+        run: |
+          mkdir -p build_web
+          cd build_web
+          emcmake cmake .. \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release
+
+      # ── 6. Build ─────────────────────────────────────────────────────────────
+      - name: CMake build
+        run: |
+          cd build_web
+          cmake --build . --parallel
+
+      # ── 7. Collect artifacts ─────────────────────────────────────────────────
+      # Grab only the web-relevant files from the build directory.
+      - name: Collect web artifacts
+        run: |
+          mkdir -p web_dist
+          cp build_web/ZomChess.html  web_dist/index.html
+          cp build_web/ZomChess.js    web_dist/ZomChess.js
+          cp build_web/ZomChess.wasm  web_dist/ZomChess.wasm
+          # .data file is generated when --preload-file is used
+          [ -f build_web/ZomChess.data ] && cp build_web/ZomChess.data web_dist/ZomChess.data || true
+          # Copy assets folder as a fallback (already embedded in .data, but
+          # keeping it here makes the artifact self-contained for inspection)
+          [ -d assets ] && cp -r assets web_dist/assets || true
+
+      # ── 8a. Upload as a downloadable GitHub Artifact ─────────────────────────
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZomChess-WebAssembly
+          path: web_dist/
+          retention-days: 30
+
+      # ── 8b. Deploy to gh-pages branch ────────────────────────────────────────
+      # The built site is force-pushed to the gh-pages branch so it can be
+      # served directly via GitHub Pages (Settings → Pages → Deploy from branch).
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./web_dist
+          publish_branch: gh-pages
+          force_orphan: true
+          commit_message: "ci: deploy WebAssembly build from ${{ github.sha }}"
