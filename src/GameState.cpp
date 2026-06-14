@@ -2644,7 +2644,11 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
 }
 
 void GameState::start_zombie_phase() { 
-    if (game_over || game_won) return; 
+    if (game_over || game_won) return;
+
+    // Human's turn ends — dismiss any pending multikill banner immediately
+    pending_multikill_banner.clear();
+    // (active multikill_banner keeps ticking naturally via the timer)
     
     if (human.is_paralyzed) {
         human.is_paralyzed = false;
@@ -2916,14 +2920,19 @@ void GameState::check_victory_conditions() {
         if (all_dead) game_won = true; 
     }
     // Count newly-dead zombies using kill_counted (independent of loot_spawned)
+    int kills_before = kills_this_turn;
     for (auto& z : zombies) {
         if (z->hp <= 0 && !z->kill_counted) {
             z->kill_counted = true;
             kills_this_turn++;
         }
     }
-    // Queue multikill banner — will display once animations settle
-    if (kills_this_turn >= 2) {
+    // Queue multikill banner only when new kills just happened this call,
+    // and only if no banner is already pending or actively displaying.
+    if (kills_this_turn >= 2 &&
+        kills_this_turn != kills_before &&
+        pending_multikill_banner.empty() &&
+        multikill_banner.empty()) {
         std::string banner;
         switch (kills_this_turn) {
             case 2:  banner = "DOUBLE KILL!";   break;

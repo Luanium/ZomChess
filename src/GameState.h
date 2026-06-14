@@ -82,7 +82,7 @@ public:
     // Audio management
     bool music_enabled = true;
     bool sfx_enabled = true;
-    float music_volume = 50.0f;
+    float music_volume = 100.0f;
 
     GameState();
 
