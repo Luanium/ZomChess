@@ -1,3 +1,16 @@
+# v2.4.0
+
+## Logic:
+- Fix: ice-sliding entity triggered `Mine` to detonate even though Human (who planted that `Mine`) not moving at all and still standing on the same tile
+- Update: many `Loot`s now can be dropped on the same tile
+- Fix: max HP of `Human` is now not fixed but can be increased when picking loot +HP 
+
+## UI:
+- Disable `Mine` button when there is already a `Mine` planted on the tile `Human` is standing
+- Icon of loot now has a number to indicate the number of loots on that 
+- `Burn` status now appears immediately when entity moving onto `Fire` no matter actively or passively
+
+
 # v2.3.0
 
 ## Logic:

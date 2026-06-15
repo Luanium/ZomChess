@@ -861,7 +861,10 @@ bool GameState::try_ice_slide(bool is_human, size_t zombie_idx, int move_dx, int
 
     // Run terrain interactions LAST — these can trigger explosions/kills
     check_fire_interactions();
-    check_mine_interactions();
+    // NOTE: mines cannot be placed on Ice tiles, so any mine under ice is always
+    // deactivated (mine_deactivated == true). Ice slide destinations are Ice tiles,
+    // therefore triggering a mine via ice slide is impossible by construction —
+    // no check_mine_interactions needed here for either human or zombie slides.
 
     return true; // Slide occurred
 }
@@ -1008,6 +1011,21 @@ void GameState::apply_windstorm(int dx, int dy) {
         else zombies[ref.idx]->pos = target;
         active_fx.blast_cells.push_back(front);
         moved++;
+
+        // Ignite entity immediately if pushed into an existing Fire tile
+        if (grid[target.x][target.y] == Terrain::Fire) {
+            if (ref.human && !human.is_burning) {
+                human.is_burning = true;
+                add_log(tr("[FIRE] Human was blown into fire by the wind! Burning.",
+                           "[LUA] Nguoi bi gio day vao lua! Bat dau chay."),
+                        ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
+            } else if (!ref.human && !zombies[ref.idx]->is_burning) {
+                zombies[ref.idx]->is_burning = true;
+                add_log(tr("[FIRE] " + zombies[ref.idx]->name + " was blown into fire by the wind! Burning.",
+                           "[LUA] " + zombies[ref.idx]->name + " bi gio day vao lua! Bat dau chay."),
+                        ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
+            }
+        }
     }
 
     int grenades_blown = 0;
@@ -2445,9 +2463,17 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
                         add_log(tr("[ICE] Shotgun knockback unfroze Zombie #" + std::to_string(i + 1) + "!",
                                    "[BANG] Luc giat shotgun giai bang Zombie #" + std::to_string(i + 1) + "!"), ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
                     }
+                    // Ignite zombie if pushed into Fire
+                    if (grid[rx][ry] == Terrain::Fire && !zombies[i]->is_burning) {
+                        zombies[i]->is_burning = true;
+                        add_log(tr("[FIRE] Zombie #" + std::to_string(i + 1) + " was knocked into fire! Burning.",
+                                   "[LUA] Zombie #" + std::to_string(i + 1) + " bi day vao lua! Bat dau chay."),
+                                ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
+                    }
                 }
             }
-        } 
+        }
+        check_fire_interactions();
     } else if (input_mode == InputMode::TargetGrenade) { 
         if (human.grenades <= 0) { input_mode = InputMode::MoveMode; return; } 
         auto [vx, vy] = get_8_direction(tx - human.pos.x, ty - human.pos.y); 
@@ -3198,8 +3224,7 @@ void GameState::spawn_loot_for_newly_dead() {
 }
 
 void GameState::spawn_loot_at(Position pos) {
-    // Xác suất loot: 55% junk, 45% item hữu ích
-    // Trong 45% item: phân bổ theo độ hiếm
+    // Xác suất loot: 75% junk, 25% item hữu ích
     std::uniform_int_distribution<int> roll(0, 99);
     int r = roll(rng);
 
@@ -3209,23 +3234,20 @@ void GameState::spawn_loot_at(Position pos) {
     } else if (r < 80) {
         type = LootType::PistolAmmo;   // 5%
     } else if (r < 85) {
-        type = LootType::StaminaPotion;// 4%
+        type = LootType::StaminaPotion;// 5%
     } else if (r < 89) {
         type = LootType::HealthPotion; // 4%
     } else if (r < 93) {
-        type = LootType::ShotgunAmmo;  // 3%
+        type = LootType::ShotgunAmmo;  // 4%
     } else if (r < 96) {
-        type = LootType::Grenade;      // 2%
+        type = LootType::Grenade;      // 3%
     } else if (r < 98) {
         type = LootType::Molotov;      // 2%
     } else {
         type = LootType::Mine;         // 2%
     }
 
-    // Xóa loot cũ ở cùng vị trí nếu có
-    loot_drops.erase(std::remove_if(loot_drops.begin(), loot_drops.end(),
-        [&](const LootDrop& ld) { return ld.pos == pos; }), loot_drops.end());
-
+    // Nhiều zombie có thể chết trên cùng một ô — mỗi zombie để lại loot riêng
     loot_drops.push_back({pos, type, 0.0f});
 }
 
@@ -3254,7 +3276,7 @@ void GameState::check_loot_pickup() {
                             ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
                     break;
                 case LootType::HealthPotion:
-                    human.hp = std::min(human.hp + 2, 20); // cap tối đa 20
+                    human.hp += 2;
                     floating_texts.push_back({human.pos, +2, 1.0f, 1.0f});
                     sfx("heal");
                     add_log(tr("[LOOT] Health Potion! +2 HP.", "[LOOT] Binh mau! +2 HP."),

@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <string>
 #include <vector>
+#include <map>
 #include <unordered_set>
 
 // Filesystem and native path helpers are not available / useful in WebAssembly.
@@ -1445,15 +1446,25 @@ static void main_loop() {
                 }
             }
 
-            // Draw loot drops as blinking "?" icons
+            // Draw loot drops as blinking "?" icons (one icon per cell, count badge if >= 2)
             if (hasFont) {
+                // Build per-cell loot counts and pick first loot's blink_timer for animation
+                std::map<std::pair<int,int>, std::pair<int,float>> loot_cell_info; // {(lx,ly) -> (count, blink_timer)}
                 for (const auto& ld : state.loot_drops) {
                     int llx = ld.pos.x - viewX + padX;
                     int lly = ld.pos.y - viewY + padY;
                     if (llx < 0 || llx >= VIEW_CELLS || lly < 0 || lly >= VIEW_CELLS) continue;
-
-                    // Blinking background
-                    float blink = std::sin(ld.blink_timer * 4.0f) * 0.5f + 0.5f; // 0..1
+                    auto key = std::make_pair(llx, lly);
+                    if (loot_cell_info.find(key) == loot_cell_info.end())
+                        loot_cell_info[key] = {1, ld.blink_timer};
+                    else
+                        loot_cell_info[key].first++;
+                }
+                for (const auto& [cell, info] : loot_cell_info) {
+                    int llx = cell.first;
+                    int lly = cell.second;
+                    int count = info.first;
+                    float blink = std::sin(info.second * 4.0f) * 0.5f + 0.5f;
                     sf::Uint8 bgAlpha = static_cast<sf::Uint8>(120 + blink * 80);
                     sf::RectangleShape lootBg(sf::Vector2f(cellSize - 8.0f, cellSize - 8.0f));
                     lootBg.setPosition(llx * cellSize + boardOffset + 4.0f, lly * cellSize + boardOffset + 4.0f);
@@ -1462,7 +1473,6 @@ static void main_loop() {
                     lootBg.setOutlineColor(sf::Color(220, 180, 60, bgAlpha));
                     window.draw(lootBg);
 
-                    // "?" text
                     sf::Uint8 txtAlpha = static_cast<sf::Uint8>(180 + blink * 75);
                     sf::Text qMark;
                     qMark.setFont(boardFont);
@@ -1474,6 +1484,20 @@ static void main_loop() {
                     qMark.setPosition(llx * cellSize + boardOffset + cellSize / 2.0f,
                                       lly * cellSize + boardOffset + cellSize / 2.0f);
                     window.draw(qMark);
+
+                    // Count badge (top-right corner) when >= 2 loot on same cell
+                    if (count >= 2) {
+                        sf::Text badge;
+                        badge.setFont(boardFont);
+                        badge.setString(std::to_string(count));
+                        badge.setCharacterSize(static_cast<unsigned int>(cellSize * 0.3f));
+                        badge.setFillColor(sf::Color(255, 80, 80, txtAlpha));
+                        sf::FloatRect bBounds = badge.getLocalBounds();
+                        badge.setOrigin(bBounds.left + bBounds.width, bBounds.top);
+                        badge.setPosition(llx * cellSize + boardOffset + cellSize - 3.0f,
+                                          lly * cellSize + boardOffset + 3.0f);
+                        window.draw(badge);
+                    }
                 }
             }
 
@@ -1871,14 +1895,25 @@ static void main_loop() {
                     window.draw(gren);
                 }
 
-                // Loot drops on lit tiles
+                // Loot drops on lit tiles (one icon per cell, count badge if >= 2)
                 if (hasFont) {
+                    std::map<std::pair<int,int>, std::pair<int,float>> loot_cell_info_lit;
                     for (const auto& ld : state.loot_drops) {
                         if (!fire_lit.count(fire_key(ld.pos.x, ld.pos.y))) continue;
                         int llx = ld.pos.x - viewX + padX;
                         int lly = ld.pos.y - viewY + padY;
                         if (llx < 0 || llx >= VIEW_CELLS || lly < 0 || lly >= VIEW_CELLS) continue;
-                        float blink = std::sin(ld.blink_timer * 4.0f) * 0.5f + 0.5f;
+                        auto key = std::make_pair(llx, lly);
+                        if (loot_cell_info_lit.find(key) == loot_cell_info_lit.end())
+                            loot_cell_info_lit[key] = {1, ld.blink_timer};
+                        else
+                            loot_cell_info_lit[key].first++;
+                    }
+                    for (const auto& [cell, info] : loot_cell_info_lit) {
+                        int llx = cell.first;
+                        int lly = cell.second;
+                        int count = info.first;
+                        float blink = std::sin(info.second * 4.0f) * 0.5f + 0.5f;
                         sf::Uint8 bgAlpha = static_cast<sf::Uint8>(120 + blink * 80);
                         sf::RectangleShape lootBg(sf::Vector2f(cellSize - 8.0f, cellSize - 8.0f));
                         lootBg.setPosition(llx * cellSize + boardOffset + 4.0f, lly * cellSize + boardOffset + 4.0f);
@@ -1894,6 +1929,17 @@ static void main_loop() {
                         qMark.setOrigin(qBounds.left + qBounds.width / 2.0f, qBounds.top + qBounds.height / 2.0f);
                         qMark.setPosition(llx * cellSize + boardOffset + cellSize / 2.0f, lly * cellSize + boardOffset + cellSize / 2.0f);
                         window.draw(qMark);
+                        if (count >= 2) {
+                            sf::Text badge; badge.setFont(boardFont);
+                            badge.setString(std::to_string(count));
+                            badge.setCharacterSize(static_cast<unsigned int>(cellSize * 0.3f));
+                            badge.setFillColor(sf::Color(255, 80, 80, txtAlpha));
+                            sf::FloatRect bBounds = badge.getLocalBounds();
+                            badge.setOrigin(bBounds.left + bBounds.width, bBounds.top);
+                            badge.setPosition(llx * cellSize + boardOffset + cellSize - 3.0f,
+                                              lly * cellSize + boardOffset + 3.0f);
+                            window.draw(badge);
+                        }
                     }
                 }
 
@@ -2742,27 +2788,23 @@ static void main_loop() {
                 state.human.molotovs <= 0);
             ImGui::SameLine();
             {
-                bool mine_disabled = state.human.is_paralyzed || state.human.stamina == 0 || state.phase != TurnPhase::HumanTurn || state.human.mines == 0 || state.grid[state.human.pos.x][state.human.pos.y] == Terrain::Ice;
+                bool mine_disabled = state.human.is_paralyzed || state.human.stamina == 0 || state.phase != TurnPhase::HumanTurn || state.human.mines == 0 || state.grid[state.human.pos.x][state.human.pos.y] == Terrain::Ice || state.mine_grid[state.human.pos.x][state.human.pos.y];
                 if (mine_disabled) { ImGui::BeginDisabled(); }
                 if (ImGui::Button(("Mine (" + std::to_string(state.human.mines) + ")").c_str())) {
                     if (!mine_disabled) {
                         state.input_mode = InputMode::MoveMode;
-                        if (state.mine_grid[state.human.pos.x][state.human.pos.y]) {
-                            state.add_log(state.tr("[SYSTEM] Cannot place mine: a mine is already here!", "[HE THONG] Khong the cai min: o nay da co min!"), ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
-                        } else {
-                            state.kills_this_turn = 0; // reset per substep
-                            state.pending_multikill_banner.clear();
-                            for (auto& z : state.zombies) if (z->hp > 0) z->kill_counted = false;
-                            state.mine_grid[state.human.pos.x][state.human.pos.y] = true;
-                            state.human.mines--; state.human.stamina--;
-                            state.add_log(state.tr("-> Human placed a claymore mine.", "-> Nguoi cai min claymore."), ImVec4(1.0f, 0.7f, 0.3f, 1.0f));
-                            sfx("mine_plant");
-                            // Thermal trigger: if placed on a Fire tile, explode immediately
-                            if (state.grid[state.human.pos.x][state.human.pos.y] == Terrain::Fire) {
-                                state.mine_grid[state.human.pos.x][state.human.pos.y] = false;
-                                state.add_log("[RADIO] Mine planted on fire — thermal trigger! Detonation!", ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
-                                state.queue_explosion(state.human.pos.x, state.human.pos.y);
-                            }
+                        state.kills_this_turn = 0; // reset per substep
+                        state.pending_multikill_banner.clear();
+                        for (auto& z : state.zombies) if (z->hp > 0) z->kill_counted = false;
+                        state.mine_grid[state.human.pos.x][state.human.pos.y] = true;
+                        state.human.mines--; state.human.stamina--;
+                        state.add_log(state.tr("-> Human placed a claymore mine.", "-> Nguoi cai min claymore."), ImVec4(1.0f, 0.7f, 0.3f, 1.0f));
+                        sfx("mine_plant");
+                        // Thermal trigger: if placed on a Fire tile, explode immediately
+                        if (state.grid[state.human.pos.x][state.human.pos.y] == Terrain::Fire) {
+                            state.mine_grid[state.human.pos.x][state.human.pos.y] = false;
+                            state.add_log("[RADIO] Mine planted on fire — thermal trigger! Detonation!", ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
+                            state.queue_explosion(state.human.pos.x, state.human.pos.y);
                         }
                     }
                 }
@@ -3435,7 +3477,7 @@ static void main_loop() {
 
                 // ── CREDITS ───────────────────────────────────────────────────────────
                 if (ImGui::CollapsingHeader(tr("Credits", "Tin Chi"))) {
-                    ImGui::TextColored(ImVec4(0.95f, 0.9f, 0.35f, 1.0f), "ZomChess v2.3.0");
+                    ImGui::TextColored(ImVec4(0.95f, 0.9f, 0.35f, 1.0f), "ZomChess v2.4.0");
                     ImGui::BulletText("%s", tr("Design & Programming: Phan Anh Luan + AIs", "Thiet ke & Lap trinh: Phan Anh Luan + AI"));
                     ImGui::BulletText("%s", tr("Music: 'Ancient Rite', 'Discovery Hit', 'Impending Boom', 'The Ice Giants' — licensed for use.", "Nhac nen: 'Ancient Rite', 'Discovery Hit', 'Impending Boom', 'The Ice Giants' — duoc cap phep su dung."));
                     ImGui::BulletText("%s", tr("Built with: C++, SFML, Dear ImGui, ImGui-SFML.", "Xay dung bang: C++, SFML, Dear ImGui, ImGui-SFML."));
