@@ -1731,9 +1731,11 @@ static void main_loop() {
 
             if (state.phase == TurnPhase::HumanTurn && !state.human.is_paralyzed &&
                     ((state.input_mode == InputMode::MoveMode && !state.human.is_frozen) ||
-                     state.input_mode == InputMode::TargetKnife || (!state.human.is_frozen &&
-                    (state.input_mode == InputMode::TargetPistol || state.input_mode == InputMode::TargetShotgun ||
-                     state.input_mode == InputMode::TargetGrenade || state.input_mode == InputMode::TargetMolotov)))) {
+                     state.input_mode == InputMode::TargetKnife ||
+                     state.input_mode == InputMode::TargetPistol ||
+                     state.input_mode == InputMode::TargetShotgun ||
+                     state.input_mode == InputMode::TargetGrenade ||
+                     state.input_mode == InputMode::TargetMolotov)) {
                 for (int dx = -1; dx <= 1; ++dx) {
                     for (int dy = -1; dy <= 1; ++dy) {
                         if (dx == 0 && dy == 0) continue;
@@ -3477,7 +3479,7 @@ static void main_loop() {
 
                 // ── CREDITS ───────────────────────────────────────────────────────────
                 if (ImGui::CollapsingHeader(tr("Credits", "Tin Chi"))) {
-                    ImGui::TextColored(ImVec4(0.95f, 0.9f, 0.35f, 1.0f), "ZomChess v2.4.0");
+                    ImGui::TextColored(ImVec4(0.95f, 0.9f, 0.35f, 1.0f), "ZomChess v2.5.0");
                     ImGui::BulletText("%s", tr("Design & Programming: Phan Anh Luan + AIs", "Thiet ke & Lap trinh: Phan Anh Luan + AI"));
                     ImGui::BulletText("%s", tr("Music: 'Ancient Rite', 'Discovery Hit', 'Impending Boom', 'The Ice Giants' — licensed for use.", "Nhac nen: 'Ancient Rite', 'Discovery Hit', 'Impending Boom', 'The Ice Giants' — duoc cap phep su dung."));
                     ImGui::BulletText("%s", tr("Built with: C++, SFML, Dear ImGui, ImGui-SFML.", "Xay dung bang: C++, SFML, Dear ImGui, ImGui-SFML."));

@@ -2079,7 +2079,9 @@ void GameState::zombie_single_step(size_t idx) {
             if (nx >= 0 && nx < width && ny >= 0 && ny < height) { 
                 Position target{nx, ny}; 
                 if (target == human.pos) continue; 
-                if (grid[nx][ny] == Terrain::Wall ) continue; 
+                if (grid[nx][ny] == Terrain::Wall ) continue;
+                // Fast Zombie on step 2+ cannot enter Water (costs a full turn, only allowed on step 1)
+                if (active_zombie_substep > 0 && grid[nx][ny] == Terrain::Water) continue;
                 
                 bool conflict = false; 
                 for (size_t o = 0; o < zombies.size(); ++o) { 
@@ -2925,6 +2927,33 @@ void GameState::update_zombie_logic(float dt) {
         if (zom->hp > 0) { 
             int dx = std::abs(zom->pos.x - human.pos.x);
             int dy = std::abs(zom->pos.y - human.pos.y);
+
+            bool in_water = (grid[zom->pos.x][zom->pos.y] == Terrain::Water);
+            bool is_fast  = (zom->type == ZombieType::Fast);
+
+            // Non-fast zombies that just moved into Water cannot attack this step — end turn immediately
+            if (in_water && !is_fast) {
+                active_zombie_substep++;
+                int max_moves = zom->getMovesPerTurn();
+                if (active_zombie_substep >= max_moves) {
+                    if (zom->extra_turn) {
+                        zom->extra_turn = false;
+                        active_zombie_substep = 0;
+                        zombie_action_timer = 0.0f;
+                        add_log("-> " + zom->name + " takes an extra turn!", ImVec4(0.4f, 0.9f, 1.0f, 1.0f));
+                    } else {
+                        if (zom->hp > 0 && zom->is_burning) {
+                            zom->hp -= 1;
+                            floating_texts.push_back({zom->pos, -1, 1.0f, 1.0f});
+                            add_log("[FIRE] " + zom->name + " suffered 1 Burn Damage!", ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
+                            if (zom->hp <= 0 && zom->type == ZombieType::Exploding) queue_explosion(zom->pos.x, zom->pos.y, true);
+                            check_victory_conditions();
+                        }
+                        active_zombie_idx++; active_zombie_substep = 0;
+                    }
+                }
+                return;
+            }
             
             if (dx <= 1 && dy <= 1 && (dx != 0 || dy != 0)) {
                 zom->pending_attack = true;
@@ -2934,6 +2963,7 @@ void GameState::update_zombie_logic(float dt) {
         active_zombie_substep++; 
         int max_moves = zom->getMovesPerTurn();
         if (grid[zom->pos.x][zom->pos.y] == Terrain::Water) {
+            // Fast zombie: capped to 1 move in water (can still attack if adjacent, but turn ends after)
             if (max_moves > GameConstants::TerrainPenalties::WATER_MOVES_MAX_SPRINTER) max_moves = GameConstants::TerrainPenalties::WATER_MOVES_MAX_SPRINTER;
         }
         if (active_zombie_substep >= max_moves) {

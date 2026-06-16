@@ -1,3 +1,13 @@
+# v2.5.0
+
+## Logic:
+- Fix bug: `Fast Zombie` runs into `Water` tile in its second step while it should not be able
+- Change: except `Fast Zombie`, now when a zombie moves into `Water`, it will not able to attack `Human` after moving in the same turn as usual. This is to compensate the disadvantage of `Human` when moving in `Water`
+
+## UI:
+- Fix bug: When `Human` is `Frozen`, the arrows for directional weapons are not displayed
+
+
 # v2.4.0
 
 ## Logic:
