@@ -1026,6 +1026,17 @@ void GameState::apply_windstorm(int dx, int dy) {
                         ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
             }
         }
+
+        // Trigger mine if entity blown onto a mined tile
+        if (mine_grid[target.x][target.y] && !mine_deactivated[target.x][target.y]) {
+            mine_grid[target.x][target.y] = false;
+            if (ref.human) {
+                add_log("[RADIO] WATCH OUT! Human was blown onto a mine. Stand by for detonation!", ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
+            } else {
+                add_log("[RADIO] Zombie #" + std::to_string(ref.idx + 1) + " was blown onto a mine. Stand by for detonation!", ImVec4(1.0f, 0.38f, 0.22f, 1.0f));
+            }
+            queue_explosion(target.x, target.y);
+        }
     }
 
     int grenades_blown = 0;

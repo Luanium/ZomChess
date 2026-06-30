@@ -3479,7 +3479,7 @@ static void main_loop() {
 
                 // ── CREDITS ───────────────────────────────────────────────────────────
                 if (ImGui::CollapsingHeader(tr("Credits", "Tin Chi"))) {
-                    ImGui::TextColored(ImVec4(0.95f, 0.9f, 0.35f, 1.0f), "ZomChess v2.5.0");
+                    ImGui::TextColored(ImVec4(0.95f, 0.9f, 0.35f, 1.0f), "ZomChess v2.6.0");
                     ImGui::BulletText("%s", tr("Design & Programming: Phan Anh Luan + AIs", "Thiet ke & Lap trinh: Phan Anh Luan + AI"));
                     ImGui::BulletText("%s", tr("Music: 'Ancient Rite', 'Discovery Hit', 'Impending Boom', 'The Ice Giants' — licensed for use.", "Nhac nen: 'Ancient Rite', 'Discovery Hit', 'Impending Boom', 'The Ice Giants' — duoc cap phep su dung."));
                     ImGui::BulletText("%s", tr("Built with: C++, SFML, Dear ImGui, ImGui-SFML.", "Xay dung bang: C++, SFML, Dear ImGui, ImGui-SFML."));

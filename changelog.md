@@ -1,3 +1,8 @@
+# v2.6.0
+
+## Logic:
+- Fix bug: when `Zombie` is blown by `Strong Wind` and moved to a mine-planted tile but `Mine` is not triggered as expected
+
 # v2.5.0
 
 ## Logic:
