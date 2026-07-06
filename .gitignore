@@ -11,3 +11,6 @@ assets/music/Discovery Hit.mp3
 assets/music/Impending Boom.mp3
 assets/music/The Ice Giants.mp3
 /.kiro
+.fc_cache/
+build_web/
+build/

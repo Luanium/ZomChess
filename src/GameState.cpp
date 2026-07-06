@@ -2,12 +2,14 @@
 
 #include "GameState.h"
 #include "GameConstants.h"
+#ifndef RAYLIB_BUILD
 #include "AudioManager.h"
 #include "SoundSynth.h"
 #include "embedded/menu_theme.h"
 #include "embedded/battle_theme.h"
 #include "embedded/victory_theme.h"
 #include "embedded/defeat_theme.h"
+#endif
 #include <cmath>
 #include <algorithm>
 #include <fstream>
@@ -19,6 +21,7 @@ GameState::GameState() : rng(std::random_device{}()) {
     active_config.custom_grid.assign(active_config.map_width, std::vector<Terrain>(active_config.map_height, Terrain::Dirt));
 }
 
+#ifndef RAYLIB_BUILD
 void GameState::initAudio() {
     AudioManager& audio = AudioManager::getInstance();
 
@@ -54,6 +57,8 @@ void GameState::setSfxEnabled(bool enabled) {
     sfx_enabled = enabled;
     AudioManager::getInstance().setSoundVolume(enabled ? 70.0f : 0.0f);
 }
+
+#endif
 
 // Shorthand helper used throughout GameState
 static inline void sfx(const std::string& name) {

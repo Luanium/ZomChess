@@ -3,8 +3,10 @@
 
 #include <string>
 #include <vector>
+#ifndef RAYLIB_BUILD
 #include <imgui.h>
 #include <SFML/System/Vector2.hpp>
+#endif
 
 #include "GameConstants.h"
 
