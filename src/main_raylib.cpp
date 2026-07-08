@@ -7,6 +7,43 @@
 #include "embedded/defeat_theme.h"
 #include <cmath>
 #include <string>
+#include <vector>
+#include <algorithm>
+#include <filesystem>
+#include <cstring>
+namespace fs = std::filesystem;
+
+// ── GameState audio method implementations for Raylib build ──────────────────
+// (GameState.cpp only defines these under #ifndef RAYLIB_BUILD, using the
+// SFML-based AudioManager. Raylib uses RaylibAudioManagerReal.h's AudioManager,
+// so we provide equivalent implementations here.)
+void GameState::initAudio() {
+    AudioManager& audio = AudioManager::getInstance();
+    audio.loadMusicFromMemory("menu",    menu_theme_ogg,    menu_theme_ogg_len);
+    audio.loadMusicFromMemory("battle",  battle_theme_ogg,  battle_theme_ogg_len);
+    audio.loadMusicFromMemory("victory", victory_theme_ogg, victory_theme_ogg_len);
+    audio.loadMusicFromMemory("defeat",  defeat_theme_ogg,  defeat_theme_ogg_len);
+    audio.setMusicVolume(music_volume);
+}
+
+void GameState::playBackgroundMusic(const std::string& track) {
+    if (!music_enabled) { AudioManager::getInstance().stopMusic(); return; }
+    AudioManager::getInstance().playMusic(track, true);
+}
+
+void GameState::stopBackgroundMusic() {
+    AudioManager::getInstance().stopMusic();
+}
+
+void GameState::setMusicVolume(float volume) {
+    music_volume = std::max(0.0f, std::min(100.0f, volume));
+    AudioManager::getInstance().setMusicVolume(music_volume);
+}
+
+void GameState::setSfxEnabled(bool enabled) {
+    sfx_enabled = enabled;
+    AudioManager::getInstance().setSoundVolume(enabled ? 70.0f : 0.0f);
+}
 
 // ============================================================
 // This file mirrors the core game-loop structure of src/main.cpp
@@ -36,6 +73,218 @@ static Color terrainColor(Terrain t) {
     }
 }
 
+// Returns the display color for a cell, blending from the old terrain color to
+// the new one if a terrain transition animation is currently active on it.
+static Color getTerrainDisplayColor(const GameState& state, int x, int y) {
+    Color target = terrainColor(state.grid[x][y]);
+    for (const auto& trans : state.terrain_transitions) {
+        if (trans.pos.x != x || trans.pos.y != y) continue;
+        if (trans.to_terrain != state.grid[x][y]) continue;
+        float progress = trans.timer / trans.max_duration;
+        progress = std::max(0.0f, std::min(1.0f, progress));
+        Color from = terrainColor(trans.from_terrain);
+        Color to = target;
+        return (Color){
+            (unsigned char)(from.r + progress * (to.r - from.r)),
+            (unsigned char)(from.g + progress * (to.g - from.g)),
+            (unsigned char)(from.b + progress * (to.b - from.b)),
+            255
+        };
+    }
+    return target;
+}
+
+// ── Shared checkbox drawer: bigger box, checkmark style (2 crossing lines) instead of solid fill ──
+// Returns true if the box was clicked this frame (caller still owns the toggle logic).
+static bool drawCheckbox(Vector2 mouse, bool clicked, float x, float y, bool checked, const char* label, int fontSize = 15) {
+    const float boxSize = 22.0f;
+    Rectangle box = { x, y, boxSize, boxSize };
+    DrawRectangleRec(box, (Color){35, 35, 38, 255});
+    DrawRectangleLinesEx(box, 2, (Color){110, 110, 110, 255});
+    if (checked) {
+        DrawLineEx((Vector2){x + 4, y + 11}, (Vector2){x + 9, y + 17}, 3.0f, (Color){60, 220, 120, 255});
+        DrawLineEx((Vector2){x + 9, y + 17}, (Vector2){x + 18, y + 5}, 3.0f, (Color){60, 220, 120, 255});
+    }
+    if (label && label[0]) {
+        DrawText(label, (int)(x + boxSize + 8), (int)(y + (boxSize - fontSize) / 2.0f - 1), fontSize, RAYWHITE);
+    }
+    Rectangle hitArea = { x, y, boxSize + (label && label[0] ? 8 + MeasureText(label, fontSize) : 0), boxSize };
+    return clicked && CheckCollisionPointRec(mouse, hitArea);
+}
+
+// ── Splash screen: dark tactical theme matching the game's vibe ──────────────
+static void runSplashScreen(Font& gameFont) {
+    const float DURATION = 6.0f;
+    float elapsed = 0.0f;
+
+    while (elapsed < DURATION) {
+        if (WindowShouldClose()) return;
+        if (GetKeyPressed() != 0 || IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) break;
+
+        float dt = GetFrameTime();
+        elapsed += dt;
+
+        float alpha = 1.0f;
+        if (elapsed < 0.4f) alpha = elapsed / 0.4f;
+        unsigned char a = (unsigned char)(alpha * 255);
+
+        BeginDrawing();
+        ClearBackground((Color){12, 13, 15, 255});
+
+        int W = GetScreenWidth();
+        int H = GetScreenHeight();
+
+        // ── Background: dim pixel grid (tactical board vibe) ──
+        {
+            int cell = 28;
+            for (int gx = 0; gx * cell < W; ++gx) {
+                for (int gy = 0; gy * cell < H; ++gy) {
+                    bool lit = ((gx + gy) % 7 == 0);
+                    Color c = lit ? (Color){40, 70, 55, a} : (Color){20, 22, 24, a};
+                    DrawRectangle(gx * cell, gy * cell, cell - 1, cell - 1, c);
+                }
+            }
+            // Scanline
+            int scanY = (int)(fmodf(elapsed * 120.0f, (float)H));
+            DrawRectangle(0, scanY, W, 2, (Color){60, 220, 140, (unsigned char)(a * 0.35f)});
+            // Vignette corners
+            DrawRectangleGradientV(0, 0, W, 120, (Color){0,0,0,(unsigned char)(a*0.8f)}, (Color){0,0,0,0});
+            DrawRectangleGradientV(0, H - 120, W, 120, (Color){0,0,0,0}, (Color){0,0,0,(unsigned char)(a*0.8f)});
+        }
+
+        const char* title = "ZomChess";
+        float titleSize = 80.0f;
+        Vector2 tsz = MeasureTextEx(gameFont, title, titleSize, 3.0f);
+        float titleX = (W - tsz.x) / 2.0f;
+        float titleY = H * 0.28f;
+
+        // Blood-red jittery glow layers behind (zombie horror vibe)
+        for (int i = 3; i >= 1; --i) {
+            float jitterX = sinf(elapsed * 9.0f + i) * 2.0f * i;
+            float jitterY = cosf(elapsed * 7.0f + i) * 1.5f * i;
+            unsigned char glowA = (unsigned char)((a / 3) * (4 - i) / 3.0f);
+            DrawTextEx(gameFont, title, (Vector2){titleX + jitterX, titleY + jitterY}, titleSize, 3.0f,
+                       (Color){170, 20, 20, glowA});
+        }
+        // Main title — sickly green, slight pulse
+        float pulse = 0.85f + 0.15f * sinf(elapsed * 2.5f);
+        DrawTextEx(gameFont, title, (Vector2){titleX, titleY}, titleSize, 3.0f,
+                   (Color){(unsigned char)(60*pulse), (unsigned char)(220*pulse), (unsigned char)(110*pulse), a});
+
+        const char* tagline = "EVERY WRONG MOVE LEADS YOU TO DEATH!";
+        float tagSize = 20.0f;
+        Vector2 tagsz = MeasureTextEx(gameFont, tagline, tagSize, 1.0f);
+        DrawTextEx(gameFont, tagline, (Vector2){(W - tagsz.x) / 2.0f, titleY + 100}, tagSize, 1.0f,
+                   (Color){160, 160, 160, a});
+
+        const char* credit = "Created by: Phan Anh Luan";
+        float credSize = 18.0f;
+        Vector2 credsz = MeasureTextEx(gameFont, credit, credSize, 1.0f);
+        DrawTextEx(gameFont, credit, (Vector2){(W - credsz.x) / 2.0f, H * 0.55f}, credSize, 1.0f,
+                   (Color){220, 190, 90, a});
+
+        const char* music = "Music: Kevin MacLeod (incompetech.com) - CC BY 4.0";
+        float musSize = 13.0f;
+        Vector2 mussz = MeasureTextEx(gameFont, music, musSize, 1.0f);
+        DrawTextEx(gameFont, music, (Vector2){(W - mussz.x) / 2.0f, H * 0.55f + 26}, musSize, 1.0f,
+                   (Color){120, 120, 120, a});
+
+        DrawTextEx(gameFont, "v2.6.0", (Vector2){(float)(W - 70), (float)(H - 30)}, 16.0f, 1.0f,
+                   (Color){90, 90, 90, a});
+
+        float blink = 0.5f + 0.5f * sinf(elapsed * 3.5f);
+        const char* prompt = "Press any key to continue...";
+        Vector2 psz = MeasureTextEx(gameFont, prompt, 18, 1);
+        DrawTextEx(gameFont, prompt, (Vector2){(W - psz.x) / 2.0f, H * 0.75f},
+                   18.0f, 1.0f, (Color){140, 140, 140, (unsigned char)(blink * a)});
+
+        EndDrawing();
+    }
+}
+
+// ── FileBrowser: directory navigation for .zom challenge files ───────────────
+struct FileBrowser {
+    enum class Mode { Open, Save };
+    bool is_open = false;
+    Mode mode = Mode::Open;
+    char filename_buf[256] = "my_custom_challenge.zom";
+    std::string current_dir;
+    std::string selected_path;
+    std::string error_msg;
+
+    struct Entry { std::string name; bool is_dir; };
+    std::vector<Entry> entries;
+
+    void open(Mode m, const std::string& hint = "") {
+        mode = m;
+        selected_path.clear();
+        error_msg.clear();
+        std::string start_dir;
+        std::error_code ec;
+        if (!hint.empty()) {
+            fs::path hp(hint);
+            if (fs::is_regular_file(hp, ec)) {
+                start_dir = hp.parent_path().string();
+                std::string fn = hp.filename().string();
+                strncpy(filename_buf, fn.c_str(), sizeof(filename_buf) - 1);
+            } else {
+                start_dir = fs::current_path(ec).string();
+                if (m == Mode::Save && !hint.empty()) {
+                    strncpy(filename_buf, hint.c_str(), sizeof(filename_buf) - 1);
+                }
+            }
+        } else {
+            start_dir = fs::current_path(ec).string();
+        }
+        if (start_dir.empty()) start_dir = ".";
+        current_dir = start_dir;
+        is_open = true;
+        refresh();
+    }
+
+    void navigate(const std::string& dir) {
+        current_dir = dir;
+        selected_path.clear();
+        error_msg.clear();
+        refresh();
+    }
+
+    void refresh() {
+        entries.clear();
+        error_msg.clear();
+        std::error_code ec;
+        fs::path cur(current_dir);
+        if (!fs::is_directory(cur, ec)) {
+            error_msg = "Cannot open: " + current_dir;
+            current_dir = fs::current_path(ec).string();
+            cur = fs::path(current_dir);
+            ec.clear();
+        }
+        fs::path parent = cur.parent_path();
+        if (!parent.empty() && parent != cur) entries.push_back({"..", true});
+
+        std::vector<Entry> dirs, files;
+        fs::directory_iterator it(cur, ec);
+        if (ec) { error_msg = "Read error"; return; }
+        for (auto& e : it) {
+            std::error_code ec2;
+            std::string name = e.path().filename().string();
+            if (name.empty() || name[0] == '.') continue;
+            bool is_dir = e.is_directory(ec2);
+            if (is_dir) {
+                dirs.push_back({name, true});
+            } else {
+                bool is_zom = name.size() >= 4 && name.substr(name.size() - 4) == ".zom";
+                if (is_zom || mode == Mode::Save) files.push_back({name, false});
+            }
+        }
+        std::sort(dirs.begin(), dirs.end(), [](const Entry& a, const Entry& b){ return a.name < b.name; });
+        std::sort(files.begin(), files.end(), [](const Entry& a, const Entry& b){ return a.name < b.name; });
+        for (auto& d : dirs) entries.push_back(d);
+        for (auto& f : files) entries.push_back(f);
+    }
+};
+
 int main() {
     InitWindow(1400, 665, "ZomChess (Raylib)");
     SetTargetFPS(60);
@@ -48,6 +297,8 @@ int main() {
         gameFont = GetFontDefault();
     }
     SetTextureFilter(gameFont.texture, TEXTURE_FILTER_BILINEAR);
+
+    runSplashScreen(gameFont);
 
     #define DrawText(text, x, y, size, ...) DrawTextEx(gameFont, text, (Vector2){(float)(x),(float)(y)}, (float)(size), 1.0f, __VA_ARGS__)
 
@@ -105,7 +356,7 @@ int main() {
 
     // ── Custom difficulty sliders (right column) ──
     float sliderX = 400.0f;
-    float sliderW = 560.0f;
+    float sliderW = 970.0f;
     Vector2 mouse = {0, 0};
     auto drawSlider = [&](const char* label, int* val, int minV, int maxV, float y, Color barColor) -> void {
         DrawText(TextFormat("%s: %d", label, *val), (int)sliderX, (int)y, 16, RAYWHITE);
@@ -125,11 +376,28 @@ int main() {
 
     Terrain editorSelectedTerrain = Terrain::Wall;
 
-    while (!WindowShouldClose()) {
+    FileBrowser saveBrowser, loadBrowser;
+
+    bool showConfirmExitGame = false;
+    bool showConfirmReturnHub = false;
+    bool shouldQuit = false;
+    SetExitKey(KEY_NULL); // disable default ESC-to-close, we handle confirmation ourselves
+
+    while (!shouldQuit) {
+        bool closeRequested = WindowShouldClose();
         float dtSeconds = GetFrameTime();
         AudioManager::getInstance().updateMusic();
         mouse = GetMousePosition();
         bool mouseClicked = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+
+        if (closeRequested && !showConfirmExitGame && !showConfirmReturnHub) {
+            if (state.current_scene == GameScene::Playing || state.current_scene == GameScene::MapEditor) {
+                showConfirmExitGame = true;
+            } else {
+                shouldQuit = true;
+                break;
+            }
+        }
 
         auto endTurnWithBanner = [&]() {
             state.start_zombie_phase();
@@ -147,7 +415,7 @@ int main() {
                 ioMessageTimer -= dtSeconds;
                 if (ioMessageTimer <= 0.0f) ioMessage.clear();
             }
-            if (mouseClicked) {
+            if (mouseClicked && !saveBrowser.is_open && !loadBrowser.is_open) {
                 int chosen = -1;
                 if (CheckCollisionPointRec(mouse, easyBtn))   chosen = 0;
                 if (CheckCollisionPointRec(mouse, mediumBtn)) chosen = 1;
@@ -160,15 +428,10 @@ int main() {
                     AudioManager::getInstance().playMusic("battle");
                 }
                 if (CheckCollisionPointRec(mouse, exportBtn)) {
-                    bool ok = state.export_challenge_file("my_custom_challenge.zom");
-                    ioMessage = ok ? "Exported to my_custom_challenge.zom" : "Export failed!";
-                    ioMessageTimer = 3.0f;
+                    saveBrowser.open(FileBrowser::Mode::Save, "my_custom_challenge.zom");
                 }
                 if (CheckCollisionPointRec(mouse, importBtn)) {
-                    bool ok = state.import_challenge_file("my_custom_challenge.zom");
-                    ioMessage = ok ? "Imported my_custom_challenge.zom" : "Import failed! (file not found?)";
-                    ioMessageTimer = 3.0f;
-                    hasImportedConfig = ok;
+                    loadBrowser.open(FileBrowser::Mode::Open, "my_custom_challenge.zom");
                 }
                 if (hasImportedConfig && CheckCollisionPointRec(mouse, startCustomBtn)) {
                     state.init_game();
@@ -180,6 +443,23 @@ int main() {
             BeginDrawing();
             ClearBackground((Color){22, 23, 25, 255});
             DrawText("ZomChess", 60, 40, 48, RAYWHITE);
+
+            // ── Music / SFX toggles ──
+            {
+                Vector2 musicPos = {60, 95}, sfxPos = {180, 95};
+                bool musicClick = drawCheckbox(mouse, mouseClicked, musicPos.x, musicPos.y, state.music_enabled, "Music");
+                bool sfxClick   = drawCheckbox(mouse, mouseClicked, sfxPos.x, sfxPos.y, state.sfx_enabled, "SFX");
+
+                if (musicClick && !saveBrowser.is_open && !loadBrowser.is_open) {
+                    state.music_enabled = !state.music_enabled;
+                    if (state.music_enabled) AudioManager::getInstance().playMusic("menu");
+                    else AudioManager::getInstance().stopMusic();
+                }
+                if (sfxClick && !saveBrowser.is_open && !loadBrowser.is_open) {
+                    state.sfx_enabled = !state.sfx_enabled;
+                    state.setSfxEnabled(state.sfx_enabled);
+                }
+            }
 
             // ── Left column: Quick Play ──
             DrawText("Quick Play", 60, 160, 22, (Color){130, 220, 255, 255});
@@ -205,56 +485,272 @@ int main() {
                 DrawText(ioMessage.c_str(), 60, 540, 15, (Color){255, 220, 100, 255});
             }
 
-            // ── Right column: Custom Difficulty Sliders ──
+            // ── Right column: Custom Difficulty (2 sub-columns, scrollable) ──
             DrawText("Custom Difficulty", (int)sliderX, 40, 26, (Color){255, 140, 220, 255});
             DrawLine((int)sliderX - 30, 30, (int)sliderX - 30, 620, (Color){70,70,70,255});
 
-            drawSlider("Map Width", &state.active_config.map_width,
-                       GameConstants::Difficulty::SliderBounds::MAP_WIDTH_MIN,
-                       GameConstants::Difficulty::SliderBounds::MAP_WIDTH_MAX, 90, (Color){80,160,220,255});
-            drawSlider("Map Height", &state.active_config.map_height,
-                       GameConstants::Difficulty::SliderBounds::MAP_HEIGHT_MIN,
-                       GameConstants::Difficulty::SliderBounds::MAP_HEIGHT_MAX, 140, (Color){80,160,220,255});
+            static float customScroll = 0.0f;
+            Rectangle scrollArea = { sliderX - 15, 68, sliderW + 30, 500 };
+            if (CheckCollisionPointRec(mouse, scrollArea)) {
+                customScroll -= GetMouseWheelMove() * 30.0f;
+            }
 
-            drawSlider("Human HP", &state.active_config.human_hp,
-                       GameConstants::Difficulty::SliderBounds::HUMAN_HP_MIN,
-                       GameConstants::Difficulty::SliderBounds::HUMAN_HP_MAX, 200, (Color){220,180,60,255});
-            drawSlider("Initial Stamina", &state.active_config.initial_stamina,
-                       GameConstants::Difficulty::SliderBounds::INITIAL_STAMINA_MIN,
-                       GameConstants::Difficulty::SliderBounds::INITIAL_STAMINA_MAX, 250, (Color){220,180,60,255});
-            drawSlider("Turn Limit", &state.active_config.turn_limit,
-                       GameConstants::Difficulty::SliderBounds::TURN_LIMIT_MIN,
-                       GameConstants::Difficulty::SliderBounds::TURN_LIMIT_MAX, 300, (Color){220,180,60,255});
+            float colAW = 330.0f; // left sub-column width (Map/Human/Weapons/Zombies)
+            float colBX = sliderX + colAW + 40.0f; // right sub-column X (Terrain/Weather)
+            float colBW = sliderW - colAW - 40.0f;
 
-            drawSlider("Pistol Ammo", &state.active_config.pistol_ammo,
-                       GameConstants::Difficulty::SliderBounds::PISTOL_AMMO_MIN,
-                       GameConstants::Difficulty::SliderBounds::PISTOL_AMMO_MAX, 350, (Color){200,120,60,255});
-            drawSlider("Shotgun Ammo", &state.active_config.shotgun_ammo,
-                       GameConstants::Difficulty::SliderBounds::SHOTGUN_AMMO_MIN,
-                       GameConstants::Difficulty::SliderBounds::SHOTGUN_AMMO_MAX, 400, (Color){200,120,60,255});
+            BeginScissorMode((int)scrollArea.x, (int)scrollArea.y, (int)scrollArea.width, (int)scrollArea.height);
+            float baseY = 68.0f - customScroll;
 
-            DrawText("Zombie Counts", (int)sliderX, 460, 20, (Color){255, 100, 100, 255});
-            drawSlider("Clever Zombies", &state.active_config.count_normal, 0,
-                       GameConstants::Difficulty::SliderBounds::COUNT_CLEVER_MAX, 490, (Color){45,175,90,255});
-            drawSlider("Fast Sprinters", &state.active_config.count_fast, 0,
-                       GameConstants::Difficulty::SliderBounds::COUNT_FAST_MAX, 540, (Color){55,168,255,255});
+            // A small local slider drawer bound to colA width so labels/tracks fit
+            auto drawSliderW = [&](const char* label, int* val, int minV, int maxV, float x, float w, float y, Color barColor) {
+                DrawText(TextFormat("%s: %d", label, *val), (int)x, (int)y, 14, RAYWHITE);
+                Rectangle track = { x, y + 20, w, 12 };
+                DrawRectangleRounded(track, 0.5f, 4, (Color){40,40,40,255});
+                float pct = (float)(*val - minV) / (float)(maxV - minV);
+                Rectangle fill = { x, y + 20, w * pct, 12 };
+                DrawRectangleRounded(fill, 0.5f, 4, barColor);
+                float knobX = x + w * pct;
+                DrawCircle((int)knobX, (int)(y + 26), 8.0f, RAYWHITE);
+                if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && CheckCollisionPointRec(mouse, (Rectangle){x - 10, y, w + 20, 32})) {
+                    float p = (mouse.x - x) / w;
+                    p = std::max(0.0f, std::min(1.0f, p));
+                    *val = minV + (int)std::round(p * (maxV - minV));
+                }
+            };
+
+            // ── COLUMN A: Map / Human / Weapons / Zombie counts ──
+            float ay = baseY;
+            DrawText("Map & Human", (int)sliderX, (int)ay, 17, (Color){130,220,255,255}); ay += 24;
+            drawSliderW("Map Width", &state.active_config.map_width,
+                        GameConstants::Difficulty::SliderBounds::MAP_WIDTH_MIN,
+                        GameConstants::Difficulty::SliderBounds::MAP_WIDTH_MAX, sliderX, colAW, ay, (Color){80,160,220,255}); ay += 42;
+            drawSliderW("Map Height", &state.active_config.map_height,
+                        GameConstants::Difficulty::SliderBounds::MAP_HEIGHT_MIN,
+                        GameConstants::Difficulty::SliderBounds::MAP_HEIGHT_MAX, sliderX, colAW, ay, (Color){80,160,220,255}); ay += 42;
+            drawSliderW("Human HP", &state.active_config.human_hp,
+                        GameConstants::Difficulty::SliderBounds::HUMAN_HP_MIN,
+                        GameConstants::Difficulty::SliderBounds::HUMAN_HP_MAX, sliderX, colAW, ay, (Color){220,180,60,255}); ay += 42;
+            drawSliderW("Initial Stamina", &state.active_config.initial_stamina,
+                        GameConstants::Difficulty::SliderBounds::INITIAL_STAMINA_MIN,
+                        GameConstants::Difficulty::SliderBounds::INITIAL_STAMINA_MAX, sliderX, colAW, ay, (Color){220,180,60,255}); ay += 42;
+            drawSliderW("Turn Limit", &state.active_config.turn_limit,
+                        GameConstants::Difficulty::SliderBounds::TURN_LIMIT_MIN,
+                        GameConstants::Difficulty::SliderBounds::TURN_LIMIT_MAX, sliderX, colAW, ay, (Color){220,180,60,255}); ay += 50;
+
+            DrawText("Weapons", (int)sliderX, (int)ay, 17, (Color){130,220,255,255}); ay += 24;
+            drawSliderW("Pistol Ammo", &state.active_config.pistol_ammo,
+                        GameConstants::Difficulty::SliderBounds::PISTOL_AMMO_MIN,
+                        GameConstants::Difficulty::SliderBounds::PISTOL_AMMO_MAX, sliderX, colAW, ay, (Color){200,120,60,255}); ay += 42;
+            drawSliderW("Shotgun Ammo", &state.active_config.shotgun_ammo,
+                        GameConstants::Difficulty::SliderBounds::SHOTGUN_AMMO_MIN,
+                        GameConstants::Difficulty::SliderBounds::SHOTGUN_AMMO_MAX, sliderX, colAW, ay, (Color){200,120,60,255}); ay += 42;
+            drawSliderW("Grenades", &state.active_config.grenades,
+                        GameConstants::Difficulty::SliderBounds::GRENADES_MIN,
+                        GameConstants::Difficulty::SliderBounds::GRENADES_MAX, sliderX, colAW, ay, (Color){200,120,60,255}); ay += 42;
+            drawSliderW("Molotovs", &state.active_config.molotovs,
+                        GameConstants::Difficulty::SliderBounds::MOLOTOVS_MIN,
+                        GameConstants::Difficulty::SliderBounds::MOLOTOVS_MAX, sliderX, colAW, ay, (Color){200,120,60,255}); ay += 42;
+            drawSliderW("Mines", &state.active_config.mines,
+                        GameConstants::Difficulty::SliderBounds::MINES_MIN,
+                        GameConstants::Difficulty::SliderBounds::MINES_MAX, sliderX, colAW, ay, (Color){200,120,60,255}); ay += 50;
 
             int available = state.calculate_available_spawn_cells();
             int totalZoms = state.active_config.count_normal + state.active_config.count_fast +
                             state.active_config.count_exploding + state.active_config.count_vampire +
                             state.active_config.count_sick;
             bool overflow = !state.is_zombie_count_valid();
-            DrawText(TextFormat("Spawn tiles: %d | Zombies: %d", available, totalZoms),
-                     (int)sliderX, 585, 14, overflow ? (Color){255,80,80,255} : (Color){160,160,160,255});
 
-            // ── Custom Map checkbox + Open Editor button ──
-            Rectangle customMapCheck = { sliderX, 607, 18, 18 };
-            DrawRectangleRec(customMapCheck, (Color){40,40,40,255});
-            if (state.active_config.custom_map_mode) {
-                DrawRectangle((int)customMapCheck.x + 3, (int)customMapCheck.y + 3, 12, 12, (Color){0,200,100,255});
+            // ── COLUMN B: Terrain ratios + Weather probabilities (multi-slider bars) ──
+            float by = baseY;
+
+            // Generic N-segment multi-slider: one bar, N-1 draggable internal knobs,
+            // segments always sum to 100. `values` and `colors` must have `n` entries.
+            // Returns nothing; mutates `values` in place. `activeKnobId` disambiguates
+            // multiple multi-sliders sharing the same static drag-state variable.
+            auto drawMultiSlider = [&](int* values[], Color colors[], const char* labels[], int n,
+                                       float x, float w, float y, int barId) {
+                static int activeKnob = -1;
+                static int activeBarId = -1;
+
+                float barH = 22.0f;
+                Rectangle bar = { x, y, w, barH };
+                DrawRectangleRec(bar, (Color){25,25,28,255});
+
+                // Compute cumulative breakpoints p[0..n] where p[0]=0, p[n]=100
+                std::vector<int> p(n + 1);
+                p[0] = 0;
+                for (int i = 0; i < n; ++i) p[i+1] = p[i] + *values[i];
+
+                bool hovered = CheckCollisionPointRec(mouse, (Rectangle){x, y - 6, w, barH + 12});
+                bool mouseDownHere = IsMouseButtonDown(MOUSE_BUTTON_LEFT) &&
+                                      CheckCollisionPointRec(mouse, (Rectangle){x, y - 6, w, barH + 12});
+
+                if (mouseDownHere && (activeBarId != barId || activeKnob == -1) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+                    float clickPct = (mouse.x - x) / w * 100.0f;
+                    clickPct = std::max(0.0f, std::min(100.0f, clickPct));
+                    int nearest = 1; float bestDist = 1e9f;
+                    for (int i = 1; i < n; ++i) {
+                        float d = fabsf(clickPct - p[i]);
+                        if (d < bestDist) { bestDist = d; nearest = i; }
+                    }
+                    activeKnob = nearest;
+                    activeBarId = barId;
+                }
+                if (!IsMouseButtonDown(MOUSE_BUTTON_LEFT)) { if (activeBarId == barId) activeKnob = -1; }
+
+                if (activeBarId == barId && activeKnob >= 1 && activeKnob < n && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+                    float pct = (mouse.x - x) / w * 100.0f;
+                    pct = std::max(0.0f, std::min(100.0f, pct));
+                    int newVal = (int)std::round(pct);
+                    newVal = std::max(p[activeKnob - 1] + 1, std::min(p[activeKnob + 1] - 1, newVal));
+                    p[activeKnob] = newVal;
+                }
+                // Rebuild values from breakpoints
+                for (int i = 0; i < n; ++i) *values[i] = p[i+1] - p[i];
+
+                // Draw segments
+                for (int i = 0; i < n; ++i) {
+                    float sx = x + w * (p[i] / 100.0f);
+                    float ex = x + w * (p[i+1] / 100.0f);
+                    DrawRectangle((int)sx, (int)y, (int)std::max(1.0f, ex - sx), (int)barH, colors[i]);
+                }
+                DrawRectangleLinesEx(bar, 1, (Color){20,20,20,200});
+
+                // Draw internal knobs
+                for (int i = 1; i < n; ++i) {
+                    float kx = x + w * (p[i] / 100.0f);
+                    bool isActive = (activeBarId == barId && activeKnob == i);
+                    Color kc = isActive ? (Color){255,215,25,255} : WHITE;
+                    DrawRectangle((int)kx - 3, (int)y - 3, 6, (int)barH + 6, kc);
+                }
+            };
+
+            DrawText("Terrain Ratios (sum = 100%)", (int)colBX, (int)by, 16, (Color){230,210,100,255}); by += 26;
+            {
+                int* tv[5] = { &state.active_config.ratio_dirt, &state.active_config.ratio_wall,
+                               &state.active_config.ratio_water, &state.active_config.ratio_forest,
+                               &state.active_config.ratio_ice };
+                Color tc[5] = { {105,60,35,255}, {60,62,66,255}, {35,75,115,255}, {34,110,48,255}, {160,210,240,255} };
+                const char* tl[5] = { "Dirt", "Wall", "Water", "Forest", "Ice" };
+                drawMultiSlider(tv, tc, tl, 5, colBX, colBW, by, 1001);
+                by += 34;
+                // Legend, 3-per-row
+                float legW = colBW / 3.0f;
+                for (int i = 0; i < 5; ++i) {
+                    float lx = colBX + (i % 3) * legW;
+                    float ly = by + (i / 3) * 22.0f;
+                    DrawRectangle((int)lx, (int)ly + 2, 12, 12, tc[i]);
+                    DrawText(TextFormat("%s: %d%%", tl[i], *tv[i]), (int)lx + 18, (int)ly, 13, RAYWHITE);
+                }
+                by += 22.0f * 2 + 12;
             }
-            DrawText("Use Custom Map", (int)sliderX + 26, 606, 15, RAYWHITE);
-            if (mouseClicked && CheckCollisionPointRec(mouse, customMapCheck)) {
+
+            // ── Enable Environment Events checkbox ──
+            bool enableEnvClick = drawCheckbox(mouse, mouseClicked, colBX, by, state.active_config.enable_environment, "Enable Environment Events");
+            if (enableEnvClick) {
+                state.active_config.enable_environment = !state.active_config.enable_environment;
+            }
+            by += 32;
+
+            DrawText("Weather Probabilities (sum = 100%)", (int)colBX, (int)by,
+                     16, state.active_config.enable_environment ? (Color){230,210,100,255} : (Color){90,85,60,255});
+            by += 26;
+            {
+                int* wv[7] = { &state.active_config.env_prob_clear, &state.active_config.env_prob_wind,
+                               &state.active_config.env_prob_rain, &state.active_config.env_prob_clouds,
+                               &state.active_config.env_prob_lightning, &state.active_config.env_prob_heatwave,
+                               &state.active_config.env_prob_blizzard };
+                Color wcFull[7] = { {150,180,220,255}, {170,200,230,255}, {90,140,220,255}, {90,90,100,255},
+                                    {230,220,60,255}, {230,130,50,255}, {160,210,240,255} };
+                Color wc[7];
+                bool envOn = state.active_config.enable_environment;
+                for (int i = 0; i < 7; ++i) {
+                    wc[i] = envOn ? wcFull[i] : (Color){ (unsigned char)(wcFull[i].r/3), (unsigned char)(wcFull[i].g/3), (unsigned char)(wcFull[i].b/3), 255 };
+                }
+                const char* wl[7] = { "Clear", "Wind", "Rain", "Dark Clouds", "Lightning", "Heatwave", "Blizzard" };
+                if (envOn) {
+                    drawMultiSlider(wv, wc, wl, 7, colBX, colBW, by, 1002);
+                } else {
+                    // Draw a disabled, non-interactive bar
+                    Rectangle disBar = { colBX, by, colBW, 22.0f };
+                    DrawRectangleRec(disBar, (Color){25,25,28,255});
+                    float pAcc = 0.0f;
+                    for (int i = 0; i < 7; ++i) {
+                        float segW = colBW * (*wv[i] / 100.0f);
+                        DrawRectangle((int)(colBX + pAcc), (int)by, (int)segW, 22, wc[i]);
+                        pAcc += segW;
+                    }
+                    DrawRectangleLinesEx(disBar, 1, (Color){20,20,20,200});
+                }
+                by += 34;
+                float legW = colBW / 3.0f;
+                Color legTextCol = envOn ? RAYWHITE : (Color){110,110,110,255};
+                for (int i = 0; i < 7; ++i) {
+                    float lx = colBX + (i % 3) * legW;
+                    float ly = by + (i / 3) * 22.0f;
+                    DrawRectangle((int)lx, (int)ly + 2, 12, 12, wc[i]);
+                    DrawText(TextFormat("%s: %d%%", wl[i], *wv[i]), (int)lx + 18, (int)ly, 13, legTextCol);
+                }
+                by += 22.0f * 3 + 16;
+            }
+
+            // ── Zombie Counts (moved here, below Weather) ──
+            DrawText("Zombie Counts", (int)colBX, (int)by, 17, (Color){255,100,100,255}); by += 24;
+            drawSliderW("Clever Zombies", &state.active_config.count_normal, 0,
+                        GameConstants::Difficulty::SliderBounds::COUNT_CLEVER_MAX, colBX, colBW, by, (Color){45,175,90,255}); by += 42;
+            drawSliderW("Fast Sprinters", &state.active_config.count_fast, 0,
+                        GameConstants::Difficulty::SliderBounds::COUNT_FAST_MAX, colBX, colBW, by, (Color){55,168,255,255}); by += 42;
+            drawSliderW("Volatile Exploders", &state.active_config.count_exploding, 0,
+                        GameConstants::Difficulty::SliderBounds::COUNT_EXPLODING_MAX, colBX, colBW, by, (Color){230,140,20,255}); by += 42;
+            drawSliderW("Vampiric Draculas", &state.active_config.count_vampire, 0,
+                        GameConstants::Difficulty::SliderBounds::COUNT_VAMPIRE_MAX, colBX, colBW, by, (Color){170,50,170,255}); by += 42;
+            drawSliderW("Sick Carriers", &state.active_config.count_sick, 0,
+                        GameConstants::Difficulty::SliderBounds::COUNT_SICK_MAX, colBX, colBW, by, (Color){210,190,65,255}); by += 42;
+
+            available = state.calculate_available_spawn_cells();
+            totalZoms = state.active_config.count_normal + state.active_config.count_fast +
+                        state.active_config.count_exploding + state.active_config.count_vampire +
+                        state.active_config.count_sick;
+            overflow = !state.is_zombie_count_valid();
+            DrawText(TextFormat("Spawn tiles: %d | Zombies: %d", available, totalZoms),
+                     (int)colBX, (int)by, 13, overflow ? (Color){255,80,80,255} : (Color){160,160,160,255});
+            by += 30;
+
+            // ── Spawn Shield checkbox (column A, below zombie counts) ──
+            bool spawnShieldClick = drawCheckbox(mouse, mouseClicked, sliderX, ay, state.active_config.spawn_shield, "Spawn Shield (safe 5x5 zone)");
+            if (spawnShieldClick) {
+                state.active_config.spawn_shield = !state.active_config.spawn_shield;
+            }
+            ay += 32;
+
+            // ── Fixed Stamina checkbox (column A, below Spawn Shield) ──
+            bool fixedStamClick = drawCheckbox(mouse, mouseClicked, sliderX, ay, state.active_config.fixed_stamina, "Fixed Stamina (no random roll)");
+            if (fixedStamClick) {
+                state.active_config.fixed_stamina = !state.active_config.fixed_stamina;
+            }
+            ay += 32;
+
+            float contentBottom = std::max(ay, by) + 10.0f;
+            EndScissorMode();
+
+            // contentBottom was computed with baseY = 68 - customScroll already applied,
+            // so convert back to an absolute content height independent of current scroll.
+            float contentHeight = contentBottom + customScroll - 68.0f;
+            float maxScroll = std::max(0.0f, contentHeight - scrollArea.height);
+            customScroll = std::max(0.0f, std::min(customScroll, maxScroll));
+            if (maxScroll > 0.0f) {
+                float barH = scrollArea.height * (scrollArea.height / contentHeight);
+                float barY = scrollArea.y + (customScroll / maxScroll) * (scrollArea.height - barH);
+                DrawRectangle((int)(scrollArea.x + scrollArea.width - 6), (int)barY, 5, (int)barH, LIGHTGRAY);
+            }
+
+            // ── Fixed controls below the scroll area (always visible) ──
+            float fixedY = scrollArea.y + scrollArea.height + 10.0f;
+
+            // Custom Map checkbox + Open Editor button
+            bool customMapClick = drawCheckbox(mouse, mouseClicked, sliderX, fixedY, state.active_config.custom_map_mode, "Use Custom Map");
+            if (customMapClick) {
                 state.active_config.custom_map_mode = !state.active_config.custom_map_mode;
                 if (state.active_config.custom_map_mode) {
                     state.active_config.custom_grid.assign(state.active_config.map_width,
@@ -263,7 +759,7 @@ int main() {
                 }
             }
             if (state.active_config.custom_map_mode) {
-                Rectangle editorBtn = { sliderX + 220, 602, 200, 28 };
+                Rectangle editorBtn = { sliderX + 230, fixedY - 3, 200, 28 };
                 DrawRectangleRec(editorBtn, (Color){140,90,20,255});
                 drawCenteredText("Open Map Editor", editorBtn, 14, WHITE);
                 if (mouseClicked && CheckCollisionPointRec(mouse, editorBtn)) {
@@ -271,7 +767,7 @@ int main() {
                 }
             }
 
-            Rectangle launchBtn = { sliderX, 635, sliderW, 26 };
+            Rectangle launchBtn = { sliderX, fixedY + 33, sliderW, 26 };
             DrawRectangleRec(launchBtn, overflow ? (Color){80,80,80,255} : (Color){15,110,15,255});
             drawCenteredText(overflow ? "TOO MANY ZOMBIES" : "LAUNCH CUSTOM GAME", launchBtn, 16, WHITE);
             if (!overflow && mouseClicked && CheckCollisionPointRec(mouse, launchBtn)) {
@@ -280,12 +776,127 @@ int main() {
                 AudioManager::getInstance().playMusic("battle");
             }
 
+            // ── File Browser popups (Save / Load .zom) ──
+            auto drawFileBrowser = [&](FileBrowser& fb, const char* title) {
+                if (!fb.is_open) return;
+                DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), (Color){0, 0, 0, 150});
+                Rectangle box = { GetScreenWidth()/2.0f - 280, GetScreenHeight()/2.0f - 220, 560, 440 };
+                DrawRectangleRec(box, (Color){35, 36, 40, 255});
+                DrawRectangleLinesEx(box, 2, (Color){100, 100, 100, 255});
+                DrawText(title, (int)box.x + 15, (int)box.y + 12, 18, (Color){230,210,100,255});
+
+                Rectangle upBtn = { box.x + 15, box.y + 40, 50, 26 };
+                DrawRectangleRec(upBtn, (Color){70,70,70,255});
+                drawCenteredText("Up", upBtn, 14, WHITE);
+                DrawText(fb.current_dir.c_str(), (int)(box.x + 75), (int)box.y + 46, 13, (Color){130,210,255,255});
+
+                if (!fb.error_msg.empty()) {
+                    DrawText(fb.error_msg.c_str(), (int)box.x + 15, (int)box.y + 70, 13, (Color){255,90,90,255});
+                }
+
+                float listY = box.y + 92;
+                float listH = (fb.mode == FileBrowser::Mode::Save) ? 240.0f : 280.0f;
+                Rectangle listBox = { box.x + 15, listY, box.width - 30, listH };
+                DrawRectangleRec(listBox, (Color){18,18,20,255});
+
+                static float browserScroll = 0.0f;
+                if (CheckCollisionPointRec(mouse, listBox)) browserScroll -= GetMouseWheelMove() * 20.0f;
+                float rowH = 22.0f;
+                float contentH = fb.entries.size() * rowH;
+                float maxScroll = std::max(0.0f, contentH - listBox.height);
+                browserScroll = std::max(0.0f, std::min(browserScroll, maxScroll));
+
+                BeginScissorMode((int)listBox.x, (int)listBox.y, (int)listBox.width, (int)listBox.height);
+                for (size_t i = 0; i < fb.entries.size(); ++i) {
+                    float ry = listBox.y + i * rowH - browserScroll;
+                    if (ry < listBox.y - rowH || ry > listBox.y + listBox.height) continue;
+                    Rectangle rowRect = { listBox.x, ry, listBox.width, rowH };
+                    bool hovered = CheckCollisionPointRec(mouse, rowRect);
+                    if (hovered) DrawRectangleRec(rowRect, (Color){50,50,55,255});
+                    std::string label = (fb.entries[i].is_dir ? "[DIR] " : "       ") + fb.entries[i].name;
+                    Color col = fb.entries[i].is_dir ? (Color){255,210,90,255} : RAYWHITE;
+                    DrawText(label.c_str(), (int)listBox.x + 5, (int)ry + 3, 14, col);
+                    if (mouseClicked && hovered) {
+                        if (fb.entries[i].is_dir) {
+                            if (fb.entries[i].name == "..") {
+                                fb.navigate(fs::path(fb.current_dir).parent_path().string());
+                            } else {
+                                fb.navigate((fs::path(fb.current_dir) / fb.entries[i].name).string());
+                            }
+                        } else {
+                            fb.selected_path = (fs::path(fb.current_dir) / fb.entries[i].name).string();
+                            strncpy(fb.filename_buf, fb.entries[i].name.c_str(), sizeof(fb.filename_buf) - 1);
+                        }
+                    }
+                }
+                EndScissorMode();
+
+                float belowListY = listY + listH + 10;
+                if (fb.mode == FileBrowser::Mode::Save) {
+                    DrawText("File name:", (int)box.x + 15, (int)belowListY, 14, RAYWHITE);
+                    Rectangle nameBox = { box.x + 110, belowListY - 4, box.width - 125, 26 };
+                    DrawRectangleRec(nameBox, (Color){20,20,22,255});
+                    DrawRectangleLinesEx(nameBox, 1, (Color){90,90,90,255});
+                    DrawText(fb.filename_buf, (int)nameBox.x + 5, (int)nameBox.y + 5, 14, RAYWHITE);
+                    int ch = GetCharPressed();
+                    while (ch > 0) {
+                        size_t len = strlen(fb.filename_buf);
+                        if (ch >= 32 && ch <= 125 && len < sizeof(fb.filename_buf) - 1) {
+                            fb.filename_buf[len] = (char)ch;
+                            fb.filename_buf[len + 1] = '\0';
+                        }
+                        ch = GetCharPressed();
+                    }
+                    if (IsKeyPressed(KEY_BACKSPACE)) {
+                        size_t len = strlen(fb.filename_buf);
+                        if (len > 0) fb.filename_buf[len - 1] = '\0';
+                    }
+                } else if (!fb.selected_path.empty()) {
+                    DrawText(("Selected: " + fs::path(fb.selected_path).filename().string()).c_str(),
+                             (int)box.x + 15, (int)belowListY, 14, (Color){100,255,140,255});
+                }
+
+                Rectangle confirmBtn = { box.x + box.width - 260, box.y + box.height - 45, 120, 34 };
+                Rectangle cancelBtn  = { box.x + box.width - 130, box.y + box.height - 45, 120, 34 };
+                bool isSave = (fb.mode == FileBrowser::Mode::Save);
+                DrawRectangleRec(confirmBtn, isSave ? (Color){20,120,20,255} : (Color){20,90,150,255});
+                drawCenteredText(isSave ? "Save" : "Open", confirmBtn, 15, WHITE);
+                DrawRectangleRec(cancelBtn, (Color){70,70,70,255});
+                drawCenteredText("Cancel", cancelBtn, 15, WHITE);
+
+                if (mouseClicked && CheckCollisionPointRec(mouse, upBtn)) {
+                    fb.navigate(fs::path(fb.current_dir).parent_path().string());
+                }
+                if (mouseClicked && CheckCollisionPointRec(mouse, cancelBtn)) {
+                    fb.is_open = false;
+                }
+                if (mouseClicked && CheckCollisionPointRec(mouse, confirmBtn)) {
+                    if (isSave) {
+                        std::string fname = fb.filename_buf;
+                        if (!fname.empty()) {
+                            if (fname.size() < 4 || fname.substr(fname.size() - 4) != ".zom") fname += ".zom";
+                            std::string path = (fs::path(fb.current_dir) / fname).string();
+                            bool ok = state.export_challenge_file(path);
+                            ioMessage = ok ? ("Exported to " + fname) : "Export failed!";
+                            ioMessageTimer = 3.0f;
+                            fb.is_open = false;
+                        }
+                    } else if (!fb.selected_path.empty()) {
+                        bool ok = state.import_challenge_file(fb.selected_path);
+                        ioMessage = ok ? ("Imported " + fs::path(fb.selected_path).filename().string()) : "Import failed!";
+                        ioMessageTimer = 3.0f;
+                        hasImportedConfig = ok;
+                        fb.is_open = false;
+                    }
+                }
+            };
+
+            drawFileBrowser(saveBrowser, "Save Challenge File (.zom)");
+            drawFileBrowser(loadBrowser, "Load Challenge File (.zom)");
+
             EndDrawing();
             continue;
         }
-
-        // ══════════════════════════════════════════════════════════════
-        // MAP EDITOR — paint terrain tile-by-tile, set Human spawn
         // ══════════════════════════════════════════════════════════════
         if (state.current_scene == GameScene::MapEditor) {
             int mw = state.active_config.map_width;
@@ -369,7 +980,7 @@ int main() {
             !state.game_over && !state.game_won &&
             state.phase == TurnPhase::HumanTurn &&
             !state.human.is_paralyzed &&
-            !showGuide &&
+            !showGuide && !showConfirmReturnHub && !showConfirmExitGame &&
             mouseClicked) {
 
             bool disabled_base = (state.human.stamina == 0);
@@ -413,8 +1024,7 @@ int main() {
             } else if (CheckCollisionPointRec(mouse, endTurnBtn)) {
                 endTurnWithBanner();
             } else if (CheckCollisionPointRec(mouse, returnHubTopBtn)) {
-                state.current_scene = GameScene::MainMenu;
-                AudioManager::getInstance().playMusic("menu");
+                showConfirmReturnHub = true;
             }
         }
 
@@ -423,7 +1033,7 @@ int main() {
             !state.game_over && !state.game_won &&
             state.phase == TurnPhase::HumanTurn &&
             !state.human.is_paralyzed &&
-            !showGuide &&
+            !showGuide && !showConfirmReturnHub && !showConfirmExitGame &&
             mouseClicked && !onPanel) {
 
             int lx = (int)((mouse.x - boardOffset) / cellSize);
@@ -478,8 +1088,14 @@ int main() {
                         state.handle_weapon_click(tx, ty, cellSize, boardOffset);
                     }
                 } else {
-                    // Pistol, Shotgun, Grenade, Molotov all delegate to handle_weapon_click
-                    state.handle_weapon_click(tx, ty, cellSize, boardOffset);
+                    // Pistol, Shotgun, Grenade, Molotov: only accept clicks within the
+                    // 8 adjacent tiles around Human (matches main.cpp's directional arrows)
+                    int dx = std::abs(tx - state.human.pos.x);
+                    int dy = std::abs(ty - state.human.pos.y);
+                    bool adjacent = (dx <= 1 && dy <= 1 && (dx != 0 || dy != 0));
+                    if (adjacent) {
+                        state.handle_weapon_click(tx, ty, cellSize, boardOffset);
+                    }
                 }
             }
         }
@@ -550,7 +1166,7 @@ int main() {
                 int y = viewY + ly;
                 if (x >= state.width || y >= state.height) continue;
                 DrawRectangle((int)(lx * cellSize + boardOffset), (int)(ly * cellSize + boardOffset),
-                              (int)(cellSize - 2.0f), (int)(cellSize - 2.0f), terrainColor(state.grid[x][y]));
+                              (int)(cellSize - 2.0f), (int)(cellSize - 2.0f), getTerrainDisplayColor(state, x, y));
                 if (state.mine_grid[x][y]) {
                     DrawCircle((int)(lx * cellSize + boardOffset + cellSize / 2), (int)(ly * cellSize + boardOffset + cellSize / 2),
                                6.0f, (Color){230, 40, 40, 255});
@@ -636,7 +1252,120 @@ int main() {
             }
         }
 
-        // ── Active FX animations (mirrors main.cpp's FX drawing block) ──
+        if (state.dark_cloud_active && state.active_fx.type != FXType::DarkCloud) {
+            DrawRectangle((int)boardOffset, (int)boardOffset,
+                          (int)(VIEW_CELLS * cellSize), (int)(VIEW_CELLS * cellSize),
+                          (Color){0, 0, 0, 254});
+
+            // Cells lit by fire: fire tile + 8 neighbors + burning entities' tiles
+            std::vector<std::vector<bool>> fireLit(state.width, std::vector<bool>(state.height, false));
+            const int all8[8][2] = {{1,0},{-1,0},{0,1},{0,-1},{1,1},{1,-1},{-1,1},{-1,-1}};
+            for (int x = 0; x < state.width; ++x) {
+                for (int y = 0; y < state.height; ++y) {
+                    if (state.grid[x][y] != Terrain::Fire) continue;
+                    fireLit[x][y] = true;
+                    for (const auto& d : all8) {
+                        int nx = x + d[0], ny = y + d[1];
+                        if (nx >= 0 && nx < state.width && ny >= 0 && ny < state.height) fireLit[nx][ny] = true;
+                    }
+                }
+            }
+            for (const auto& z : state.zombies) if (z->hp > 0 && z->is_burning) fireLit[z->pos.x][z->pos.y] = true;
+            if (state.human.hp > 0 && state.human.is_burning) fireLit[state.human.pos.x][state.human.pos.y] = true;
+
+            for (int lx = 0; lx < VIEW_CELLS; ++lx) {
+                for (int ly = 0; ly < VIEW_CELLS; ++ly) {
+                    int x = viewX + lx, y = viewY + ly;
+                    if (x < 0 || x >= state.width || y < 0 || y >= state.height) continue;
+                    if (!fireLit[x][y]) continue;
+                    DrawRectangle((int)(lx * cellSize + boardOffset), (int)(ly * cellSize + boardOffset),
+                                  (int)(cellSize - 2), (int)(cellSize - 2), getTerrainDisplayColor(state, x, y));
+                    if (state.mine_grid[x][y]) {
+                        DrawCircle((int)(lx * cellSize + boardOffset + cellSize/2), (int)(ly * cellSize + boardOffset + cellSize/2),
+                                   6.0f, (Color){230,40,40,255});
+                    }
+                }
+            }
+            // Redraw zombies standing on lit cells
+            for (size_t zi = 0; zi < state.zombies.size(); ++zi) {
+                const auto& z = state.zombies[zi];
+                if (z->hp <= 0) continue;
+                if (!fireLit[z->pos.x][z->pos.y]) continue;
+                int zlx = z->pos.x - viewX, zly = z->pos.y - viewY;
+                if (zlx < 0 || zlx >= VIEW_CELLS || zly < 0 || zly >= VIEW_CELLS) continue;
+                float zx = zlx * cellSize + boardOffset + 3.0f;
+                float zy = zly * cellSize + boardOffset + 3.0f;
+                DrawRectangle((int)zx, (int)zy, (int)(cellSize - 6.0f), (int)(cellSize - 6.0f), zombieColor(z->type));
+                DrawText(TextFormat("%d", z->hp), (int)zx + 12, (int)zy + 10, 16, WHITE);
+            }
+            // Redraw human if standing on a lit cell
+            if (state.human.hp > 0 && fireLit[state.human.pos.x][state.human.pos.y]) {
+                int hlx = state.human.pos.x - viewX, hly = state.human.pos.y - viewY;
+                if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) {
+                    float hx = hlx * cellSize + boardOffset + 3.0f;
+                    float hy = hly * cellSize + boardOffset + 3.0f;
+                    DrawRectangle((int)hx, (int)hy, (int)(cellSize - 6.0f), (int)(cellSize - 6.0f), WHITE);
+                }
+            }
+        }
+
+        // ── Directional arrows around Human — always on top, never hidden by Dark Cloud ──
+        if (state.phase == TurnPhase::HumanTurn && !state.human.is_paralyzed &&
+            ((state.input_mode == InputMode::MoveMode && !state.human.is_frozen) ||
+             state.input_mode == InputMode::TargetKnife ||
+             state.input_mode == InputMode::TargetPistol ||
+             state.input_mode == InputMode::TargetShotgun ||
+             state.input_mode == InputMode::TargetGrenade ||
+             state.input_mode == InputMode::TargetMolotov)) {
+            for (int dx = -1; dx <= 1; ++dx) {
+                for (int dy = -1; dy <= 1; ++dy) {
+                    if (dx == 0 && dy == 0) continue;
+                    int nx = state.human.pos.x + dx;
+                    int ny = state.human.pos.y + dy;
+                    if (nx < 0 || nx >= state.width || ny < 0 || ny >= state.height) continue;
+
+                    if (state.input_mode == InputMode::MoveMode) {
+                        if (state.grid[nx][ny] == Terrain::Wall) continue;
+                        bool blocked = false;
+                        for (const auto& z : state.zombies) {
+                            if (z->hp > 0 && z->pos == Position{nx, ny}) { blocked = true; break; }
+                        }
+                        if (blocked) continue;
+                        int cost = (state.grid[nx][ny] == Terrain::Water) ? 2 : 1;
+                        if (state.human.stamina < cost) continue;
+                    }
+                    if (state.input_mode == InputMode::TargetKnife) {
+                        bool hasZ = false;
+                        for (const auto& z : state.zombies) {
+                            if (z->hp > 0 && z->pos == Position{nx, ny}) { hasZ = true; break; }
+                        }
+                        if (!hasZ || state.human.stamina < 1) continue;
+                    }
+
+                    int ovx = nx - viewX, ovy = ny - viewY;
+                    if (ovx < 0 || ovx >= VIEW_CELLS || ovy < 0 || ovy >= VIEW_CELLS) continue;
+
+                    float acx = ovx * cellSize + boardOffset + cellSize / 2.0f;
+                    float acy = ovy * cellSize + boardOffset + cellSize / 2.0f;
+                    float angle = atan2f((float)dy, (float)dx);
+                    float pulse = 1.0f + 0.15f * sinf(GetTime() * 15.0f);
+                    float size = (state.input_mode == InputMode::TargetKnife ? 7.0f : 10.0f) * pulse;
+
+                    Color arrowColor;
+                    if (state.input_mode == InputMode::MoveMode) arrowColor = (Color){255, 220, 50, 230};
+                    else if (state.input_mode == InputMode::TargetKnife) arrowColor = (Color){200, 100, 255, 250};
+                    else if (state.input_mode == InputMode::TargetPistol || state.input_mode == InputMode::TargetShotgun) arrowColor = (Color){255, 60, 60, 230};
+                    else arrowColor = (Color){60, 255, 60, 230};
+
+                    Vector2 p1 = { acx + cosf(angle) * size,        acy + sinf(angle) * size };
+                    Vector2 p2 = { acx + cosf(angle - 2.0f) * size, acy + sinf(angle - 2.0f) * size };
+                    Vector2 p3 = { acx + cosf(angle + 2.0f) * size, acy + sinf(angle + 2.0f) * size };
+                    DrawTriangle(p1, p2, p3, arrowColor);
+                }
+            }
+        }
+
+
         if (state.active_fx.type != FXType::None) {
             float progress = state.active_fx.timer / state.active_fx.max_duration;
             unsigned char alpha = (unsigned char)(progress * 255);
@@ -848,6 +1577,25 @@ int main() {
                              state.human.pos.x + 1, state.human.pos.y + 1, state.last_environment_event.c_str()),
                  (int)panelX, (int)boardOffset, 18, (Color){130, 220, 255, 255});
 
+        // ── Music / SFX toggles (in-game) ──
+        {
+            float musicX = panelX + panelW - 190, sfxX = panelX + panelW - 80;
+            float checkY = boardOffset - 4;
+            bool musicClickG = drawCheckbox(mouse, mouseClicked, musicX, checkY, state.music_enabled, "Music", 13);
+            bool sfxClickG   = drawCheckbox(mouse, mouseClicked, sfxX, checkY, state.sfx_enabled, "SFX", 13);
+
+            if (musicClickG &&
+                !showGuide && !showConfirmReturnHub && !showConfirmExitGame && !state.game_over && !state.game_won) {
+                state.music_enabled = !state.music_enabled;
+                if (state.music_enabled) AudioManager::getInstance().playMusic("battle");
+                else AudioManager::getInstance().stopMusic();
+            }
+            if (sfxClickG &&
+                !showGuide && !showConfirmReturnHub && !showConfirmExitGame && !state.game_over && !state.game_won) {
+                state.sfx_enabled = !state.sfx_enabled;
+                state.setSfxEnabled(state.sfx_enabled);
+            }
+        }
 
         if (state.game_over) DrawText("GAME OVER", 20, (int)(state.height * cellSize + boardOffset + 50), 24, RED);
         if (state.game_won)  DrawText("YOU WON",   20, (int)(state.height * cellSize + boardOffset + 50), 24, GREEN);
@@ -1119,6 +1867,56 @@ int main() {
             drawCenteredText("Close", closeBtn, 16, WHITE);
             if (mouseClicked && CheckCollisionPointRec(mouse, closeBtn)) {
                 showGuide = false;
+            }
+        }
+
+        // ── Confirm: Exit Game popup ──
+        if (showConfirmExitGame) {
+            DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), (Color){0, 0, 0, 150});
+            Rectangle popup = { GetScreenWidth()/2.0f - 240, GetScreenHeight()/2.0f - 90, 480, 180 };
+            DrawRectangleRec(popup, (Color){35, 36, 40, 255});
+            DrawRectangleLinesEx(popup, 2, (Color){100, 100, 100, 255});
+            DrawText("WARNING: All unsaved progress will be permanently lost!", (int)popup.x + 20, (int)popup.y + 20, 15, (Color){255,200,80,255});
+            DrawText("Are you sure you want to quit the game?", (int)popup.x + 20, (int)popup.y + 45, 15, RAYWHITE);
+
+            Rectangle yesBtn = { popup.x + 40,  popup.y + 110, 180, 40 };
+            Rectangle noBtn  = { popup.x + 260, popup.y + 110, 180, 40 };
+            DrawRectangleRec(yesBtn, (Color){160, 20, 20, 255});
+            drawCenteredText("Yes, Quit Game", yesBtn, 16, WHITE);
+            DrawRectangleRec(noBtn, (Color){60, 60, 60, 255});
+            drawCenteredText("Cancel", noBtn, 16, WHITE);
+
+            if (mouseClicked && CheckCollisionPointRec(mouse, yesBtn)) {
+                shouldQuit = true;
+                showConfirmExitGame = false;
+            } else if (mouseClicked && CheckCollisionPointRec(mouse, noBtn)) {
+                showConfirmExitGame = false;
+            }
+        }
+
+        // ── Confirm: Return to Hub popup ──
+        if (showConfirmReturnHub) {
+            DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), (Color){0, 0, 0, 150});
+            Rectangle popup = { GetScreenWidth()/2.0f - 240, GetScreenHeight()/2.0f - 90, 480, 180 };
+            DrawRectangleRec(popup, (Color){35, 36, 40, 255});
+            DrawRectangleLinesEx(popup, 2, (Color){100, 100, 100, 255});
+            DrawText("WARNING: All progress in the current match will be lost!", (int)popup.x + 20, (int)popup.y + 20, 15, (Color){255,200,80,255});
+            DrawText("Are you sure you want to return to the Main Menu?", (int)popup.x + 20, (int)popup.y + 45, 15, RAYWHITE);
+
+            Rectangle yesBtn = { popup.x + 40,  popup.y + 110, 180, 40 };
+            Rectangle noBtn  = { popup.x + 260, popup.y + 110, 180, 40 };
+            DrawRectangleRec(yesBtn, (Color){160, 20, 20, 255});
+            drawCenteredText("Yes, Exit Match", yesBtn, 16, WHITE);
+            DrawRectangleRec(noBtn, (Color){60, 60, 60, 255});
+            drawCenteredText("Cancel", noBtn, 16, WHITE);
+
+            if (mouseClicked && CheckCollisionPointRec(mouse, yesBtn)) {
+                AudioManager::getInstance().stopMusic();
+                state.current_scene = GameScene::MainMenu;
+                AudioManager::getInstance().playMusic("menu");
+                showConfirmReturnHub = false;
+            } else if (mouseClicked && CheckCollisionPointRec(mouse, noBtn)) {
+                showConfirmReturnHub = false;
             }
         }
 

@@ -4,60 +4,38 @@ project(ZomChess LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# ─── Cache dùng chung cho cả build Linux và build web ─────────────────────────
-set(FETCHCONTENT_BASE_DIR ${CMAKE_SOURCE_DIR}/.fc_cache CACHE PATH "" FORCE)
-
-# ─── Source files (shared between native and Emscripten builds) ───────────────
+# ─── Source files (Raylib port) ───────────────────────────────────────────────
 set(ZOMCHESS_SOURCES
-    src/main.cpp
+    src/main_raylib.cpp
     src/GameState.cpp
-    src/AudioManager.cpp
 )
 
-# ─── Emscripten (WebAssembly) build ──────────────────────────────────────────
+# Fixed paths to a locally-built raylib (quick path for now; will be made
+# portable via FetchContent later).
+set(RAYLIB_NATIVE_INCLUDE "/usr/local/include")
+set(RAYLIB_NATIVE_LIB     "/usr/local/lib/libraylib.a")
+set(RAYLIB_WEB_INCLUDE    "$ENV{HOME}/raylib/src")
+set(RAYLIB_WEB_LIB        "$ENV{HOME}/raylib/src/libraylib.web.a")
+
+# ─── Emscripten (WebAssembly) build ───────────────────────────────────────────
 if (EMSCRIPTEN)
-    message(STATUS "Configuring for Emscripten / WebAssembly")
+    message(STATUS "Configuring for Emscripten / WebAssembly (Raylib)")
 
-    include(FetchContent)
-    FetchContent_Declare(
-        imgui
-        GIT_REPOSITORY https://github.com/ocornut/imgui.git
-        GIT_TAG        v1.90.4
-    )
-    FetchContent_MakeAvailable(imgui)
+    add_executable(ZomChess ${ZOMCHESS_SOURCES})
+    target_include_directories(ZomChess PRIVATE src ${RAYLIB_WEB_INCLUDE})
+    target_compile_definitions(ZomChess PRIVATE RAYLIB_BUILD)
+    target_compile_options(ZomChess PRIVATE -include ${CMAKE_SOURCE_DIR}/src/RaylibBuildPrelude.h)
+    target_compile_options(ZomChess PRIVATE -O2)
 
-    FetchContent_Declare(
-        imgui-sfml
-        GIT_REPOSITORY https://github.com/SFML/imgui-sfml.git
-        GIT_TAG        v2.6
-    )
-    FetchContent_Populate(imgui-sfml)
-
-    add_executable(ZomChess
-        ${ZOMCHESS_SOURCES}
-        ${imgui_SOURCE_DIR}/imgui.cpp
-        ${imgui_SOURCE_DIR}/imgui_draw.cpp
-        ${imgui_SOURCE_DIR}/imgui_tables.cpp
-        ${imgui_SOURCE_DIR}/imgui_widgets.cpp
-        ${imgui-sfml_SOURCE_DIR}/imgui-SFML.cpp
-    )
-    target_include_directories(ZomChess PRIVATE
-        src
-        ${imgui_SOURCE_DIR}
-        ${imgui-sfml_SOURCE_DIR}
-    )
-    target_compile_definitions(ZomChess PRIVATE IMGUI_DISABLE_OBSOLETE_FUNCTIONS)
-
-    target_compile_options(ZomChess PRIVATE -sUSE_SDL=2 -O2)
     set_target_properties(ZomChess PROPERTIES OUTPUT_NAME "ZomChess" SUFFIX ".html")
+    target_link_libraries(ZomChess PRIVATE ${RAYLIB_WEB_LIB})
     target_link_options(ZomChess PRIVATE
-        -sUSE_SDL=2
+        -sUSE_GLFW=3
         -sALLOW_MEMORY_GROWTH=1
+        -sMAXIMUM_MEMORY=536870912
         -sINITIAL_MEMORY=67108864
         -sSTACK_SIZE=1048576
-        -sEXPORTED_RUNTIME_METHODS=['ccall','cwrap']
         -sNO_EXIT_RUNTIME=1
-        -lopenal
         --preload-file ${CMAKE_SOURCE_DIR}/assets@/assets
         -O2
     )
@@ -68,36 +46,19 @@ if (EMSCRIPTEN)
 
 # ─── Native (desktop) build ───────────────────────────────────────────────────
 else()
-    find_package(SFML 2.5 COMPONENTS graphics window system audio REQUIRED)
-
-    include(FetchContent)
-    FetchContent_Declare(
-        imgui
-        GIT_REPOSITORY https://github.com/ocornut/imgui.git
-        GIT_TAG        v1.90.4
-    )
-    FetchContent_MakeAvailable(imgui)
-
-    set(IMGUI_DIR ${imgui_SOURCE_DIR} CACHE PATH "" FORCE)
-    set(IMGUI_SFML_FIND_SFML OFF CACHE INTERNAL "")
-    set(IMGUI_SFML_SHARED_LIBS ON CACHE INTERNAL "")
-
-    FetchContent_Declare(
-        imgui-sfml
-        GIT_REPOSITORY https://github.com/SFML/imgui-sfml.git
-        GIT_TAG        v2.6
-    )
-    FetchContent_MakeAvailable(imgui-sfml)
-
     add_executable(ZomChess ${ZOMCHESS_SOURCES})
-    target_include_directories(ZomChess PRIVATE src)
+    target_include_directories(ZomChess PRIVATE src ${RAYLIB_NATIVE_INCLUDE})
+    target_compile_definitions(ZomChess PRIVATE RAYLIB_BUILD)
+    target_compile_options(ZomChess PRIVATE -include ${CMAKE_SOURCE_DIR}/src/RaylibBuildPrelude.h)
 
     target_link_libraries(ZomChess PRIVATE
-        sfml-graphics
-        sfml-window
-        sfml-system
-        sfml-audio
-        ImGui-SFML::ImGui-SFML
+        ${RAYLIB_NATIVE_LIB}
+        GL
+        m
+        pthread
+        dl
+        rt
+        X11
     )
 
     add_custom_command(TARGET ZomChess POST_BUILD
