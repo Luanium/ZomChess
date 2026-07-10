@@ -94,6 +94,28 @@ static Color getTerrainDisplayColor(const GameState& state, int x, int y) {
     return target;
 }
 
+// Returns true and fills outX/outY (grid-space float coords) if a wind push
+// animation is active for this entity/item; otherwise returns false.
+static bool getWindAnimGridPos(const GameState& state, bool isHuman, size_t idx,
+                                bool isLoot, size_t lootIdx, bool isGrenade, size_t grenadeIdx,
+                                float& outX, float& outY) {
+    for (const auto& anim : state.wind_push_animations) {
+        bool match = false;
+        if (isHuman && anim.is_human) match = true;
+        else if (isLoot && anim.is_loot && anim.loot_idx == lootIdx) match = true;
+        else if (isGrenade && anim.is_grenade && anim.grenade_idx == grenadeIdx) match = true;
+        else if (!isHuman && !isLoot && !isGrenade && !anim.is_human && !anim.is_loot && !anim.is_grenade && anim.zombie_idx == idx) match = true;
+        if (!match) continue;
+        float t = std::min(1.0f, anim.timer / anim.duration);
+        // ease-out for a natural slide
+        t = 1.0f - (1.0f - t) * (1.0f - t);
+        outX = anim.from.x + (anim.to.x - anim.from.x) * t;
+        outY = anim.from.y + (anim.to.y - anim.from.y) * t;
+        return true;
+    }
+    return false;
+}
+
 // ── Shared checkbox drawer: bigger box, checkmark style (2 crossing lines) instead of solid fill ──
 // Returns true if the box was clicked this frame (caller still owns the toggle logic).
 static bool drawCheckbox(Vector2 mouse, bool clicked, float x, float y, bool checked, const char* label, int fontSize = 15) {
@@ -153,40 +175,40 @@ static void runSplashScreen(Font& gameFont) {
         }
 
         const char* title = "ZomChess";
-        float titleSize = 80.0f;
+        float titleSize = 150.0f;
         Vector2 tsz = MeasureTextEx(gameFont, title, titleSize, 3.0f);
         float titleX = (W - tsz.x) / 2.0f;
-        float titleY = H * 0.28f;
+        float titleY = H * 0.22f;
 
         // Blood-red jittery glow layers behind (zombie horror vibe)
         for (int i = 3; i >= 1; --i) {
-            float jitterX = sinf(elapsed * 9.0f + i) * 2.0f * i;
-            float jitterY = cosf(elapsed * 7.0f + i) * 1.5f * i;
+            float jitterX = sinf(elapsed * 9.0f + i) * 2.5f * i;
+            float jitterY = cosf(elapsed * 7.0f + i) * 2.0f * i;
             unsigned char glowA = (unsigned char)((a / 3) * (4 - i) / 3.0f);
             DrawTextEx(gameFont, title, (Vector2){titleX + jitterX, titleY + jitterY}, titleSize, 3.0f,
                        (Color){170, 20, 20, glowA});
         }
-        // Main title — sickly green, slight pulse
-        float pulse = 0.85f + 0.15f * sinf(elapsed * 2.5f);
+        // Main title — bright yellow-orange, high contrast against the dark background
+        float pulse = 0.9f + 0.1f * sinf(elapsed * 2.5f);
         DrawTextEx(gameFont, title, (Vector2){titleX, titleY}, titleSize, 3.0f,
-                   (Color){(unsigned char)(60*pulse), (unsigned char)(220*pulse), (unsigned char)(110*pulse), a});
+                   (Color){255, (unsigned char)(200*pulse), (unsigned char)(30*pulse), a});
 
         const char* tagline = "EVERY WRONG MOVE LEADS YOU TO DEATH!";
-        float tagSize = 20.0f;
+        float tagSize = 28.0f;
         Vector2 tagsz = MeasureTextEx(gameFont, tagline, tagSize, 1.0f);
-        DrawTextEx(gameFont, tagline, (Vector2){(W - tagsz.x) / 2.0f, titleY + 100}, tagSize, 1.0f,
-                   (Color){160, 160, 160, a});
+        DrawTextEx(gameFont, tagline, (Vector2){(W - tagsz.x) / 2.0f, titleY + titleSize + 20}, tagSize, 1.0f,
+                   (Color){190, 190, 190, a});
 
         const char* credit = "Created by: Phan Anh Luan";
-        float credSize = 18.0f;
+        float credSize = 22.0f;
         Vector2 credsz = MeasureTextEx(gameFont, credit, credSize, 1.0f);
-        DrawTextEx(gameFont, credit, (Vector2){(W - credsz.x) / 2.0f, H * 0.55f}, credSize, 1.0f,
+        DrawTextEx(gameFont, credit, (Vector2){(W - credsz.x) / 2.0f, H * 0.62f}, credSize, 1.0f,
                    (Color){220, 190, 90, a});
 
         const char* music = "Music: Kevin MacLeod (incompetech.com) - CC BY 4.0";
-        float musSize = 13.0f;
+        float musSize = 15.0f;
         Vector2 mussz = MeasureTextEx(gameFont, music, musSize, 1.0f);
-        DrawTextEx(gameFont, music, (Vector2){(W - mussz.x) / 2.0f, H * 0.55f + 26}, musSize, 1.0f,
+        DrawTextEx(gameFont, music, (Vector2){(W - mussz.x) / 2.0f, H * 0.62f + 32}, musSize, 1.0f,
                    (Color){120, 120, 120, a});
 
         DrawTextEx(gameFont, "v2.6.0", (Vector2){(float)(W - 70), (float)(H - 30)}, 16.0f, 1.0f,
@@ -194,9 +216,9 @@ static void runSplashScreen(Font& gameFont) {
 
         float blink = 0.5f + 0.5f * sinf(elapsed * 3.5f);
         const char* prompt = "Press any key to continue...";
-        Vector2 psz = MeasureTextEx(gameFont, prompt, 18, 1);
-        DrawTextEx(gameFont, prompt, (Vector2){(W - psz.x) / 2.0f, H * 0.75f},
-                   18.0f, 1.0f, (Color){140, 140, 140, (unsigned char)(blink * a)});
+        Vector2 psz = MeasureTextEx(gameFont, prompt, 22, 1);
+        DrawTextEx(gameFont, prompt, (Vector2){(W - psz.x) / 2.0f, H * 0.82f},
+                   22.0f, 1.0f, (Color){140, 140, 140, (unsigned char)(blink * a)});
 
         EndDrawing();
     }
@@ -286,7 +308,7 @@ struct FileBrowser {
 };
 
 int main() {
-    InitWindow(1400, 665, "ZomChess (Raylib)");
+    InitWindow(1400, 654, "ZomChess (Raylib)");
     SetTargetFPS(60);
 
     Font gameFont = LoadFontEx("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 32, nullptr, 0);
@@ -358,16 +380,18 @@ int main() {
     float sliderX = 400.0f;
     float sliderW = 970.0f;
     Vector2 mouse = {0, 0};
+    bool mouseDown = false;
+    bool suppressNextClick = true;
     auto drawSlider = [&](const char* label, int* val, int minV, int maxV, float y, Color barColor) -> void {
         DrawText(TextFormat("%s: %d", label, *val), (int)sliderX, (int)y, 16, RAYWHITE);
-        Rectangle track = { sliderX, y + 22, sliderW, 14 };
+        Rectangle track = { sliderX, y + 22, sliderW, 8 };
         DrawRectangleRounded(track, 0.5f, 4, (Color){40,40,40,255});
         float pct = (float)(*val - minV) / (float)(maxV - minV);
-        Rectangle fill = { sliderX, y + 22, sliderW * pct, 14 };
+        Rectangle fill = { sliderX, y + 22, sliderW * pct, 8 };
         DrawRectangleRounded(fill, 0.5f, 4, barColor);
         float knobX = sliderX + sliderW * pct;
-        DrawCircle((int)knobX, (int)(y + 29), 9.0f, RAYWHITE);
-        if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && CheckCollisionPointRec(mouse, (Rectangle){sliderX - 10, y, sliderW + 20, 36})) {
+        DrawCircle((int)knobX, (int)(y + 26), 6.0f, RAYWHITE);
+        if (mouseDown && CheckCollisionPointRec(mouse, (Rectangle){sliderX - 10, y, sliderW + 20, 36})) {
             float p = (mouse.x - sliderX) / sliderW;
             p = std::max(0.0f, std::min(1.0f, p));
             *val = minV + (int)std::round(p * (maxV - minV));
@@ -388,7 +412,12 @@ int main() {
         float dtSeconds = GetFrameTime();
         AudioManager::getInstance().updateMusic();
         mouse = GetMousePosition();
-        bool mouseClicked = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+        bool mouseDownRaw = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
+        if (suppressNextClick) {
+            if (!mouseDownRaw) suppressNextClick = false;
+        }
+        bool mouseClicked = !suppressNextClick && IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+        mouseDown = !suppressNextClick && mouseDownRaw;
 
         if (closeRequested && !showConfirmExitGame && !showConfirmReturnHub) {
             if (state.current_scene == GameScene::Playing || state.current_scene == GameScene::MapEditor) {
@@ -505,14 +534,14 @@ int main() {
             // A small local slider drawer bound to colA width so labels/tracks fit
             auto drawSliderW = [&](const char* label, int* val, int minV, int maxV, float x, float w, float y, Color barColor) {
                 DrawText(TextFormat("%s: %d", label, *val), (int)x, (int)y, 14, RAYWHITE);
-                Rectangle track = { x, y + 20, w, 12 };
+                Rectangle track = { x, y + 20, w, 7 };
                 DrawRectangleRounded(track, 0.5f, 4, (Color){40,40,40,255});
                 float pct = (float)(*val - minV) / (float)(maxV - minV);
-                Rectangle fill = { x, y + 20, w * pct, 12 };
+                Rectangle fill = { x, y + 20, w * pct, 7 };
                 DrawRectangleRounded(fill, 0.5f, 4, barColor);
                 float knobX = x + w * pct;
-                DrawCircle((int)knobX, (int)(y + 26), 8.0f, RAYWHITE);
-                if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && CheckCollisionPointRec(mouse, (Rectangle){x - 10, y, w + 20, 32})) {
+                DrawCircle((int)knobX, (int)(y + 23), 5.5f, RAYWHITE);
+                if (mouseDown && CheckCollisionPointRec(mouse, (Rectangle){x - 10, y, w + 20, 32})) {
                     float p = (mouse.x - x) / w;
                     p = std::max(0.0f, std::min(1.0f, p));
                     *val = minV + (int)std::round(p * (maxV - minV));
@@ -573,7 +602,7 @@ int main() {
                 static int activeKnob = -1;
                 static int activeBarId = -1;
 
-                float barH = 22.0f;
+                float barH = 14.0f;
                 Rectangle bar = { x, y, w, barH };
                 DrawRectangleRec(bar, (Color){25,25,28,255});
 
@@ -673,12 +702,12 @@ int main() {
                     drawMultiSlider(wv, wc, wl, 7, colBX, colBW, by, 1002);
                 } else {
                     // Draw a disabled, non-interactive bar
-                    Rectangle disBar = { colBX, by, colBW, 22.0f };
+                    Rectangle disBar = { colBX, by, colBW, 14.0f };
                     DrawRectangleRec(disBar, (Color){25,25,28,255});
                     float pAcc = 0.0f;
                     for (int i = 0; i < 7; ++i) {
                         float segW = colBW * (*wv[i] / 100.0f);
-                        DrawRectangle((int)(colBX + pAcc), (int)by, (int)segW, 22, wc[i]);
+                        DrawRectangle((int)(colBX + pAcc), (int)by, (int)segW, 14, wc[i]);
                         pAcc += segW;
                     }
                     DrawRectangleLinesEx(disBar, 1, (Color){20,20,20,200});
@@ -1133,6 +1162,12 @@ int main() {
             }
             for (auto& ld : state.loot_drops) ld.blink_timer += dtSeconds;
 
+            for (auto it = state.wind_push_animations.begin(); it != state.wind_push_animations.end();) {
+                it->timer += dtSeconds;
+                if (it->timer >= it->duration) it = state.wind_push_animations.erase(it);
+                else ++it;
+            }
+
             if (state.multikill_banner_timer > 0.0f) {
                 state.multikill_banner_timer -= dtSeconds;
                 if (state.multikill_banner_timer <= 0.0f) {
@@ -1186,20 +1221,30 @@ int main() {
             DrawText(TextFormat("%d", mapY + 1), (int)(boardOffset - 16), (int)(ly * cellSize + boardOffset + cellSize * 0.28f), 12, (Color){180,190,205,255});
         }
 
-        for (const auto& ld : state.loot_drops) {
-            int llx = ld.pos.x - viewX, lly = ld.pos.y - viewY;
+        for (size_t li = 0; li < state.loot_drops.size(); ++li) {
+            const auto& ld = state.loot_drops[li];
+            float animGX, animGY;
+            bool windAnim = getWindAnimGridPos(state, false, 0, true, li, false, 0, animGX, animGY);
+            float gx = windAnim ? animGX : (float)ld.pos.x;
+            float gy = windAnim ? animGY : (float)ld.pos.y;
+            int llx = (int)std::floor(gx) - viewX, lly = (int)std::floor(gy) - viewY;
             if (llx < 0 || llx >= VIEW_CELLS || lly < 0 || lly >= VIEW_CELLS) continue;
-            int lx = (int)(llx * cellSize + boardOffset);
-            int ly = (int)(lly * cellSize + boardOffset);
+            int lx = (int)((gx - viewX) * cellSize + boardOffset);
+            int ly = (int)((gy - viewY) * cellSize + boardOffset);
             DrawRectangle(lx + 4, ly + 4, (int)(cellSize - 8), (int)(cellSize - 8), (Color){80, 60, 20, 200});
             DrawText("?", lx + (int)(cellSize / 2) - 5, ly + (int)(cellSize / 2) - 10, 20, (Color){255, 220, 60, 255});
         }
 
-        for (const auto& g : state.active_grenades) {
+        for (size_t gi = 0; gi < state.active_grenades.size(); ++gi) {
+            const auto& g = state.active_grenades[gi];
             if (!g.active) continue;
-            int glx = g.pos.x - viewX, gly = g.pos.y - viewY;
+            float animGX, animGY;
+            bool windAnim = getWindAnimGridPos(state, false, 0, false, 0, true, gi, animGX, animGY);
+            float gx = windAnim ? animGX : (float)g.pos.x;
+            float gy = windAnim ? animGY : (float)g.pos.y;
+            int glx = (int)std::floor(gx) - viewX, gly = (int)std::floor(gy) - viewY;
             if (glx < 0 || glx >= VIEW_CELLS || gly < 0 || gly >= VIEW_CELLS) continue;
-            DrawCircle((int)(glx * cellSize + boardOffset + cellSize / 2), (int)(gly * cellSize + boardOffset + cellSize / 2),
+            DrawCircle((int)((gx - viewX) * cellSize + boardOffset + cellSize / 2), (int)((gy - viewY) * cellSize + boardOffset + cellSize / 2),
                        8.0f, (Color){50, 210, 50, 255});
         }
 
@@ -1212,12 +1257,29 @@ int main() {
                 state.ice_slide_animation.current_step < (int)state.ice_slide_animation.path.size()) {
                 drawPos = state.ice_slide_animation.path[state.ice_slide_animation.current_step];
             }
-            int zlx = drawPos.x - viewX, zly = drawPos.y - viewY;
+            float animGX, animGY;
+            bool windAnim = getWindAnimGridPos(state, false, zi, false, 0, false, 0, animGX, animGY);
+            int zlx, zly;
+            float zx, zy;
+            if (windAnim) {
+                zlx = (int)std::floor(animGX) - viewX; zly = (int)std::floor(animGY) - viewY;
+                zx = (animGX - viewX) * cellSize + boardOffset + 3.0f;
+                zy = (animGY - viewY) * cellSize + boardOffset + 3.0f;
+            } else {
+                zlx = drawPos.x - viewX; zly = drawPos.y - viewY;
+                zx = zlx * cellSize + boardOffset + 3.0f;
+                zy = zly * cellSize + boardOffset + 3.0f;
+            }
             if (zlx < 0 || zlx >= VIEW_CELLS || zly < 0 || zly >= VIEW_CELLS) continue;
-            float zx = zlx * cellSize + boardOffset + 3.0f;
-            float zy = zly * cellSize + boardOffset + 3.0f;
             DrawRectangle((int)zx, (int)zy, (int)(cellSize - 6.0f), (int)(cellSize - 6.0f), zombieColor(z->type));
             DrawText(TextFormat("%d", z->hp), (int)zx + 12, (int)zy + 10, 16, WHITE);
+
+            // Active zombie indicator: bright pulsing yellow border on the zombie whose turn it is
+            if (state.phase == TurnPhase::ZombieAnimating && zi == state.active_zombie_idx) {
+                float pulse = 0.5f + 0.5f * sinf(GetTime() * 12.0f);
+                unsigned char borderA = (unsigned char)(180 + 75 * pulse);
+                DrawRectangleLinesEx((Rectangle){zx, zy, cellSize - 6.0f, cellSize - 6.0f}, 2.5f, (Color){255, 255, 60, borderA});
+            }
 
             std::string tags;
             if (z->is_burning)   tags += "B";
@@ -1235,11 +1297,58 @@ int main() {
                 state.ice_slide_animation.current_step < (int)state.ice_slide_animation.path.size()) {
                 drawPos = state.ice_slide_animation.path[state.ice_slide_animation.current_step];
             }
-            int hlx = drawPos.x - viewX, hly = drawPos.y - viewY;
+            float animGX, animGY;
+            bool windAnim = getWindAnimGridPos(state, true, 0, false, 0, false, 0, animGX, animGY);
+            int hlx, hly; float hx, hy;
+            if (windAnim) {
+                hlx = (int)std::floor(animGX) - viewX; hly = (int)std::floor(animGY) - viewY;
+                hx = (animGX - viewX) * cellSize + boardOffset + 3.0f;
+                hy = (animGY - viewY) * cellSize + boardOffset + 3.0f;
+            } else {
+                hlx = drawPos.x - viewX; hly = drawPos.y - viewY;
+                hx = hlx * cellSize + boardOffset + 3.0f;
+                hy = hly * cellSize + boardOffset + 3.0f;
+            }
             if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) {
                 float hx = hlx * cellSize + boardOffset + 3.0f;
                 float hy = hly * cellSize + boardOffset + 3.0f;
-                DrawRectangle((int)hx, (int)hy, (int)(cellSize - 6.0f), (int)(cellSize - 6.0f), WHITE);
+                float hw = cellSize - 6.0f;
+
+                // Base square + colored border for visual distinction from zombies
+                DrawRectangle((int)hx, (int)hy, (int)hw, (int)hw, (Color){235, 240, 245, 255});
+
+                // Heartbeat-style pulsing border: sharp double-beat rhythm, faster/redder when HP is low
+                {
+                    float t = GetTime();
+                    float hpRatio = (float)state.human.hp / std::max(1, state.active_config.human_hp);
+                    float beatSpeed = 1.0f + (1.0f - std::clamp(hpRatio, 0.0f, 1.0f)) * 5.0f; // faster when hurt
+                    float phase = fmodf(t * beatSpeed, 1.0f);
+                    // Two quick pulses per cycle (lub-dub)
+                    float beat = std::max(std::exp(-phase * 18.0f), std::exp(-fabsf(phase - 0.35f) * 18.0f));
+                    float thickness = beat * 4.0f;
+                    unsigned char r = 255;
+                    unsigned char g = (unsigned char)(60 + (1.0f - beat) * 100);
+                    unsigned char b = (unsigned char)(60 + (1.0f - beat) * 100);
+                    DrawRectangleLinesEx((Rectangle){hx, hy, hw, hw}, thickness, (Color){r, g, b, 255});
+                }
+
+                // HP number centered (like zombies)
+                std::string hpStr = TextFormat("%d", state.human.hp);
+                Vector2 hpSz = MeasureTextEx(gameFont, hpStr.c_str(), 16, 1.0f);
+                DrawTextEx(gameFont, hpStr.c_str(),
+                           (Vector2){hx + hw/2.0f - hpSz.x/2.0f, hy + hw/2.0f - hpSz.y/2.0f},
+                           16, 1.0f, (Color){20, 30, 40, 255});
+
+                // Stamina dots centered at the bottom
+                int safeStam = std::max(0, std::min(10, state.human.stamina));
+                if (safeStam > 0) {
+                    float dotGap = 5.0f;
+                    float totalW = (safeStam - 1) * dotGap;
+                    float startX = hx + hw/2.0f - totalW/2.0f;
+                    for (int d = 0; d < safeStam; ++d) {
+                        DrawCircle((int)(startX + d * dotGap), (int)(hy + hw - 6), 2.3f, (Color){60, 170, 255, 255});
+                    }
+                }
 
                 std::string htags;
                 if (state.human.is_burning)   htags += "B";
@@ -1297,14 +1406,49 @@ int main() {
                 float zy = zly * cellSize + boardOffset + 3.0f;
                 DrawRectangle((int)zx, (int)zy, (int)(cellSize - 6.0f), (int)(cellSize - 6.0f), zombieColor(z->type));
                 DrawText(TextFormat("%d", z->hp), (int)zx + 12, (int)zy + 10, 16, WHITE);
+
+                // Active zombie indicator: bright pulsing yellow border on the zombie whose turn it is
+                if (state.phase == TurnPhase::ZombieAnimating && zi == state.active_zombie_idx) {
+                    float pulse = 0.5f + 0.5f * sinf(GetTime() * 12.0f);
+                    unsigned char borderA = (unsigned char)(180 + 75 * pulse);
+                    DrawRectangleLinesEx((Rectangle){zx, zy, cellSize - 6.0f, cellSize - 6.0f}, 2.5f, (Color){255, 255, 60, borderA});
+                }
             }
-            // Redraw human if standing on a lit cell
-            if (state.human.hp > 0 && fireLit[state.human.pos.x][state.human.pos.y]) {
+            // Always redraw Human on top of the shroud, regardless of fire-lit status
+            if (state.human.hp > 0) {
                 int hlx = state.human.pos.x - viewX, hly = state.human.pos.y - viewY;
                 if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) {
                     float hx = hlx * cellSize + boardOffset + 3.0f;
                     float hy = hly * cellSize + boardOffset + 3.0f;
-                    DrawRectangle((int)hx, (int)hy, (int)(cellSize - 6.0f), (int)(cellSize - 6.0f), WHITE);
+                    float hw = cellSize - 6.0f;
+
+                    DrawRectangle((int)hx, (int)hy, (int)hw, (int)hw, (Color){235, 240, 245, 255});
+                    {
+                        float t = GetTime();
+                        float hpRatio = (float)state.human.hp / std::max(1, state.active_config.human_hp);
+                        float beatSpeed = 1.0f + (1.0f - std::clamp(hpRatio, 0.0f, 1.0f)) * 5.0f;
+                        float phase = fmodf(t * beatSpeed, 1.0f);
+                        float beat = std::max(std::exp(-phase * 18.0f), std::exp(-fabsf(phase - 0.35f) * 18.0f));
+                        float thickness = beat * 4.0f;
+                        unsigned char g2 = (unsigned char)(60 + (1.0f - beat) * 100);
+                        DrawRectangleLinesEx((Rectangle){hx, hy, hw, hw}, thickness, (Color){255, g2, g2, 255});
+                    }
+
+                    std::string hpStr = TextFormat("%d", state.human.hp);
+                    Vector2 hpSz = MeasureTextEx(gameFont, hpStr.c_str(), 16, 1.0f);
+                    DrawTextEx(gameFont, hpStr.c_str(),
+                               (Vector2){hx + hw/2.0f - hpSz.x/2.0f, hy + hw/2.0f - hpSz.y/2.0f},
+                               16, 1.0f, (Color){20, 30, 40, 255});
+
+                    int safeStam = std::max(0, std::min(10, state.human.stamina));
+                    if (safeStam > 0) {
+                        float dotGap = 5.0f;
+                        float totalW = (safeStam - 1) * dotGap;
+                        float startX = hx + hw/2.0f - totalW/2.0f;
+                        for (int d = 0; d < safeStam; ++d) {
+                            DrawCircle((int)(startX + d * dotGap), (int)(hy + hw - 6), 2.3f, (Color){60, 170, 255, 255});
+                        }
+                    }
                 }
             }
         }
@@ -1345,8 +1489,14 @@ int main() {
                     int ovx = nx - viewX, ovy = ny - viewY;
                     if (ovx < 0 || ovx >= VIEW_CELLS || ovy < 0 || ovy >= VIEW_CELLS) continue;
 
-                    float acx = ovx * cellSize + boardOffset + cellSize / 2.0f;
-                    float acy = ovy * cellSize + boardOffset + cellSize / 2.0f;
+                    float humanCX = (state.human.pos.x - viewX) * cellSize + boardOffset + cellSize / 2.0f;
+                    float humanCY = (state.human.pos.y - viewY) * cellSize + boardOffset + cellSize / 2.0f;
+                    float targetCX = ovx * cellSize + boardOffset + cellSize / 2.0f;
+                    float targetCY = ovy * cellSize + boardOffset + cellSize / 2.0f;
+                    // Pull arrow position toward Human (35% of the way from target to human)
+                    const float PULL_FACTOR = 0.2f;
+                    float acx = targetCX + (humanCX - targetCX) * PULL_FACTOR;
+                    float acy = targetCY + (humanCY - targetCY) * PULL_FACTOR;
                     float angle = atan2f((float)dy, (float)dx);
                     float pulse = 1.0f + 0.15f * sinf(GetTime() * 15.0f);
                     float size = (state.input_mode == InputMode::TargetKnife ? 7.0f : 10.0f) * pulse;
@@ -1397,11 +1547,20 @@ int main() {
                 float t = 1.0f - progress;
                 Vector2 pos = { s.x + (e.x - s.x) * t, s.y + (e.y - s.y) * t };
                 DrawCircle((int)pos.x, (int)pos.y, 6.0f, (Color){255, 120, 0, 230});
-            } else if (state.active_fx.type == FXType::Shotgun || state.active_fx.type == FXType::Explosion) {
+            } else if (state.active_fx.type == FXType::Shotgun) {
                 float intensity = sqrtf(progress);
-                Color blastColor = (state.active_fx.type == FXType::Shotgun)
-                    ? (Color){255, 130, 30, (unsigned char)(intensity * 180)}
-                    : (Color){255, 50, 10, (unsigned char)(intensity * 240)};
+                Color blastColor = (Color){255, 130, 30, (unsigned char)(intensity * 180)};
+                for (const auto& p : state.active_fx.blast_cells) {
+                    int bx = p.x - viewX, by = p.y - viewY;
+                    if (bx < 0 || bx >= VIEW_CELLS || by < 0 || by >= VIEW_CELLS) continue;
+                    DrawRectangle((int)(bx * cellSize + boardOffset + 1), (int)(by * cellSize + boardOffset + 1),
+                                  (int)(cellSize - 2), (int)(cellSize - 2), blastColor);
+                }
+            } else if (state.active_fx.type == FXType::Explosion) {
+                // Flickering/blinking effect: alternates between bright flash and dim
+                float flash = 0.2f + 0.8f * std::abs(sinf(state.active_fx.timer * 35.0f));
+                float intensity = progress * flash;
+                Color blastColor = (Color){255, 50, 10, (unsigned char)(intensity * 240)};
                 for (const auto& p : state.active_fx.blast_cells) {
                     int bx = p.x - viewX, by = p.y - viewY;
                     if (bx < 0 || bx >= VIEW_CELLS || by < 0 || by >= VIEW_CELLS) continue;
@@ -1417,9 +1576,61 @@ int main() {
                 }
                 int clx = state.active_fx.cx - viewX, cly = state.active_fx.cy - viewY;
                 if (clx >= 0 && clx < VIEW_CELLS && cly >= 0 && cly < VIEW_CELLS) {
-                    float tx = clx * cellSize + boardOffset + cellSize / 2.0f;
-                    float ty = cly * cellSize + boardOffset + cellSize / 2.0f;
-                    DrawLineEx((Vector2){tx, boardOffset}, (Vector2){tx, ty + cellSize / 2.0f}, 3.0f, (Color){255, 255, 255, alpha});
+                    float targetX = clx * cellSize + boardOffset + cellSize / 2.0f;
+                    float targetY = cly * cellSize + boardOffset + cellSize / 2.0f;
+                    float startY = boardOffset;
+
+                    // Deterministic noise from the fixed seed — shape never changes during the strike
+                    unsigned int seed = (unsigned int)state.active_fx.lightning_seed;
+                    auto noiseAt = [&](int a, int b) -> float {
+                        unsigned int h = seed * 2654435761u + a * 73856093u + b * 19349663u;
+                        h = (h ^ (h >> 13)) * 1274126177u;
+                        h ^= (h >> 16);
+                        return ((float)(h % 1000) / 1000.0f) * 2.0f - 1.0f; // -1..1
+                    };
+
+                    // Fade: bright flash at strike start, fading out with progress
+                    unsigned char boltA = (unsigned char)(alpha);
+
+                    // Main zigzag trunk: sharp broken segments, fixed shape
+                    int segments = 6;
+                    std::vector<Vector2> trunk;
+                    trunk.push_back((Vector2){targetX, startY});
+                    for (int i = 1; i < segments; ++i) {
+                        float py = startY + (targetY - startY) * ((float)i / segments);
+                        float maxDrift = 26.0f * (1.0f - (float)i / segments * 0.55f); // narrows toward strike
+                        float nx = noiseAt(i, 0);
+                        trunk.push_back((Vector2){targetX + nx * maxDrift, py});
+                    }
+                    trunk.push_back((Vector2){targetX, targetY}); // exact sharp tip at cell center
+
+                    // Draw trunk: thick+branching near top, sharp thin near bottom
+                    for (size_t i = 0; i + 1 < trunk.size(); ++i) {
+                        float segT = (float)i / (trunk.size() - 1);
+                        float thickness = 8.0f * (1.0f - segT) + 1.2f;
+                        DrawLineEx(trunk[i], trunk[i+1], thickness + 3.0f, (Color){255, 225, 80, (unsigned char)(boltA * 0.45f)});
+                        DrawLineEx(trunk[i], trunk[i+1], thickness, (Color){255, 250, 190, boltA});
+                    }
+
+                    // Root-like branches near the top (first 2-3 segments only)
+                    int branchSegs = std::min(3, segments - 1);
+                    for (int i = 0; i < branchSegs; ++i) {
+                        Vector2 base = trunk[i];
+                        float by2 = base.y + (trunk[i+1].y - base.y) * 0.5f;
+                        for (int side = -1; side <= 1; side += 2) {
+                            float bn = noiseAt(i + 10, side) ;
+                            float branchLen = 16.0f - i * 3.0f;
+                            Vector2 tip = { base.x + side * (10.0f + std::abs(bn) * 14.0f), by2 + branchLen * 0.5f };
+                            float bthick = 2.5f - i * 0.5f;
+                            DrawLineEx(base, tip, bthick + 2.0f, (Color){255, 220, 70, (unsigned char)(boltA * 0.3f)});
+                            DrawLineEx(base, tip, bthick, (Color){255, 245, 170, (unsigned char)(boltA * 0.8f)});
+                        }
+                    }
+
+                    // Bright core flash at the exact strike point, strongest at start, fading with progress
+                    float flashIntensity = progress; // progress already goes 1 -> 0 over lifetime
+                    DrawCircle((int)targetX, (int)targetY, 5.0f, (Color){255, 255, 225, (unsigned char)(255 * flashIntensity)});
+                    DrawCircle((int)targetX, (int)targetY, 11.0f, (Color){255, 225, 90, (unsigned char)(140 * flashIntensity)});
                 }
             } else if (state.active_fx.type == FXType::Rain) {
                 float boardDim = VIEW_CELLS * cellSize;
@@ -1455,9 +1666,24 @@ int main() {
                 DrawRectangle((int)boardOffset, (int)boardOffset, (int)(VIEW_CELLS * cellSize), (int)(VIEW_CELLS * cellSize),
                               (Color){255, 220, 100, (unsigned char)(intensity * 100)});
             } else if (state.active_fx.type == FXType::Blizzard) {
-                float intensity = 0.5f + 0.3f * sinf(GetTime() * 4.0f);
+                float intensity = 0.4f + 0.2f * sinf(GetTime() * 3.0f);
                 DrawRectangle((int)boardOffset, (int)boardOffset, (int)(VIEW_CELLS * cellSize), (int)(VIEW_CELLS * cellSize),
-                              (Color){220, 240, 255, (unsigned char)(intensity * 100)});
+                              (Color){220, 240, 255, (unsigned char)(intensity * 70)});
+
+                // Falling snowflakes, deterministic per-flake drift using index-based noise
+                float boardDim = VIEW_CELLS * cellSize;
+                float t = GetTime();
+                int flakeCount = 60;
+                for (int i = 0; i < flakeCount; ++i) {
+                    float seedX = fmodf(i * 53.7f, boardDim);
+                    float fallSpeed = 40.0f + (i % 5) * 15.0f;
+                    float sway = sinf(t * 1.5f + i) * 8.0f;
+                    float fx = boardOffset + seedX + sway;
+                    float fy = boardOffset + fmodf(i * 91.3f + t * fallSpeed, boardDim);
+                    float radius = 1.5f + (i % 3) * 0.8f;
+                    unsigned char flakeA = (unsigned char)(alpha * (0.5f + 0.5f * ((i % 4) / 4.0f)));
+                    DrawCircle((int)fx, (int)fy, radius, (Color){255, 255, 255, flakeA});
+                }
             }
         }
 
@@ -1534,40 +1760,72 @@ int main() {
 
         // ── Horizontal scrollbar (below board) ──
         {
+            static bool hDragging = false;
+            static float hDragStartMouseX = 0.0f;
+            static float hDragStartPct = 0.0f;
+
             int maxViewX = std::max(0, state.width - VIEW_CELLS);
             float trackW = VIEW_CELLS * cellSize;
             Rectangle hTrack = { boardOffset, boardOffset + VIEW_CELLS * cellSize + 6, trackW, scrollThickness };
             DrawRectangleRounded(hTrack, 0.5f, 4, (Color){40,40,40,255});
             if (maxViewX > 0) {
                 float thumbW = std::max(30.0f, (float)VIEW_CELLS / state.width * trackW);
-                float thumbX = hTrack.x + ((float)viewX / maxViewX) * (trackW - thumbW);
+                float curPct = (float)viewX / maxViewX;
+                float thumbX = hTrack.x + curPct * (trackW - thumbW);
                 Rectangle hThumb = { thumbX, hTrack.y, thumbW, scrollThickness };
                 bool hHover = CheckCollisionPointRec(mouse, hThumb);
                 DrawRectangleRounded(hThumb, 0.5f, 4, hHover ? (Color){170,170,170,255} : (Color){110,110,110,255});
-                if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && CheckCollisionPointRec(mouse, hTrack)) {
-                    float pct = (mouse.x - hTrack.x - thumbW * 0.5f) / (trackW - thumbW);
-                    pct = std::max(0.0f, std::min(1.0f, pct));
-                    viewX = (int)std::round(pct * maxViewX);
+
+                if (mouseDown) {
+                    if (!hDragging && CheckCollisionPointRec(mouse, hThumb)) {
+                        hDragging = true;
+                        hDragStartMouseX = mouse.x;
+                        hDragStartPct = curPct;
+                    }
+                    if (hDragging) {
+                        float deltaPx = mouse.x - hDragStartMouseX;
+                        float deltaPct = deltaPx / (trackW - thumbW);
+                        float newPct = std::max(0.0f, std::min(1.0f, hDragStartPct + deltaPct));
+                        viewX = (int)std::round(newPct * maxViewX);
+                    }
+                } else {
+                    hDragging = false;
                 }
             }
         }
 
         // ── Vertical scrollbar (right of board) ──
         {
+            static bool vDragging = false;
+            static float vDragStartMouseY = 0.0f;
+            static float vDragStartPct = 0.0f;
+
             int maxViewY = std::max(0, state.height - VIEW_CELLS);
             float trackH = VIEW_CELLS * cellSize;
             Rectangle vTrack = { boardOffset + VIEW_CELLS * cellSize + 6, boardOffset, scrollThickness, trackH };
             DrawRectangleRounded(vTrack, 0.5f, 4, (Color){40,40,40,255});
             if (maxViewY > 0) {
                 float thumbH = std::max(30.0f, (float)VIEW_CELLS / state.height * trackH);
-                float thumbY = vTrack.y + ((float)viewY / maxViewY) * (trackH - thumbH);
+                float curPct = (float)viewY / maxViewY;
+                float thumbY = vTrack.y + curPct * (trackH - thumbH);
                 Rectangle vThumb = { vTrack.x, thumbY, scrollThickness, thumbH };
                 bool vHover = CheckCollisionPointRec(mouse, vThumb);
                 DrawRectangleRounded(vThumb, 0.5f, 4, vHover ? (Color){170,170,170,255} : (Color){110,110,110,255});
-                if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && CheckCollisionPointRec(mouse, vTrack)) {
-                    float pct = (mouse.y - vTrack.y - thumbH * 0.5f) / (trackH - thumbH);
-                    pct = std::max(0.0f, std::min(1.0f, pct));
-                    viewY = (int)std::round(pct * maxViewY);
+
+                if (mouseDown) {
+                    if (!vDragging && CheckCollisionPointRec(mouse, vThumb)) {
+                        vDragging = true;
+                        vDragStartMouseY = mouse.y;
+                        vDragStartPct = curPct;
+                    }
+                    if (vDragging) {
+                        float deltaPx = mouse.y - vDragStartMouseY;
+                        float deltaPct = deltaPx / (trackH - thumbH);
+                        float newPct = std::max(0.0f, std::min(1.0f, vDragStartPct + deltaPct));
+                        viewY = (int)std::round(newPct * maxViewY);
+                    }
+                } else {
+                    vDragging = false;
                 }
             }
         }
@@ -1618,32 +1876,58 @@ int main() {
         // ── Actions label (own line, not overlapped by the separator) ──
         DrawText("Actions", (int)panelX, (int)(boardOffset + 92), 16, (Color){255, 140, 220, 255});
 
-        DrawRectangleRec(moveBtn, (state.input_mode == InputMode::MoveMode) ? (Color){220,140,20,255} : DARKGRAY);
-        drawCenteredText("Move", moveBtn, 17, WHITE);
+        // Unified weapon-button coloring: bright base, orange when active (selected),
+        // dim/dark when unusable (disabled), so the player instantly reads availability.
+        auto weaponBtnColor = [&](bool isActive, bool isDisabled) -> Color {
+            if (isActive) return (Color){230, 140, 20, 255};       // orange = selected
+            if (isDisabled) return (Color){45, 45, 48, 255};        // dark = unusable
+            return (Color){70, 90, 100, 255};                       // bright neutral = usable
+        };
 
-        DrawRectangleRec(knifeBtn, (state.input_mode == InputMode::TargetKnife) ? (Color){150,0,150,255} : DARKGRAY);
-        drawCenteredText("Knife", knifeBtn, 17, WHITE);
-
+        bool humanTurnNow = (state.phase == TurnPhase::HumanTurn && !state.game_over && !state.game_won && !state.human.is_paralyzed);
         int icePickCost = state.human.is_frozen
             ? GameConstants::Weapons::ICE_PICK_STAMINA_COST_FROZEN
             : GameConstants::Weapons::ICE_PICK_STAMINA_COST_NORMAL;
         bool onIceUI = state.grid[state.human.pos.x][state.human.pos.y] == Terrain::Ice;
-        DrawRectangleRec(icePickBtn, onIceUI ? (Color){0,150,200,255} : DARKGRAY);
+        bool noAdjZombie = true;
+        for (const auto& z : state.zombies) {
+            if (z->hp > 0 && std::abs(z->pos.x - state.human.pos.x) <= 1 && std::abs(z->pos.y - state.human.pos.y) <= 1) { noAdjZombie = false; break; }
+        }
+        bool staminaZero = (state.human.stamina == 0);
+
+        bool moveDisabled    = !humanTurnNow || staminaZero;
+        bool knifeDisabled   = !humanTurnNow || staminaZero || noAdjZombie;
+        bool icePickDisabled = !humanTurnNow || !onIceUI || state.human.stamina < icePickCost;
+        bool pistolDisabled  = !humanTurnNow || staminaZero || state.human.pistol_ammo <= 0;
+        bool shotgunDisabled = !humanTurnNow || staminaZero || state.human.shotgun_ammo <= 0;
+        bool grenadeDisabled = !humanTurnNow || staminaZero || state.human.grenades <= 0;
+        bool molotovDisabled = !humanTurnNow || staminaZero || state.human.molotovs <= 0;
+        bool mineDisabled    = !humanTurnNow || staminaZero || state.human.mines <= 0 ||
+                                state.grid[state.human.pos.x][state.human.pos.y] == Terrain::Ice ||
+                                state.mine_grid[state.human.pos.x][state.human.pos.y];
+
+        DrawRectangleRec(moveBtn, weaponBtnColor(state.input_mode == InputMode::MoveMode, moveDisabled));
+        drawCenteredText("Move", moveBtn, 17, WHITE);
+
+        DrawRectangleRec(knifeBtn, weaponBtnColor(state.input_mode == InputMode::TargetKnife, knifeDisabled));
+        drawCenteredText("Knife", knifeBtn, 17, WHITE);
+
+        DrawRectangleRec(icePickBtn, weaponBtnColor(false, icePickDisabled));
         drawCenteredText(TextFormat("Ice Pick [-%d ST]", icePickCost), icePickBtn, 16, WHITE);
 
-        DrawRectangleRec(pistolBtn, (state.input_mode == InputMode::TargetPistol) ? (Color){200,0,0,255} : DARKGRAY);
+        DrawRectangleRec(pistolBtn, weaponBtnColor(state.input_mode == InputMode::TargetPistol, pistolDisabled));
         drawCenteredText(TextFormat("Pistol (%d)", state.human.pistol_ammo), pistolBtn, 17, WHITE);
 
-        DrawRectangleRec(shotgunBtn, (state.input_mode == InputMode::TargetShotgun) ? (Color){200,80,0,255} : DARKGRAY);
+        DrawRectangleRec(shotgunBtn, weaponBtnColor(state.input_mode == InputMode::TargetShotgun, shotgunDisabled));
         drawCenteredText(TextFormat("Shotgun (%d)", state.human.shotgun_ammo), shotgunBtn, 17, WHITE);
 
-        DrawRectangleRec(grenadeBtn, (state.input_mode == InputMode::TargetGrenade) ? (Color){0,200,0,255} : DARKGRAY);
+        DrawRectangleRec(grenadeBtn, weaponBtnColor(state.input_mode == InputMode::TargetGrenade, grenadeDisabled));
         drawCenteredText(TextFormat("Grenade (%d)", state.human.grenades), grenadeBtn, 16, WHITE);
 
-        DrawRectangleRec(molotovBtn, (state.input_mode == InputMode::TargetMolotov) ? (Color){220,90,10,255} : DARKGRAY);
+        DrawRectangleRec(molotovBtn, weaponBtnColor(state.input_mode == InputMode::TargetMolotov, molotovDisabled));
         drawCenteredText(TextFormat("Molotov (%d)", state.human.molotovs), molotovBtn, 16, WHITE);
 
-        DrawRectangleRec(mineBtn, DARKGRAY);
+        DrawRectangleRec(mineBtn, weaponBtnColor(false, mineDisabled));
         drawCenteredText(TextFormat("Mine (%d)", state.human.mines), mineBtn, 17, WHITE);
 
         DrawLine((int)panelX, (int)(boardOffset + 255), (int)(panelX + panelW), (int)(boardOffset + 255), (Color){70,70,70,255});
@@ -1654,40 +1938,38 @@ int main() {
         float colRightX = panelX + colLeftW + 20.0f;
         float colRightW = panelW - colLeftW - 20.0f;
 
-        // Left column: zombie list
+        // Left column: zombie type legend with live counts (replaces the scrollable #index list)
         int aliveCount = 0;
         for (const auto& z : state.zombies) if (z->hp > 0) aliveCount++;
         DrawText(TextFormat("Zombies: %d", aliveCount), (int)panelX, (int)sectionY, 16, (Color){255,100,100,255});
 
-        Rectangle zlistBox = { panelX, sectionY + 25, colLeftW, 70 };
-        DrawRectangleRec(zlistBox, (Color){15,15,15,180});
         {
-            static float zlistScroll = 0.0f;
-            if (CheckCollisionPointRec(mouse, zlistBox)) {
-                zlistScroll -= GetMouseWheelMove() * 20.0f;
+            int cvClever = 0, cvFast = 0, cvExploding = 0, cvVampire = 0, cvSick = 0;
+            for (const auto& z : state.zombies) {
+                if (z->hp <= 0) continue;
+                switch (z->type) {
+                    case ZombieType::Clever:    cvClever++; break;
+                    case ZombieType::Fast:      cvFast++; break;
+                    case ZombieType::Exploding: cvExploding++; break;
+                    case ZombieType::Vampire:   cvVampire++; break;
+                    case ZombieType::Sick:      cvSick++; break;
+                }
             }
-            int perRow = (int)(zlistBox.width / 40.0f);
-            if (perRow < 1) perRow = 1;
-            int rows = ((int)state.zombies.size() + perRow - 1) / perRow;
-            float contentH = rows * 20.0f;
-            float maxScroll = contentH - zlistBox.height;
-            if (maxScroll < 0) maxScroll = 0;
-            if (zlistScroll < 0) zlistScroll = 0;
-            if (zlistScroll > maxScroll) zlistScroll = maxScroll;
-
-            BeginScissorMode((int)zlistBox.x, (int)zlistBox.y, (int)zlistBox.width, (int)zlistBox.height);
-            for (size_t i = 0; i < state.zombies.size(); ++i) {
-                Color idc = state.zombies[i]->hp > 0 ? zombieColor(state.zombies[i]->type) : GRAY;
-                float ix = zlistBox.x + 5 + (i % perRow) * 40.0f;
-                float iy = zlistBox.y + 3 + (i / perRow) * 20.0f - zlistScroll;
-                DrawText(TextFormat("#%zu", i + 1), (int)ix, (int)iy, 14, idc);
-            }
-            EndScissorMode();
-
-            if (maxScroll > 0) {
-                float barH = zlistBox.height * (zlistBox.height / contentH);
-                float barY = zlistBox.y + (zlistScroll / maxScroll) * (zlistBox.height - barH);
-                DrawRectangle((int)(zlistBox.x + zlistBox.width - 6), (int)barY, 5, (int)barH, LIGHTGRAY);
+            struct LegendRow { const char* label; Color color; int count; };
+            LegendRow rows[5] = {
+                { "Clever",   zombieColor(ZombieType::Clever),    cvClever },
+                { "Fast",     zombieColor(ZombieType::Fast),      cvFast },
+                { "Exploder", zombieColor(ZombieType::Exploding), cvExploding },
+                { "Vampire",  zombieColor(ZombieType::Vampire),   cvVampire },
+                { "Sick",     zombieColor(ZombieType::Sick),      cvSick },
+            };
+            float itemW = colLeftW / 3.0f;
+            float ly = sectionY + 25;
+            for (int i = 0; i < 5; ++i) {
+                float lx = panelX + (i % 3) * itemW;
+                float ry = ly + (i / 3) * 22.0f;
+                DrawRectangle((int)lx, (int)ry, 14, 14, rows[i].color);
+                DrawText(TextFormat("%s: %d", rows[i].label, rows[i].count), (int)lx + 20, (int)(ry - 2), 14, RAYWHITE);
             }
         }
 
@@ -1768,8 +2050,8 @@ int main() {
 
         // ── End Game popup modal — drawn last so it overlays everything ──
         if (state.game_over || state.game_won) {
-            Rectangle popup = { 1400/2.0f - 220, 665/2.0f - 100, 440, 200 };
-            DrawRectangle(0, 0, 1400, 665, (Color){0, 0, 0, 150}); // dim background
+            Rectangle popup = { 1400/2.0f - 220, 654/2.0f - 100, 440, 200 };
+            DrawRectangle(0, 0, 1400, 654, (Color){0, 0, 0, 150}); // dim background
             DrawRectangleRec(popup, (Color){35, 36, 40, 255});
             DrawRectangleLinesEx(popup, 2, (Color){100, 100, 100, 255});
 
@@ -1795,8 +2077,8 @@ int main() {
 
         // ── Game Guide popup (scrollable) ──
         if (showGuide) {
-            Rectangle gpopup = { 1400/2.0f - 350, 665/2.0f - 280, 700, 560 };
-            DrawRectangle(0, 0, 1400, 665, (Color){0, 0, 0, 160});
+            Rectangle gpopup = { 1400/2.0f - 350, 654/2.0f - 280, 700, 560 };
+            DrawRectangle(0, 0, 1400, 654, (Color){0, 0, 0, 160});
             DrawRectangleRec(gpopup, (Color){28, 29, 32, 255});
             DrawRectangleLinesEx(gpopup, 2, (Color){110, 110, 110, 255});
             DrawText("ZOMCHESS — GAME GUIDE", (int)gpopup.x + 20, (int)gpopup.y + 15, 24, (Color){240, 230, 90, 255});

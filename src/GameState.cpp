@@ -1012,8 +1012,10 @@ void GameState::apply_windstorm(int dx, int dy) {
         if (is_blocking_cell(back.x, back.y) || initially_occupied(back, ref)) continue;
         if (is_blocking_cell(target.x, target.y) || currently_occupied(target, ref)) continue;
 
+        Position before_push = current;
         if (ref.human) human.pos = target;
         else zombies[ref.idx]->pos = target;
+        wind_push_animations.push_back({ref.human, ref.idx, false, 0, false, 0, before_push, target, 0.0f, 3.0f});
         active_fx.blast_cells.push_back(front);
         moved++;
 
@@ -1045,13 +1047,15 @@ void GameState::apply_windstorm(int dx, int dy) {
     }
 
     int grenades_blown = 0;
-    for (auto& g : active_grenades) {
+    for (size_t gi = 0; gi < active_grenades.size(); ++gi) {
+        auto& g = active_grenades[gi];
         if (g.active) {
-            // Grenade bị kẹt dưới băng không bị gió thổi
             if (g.frozen_under_ice) continue;
             Position g_target{g.pos.x + dx, g.pos.y + dy};
             if (!is_blocking_cell(g_target.x, g_target.y)) {
+                Position before = g.pos;
                 g.pos = g_target;
+                wind_push_animations.push_back({false, 0, false, 0, true, gi, before, g_target, 0.0f, 3.0f});
                 grenades_blown++;
             }
         }
@@ -1059,12 +1063,14 @@ void GameState::apply_windstorm(int dx, int dy) {
 
     // Gió thổi loot drops (cơ chế giống grenade)
     int loots_blown = 0;
-    for (auto& ld : loot_drops) {
-        // Loot bị kẹt dưới băng không bị gió thổi
+    for (size_t li = 0; li < loot_drops.size(); ++li) {
+        auto& ld = loot_drops[li];
         if (ld.frozen_under_ice) continue;
         Position l_target{ld.pos.x + dx, ld.pos.y + dy};
         if (!is_blocking_cell(l_target.x, l_target.y)) {
+            Position before = ld.pos;
             ld.pos = l_target;
+            wind_push_animations.push_back({false, 0, true, li, false, 0, before, l_target, 0.0f, 3.0f});
             loots_blown++;
         }
     }
@@ -1279,6 +1285,7 @@ void GameState::apply_lightning_strike() {
     active_fx.cx = strike.x;
     active_fx.cy = strike.y;
     active_fx.blast_cells = conductive_cluster;
+    active_fx.lightning_seed = (int)rng();
 
     add_log("[ENV] Lightning strikes (" + std::to_string(strike.x + 1) + ", " + std::to_string(strike.y + 1) + ")!", ImVec4(1.0f, 1.0f, 0.35f, 1.0f));
 

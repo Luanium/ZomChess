@@ -57,6 +57,7 @@ public:
     std::vector<VisualFX> attack_animations; 
     std::vector<FloatingText> floating_texts;
     IceSlideAnimation ice_slide_animation;
+    std::vector<WindPushAnim> wind_push_animations;
     std::vector<TerrainTransitionAnimation> terrain_transitions;
 
     std::mt19937 rng;

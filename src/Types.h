@@ -89,6 +89,20 @@ struct FireCell {
     int duration; 
 };
 
+// Animation for wind push (entity/item slides smoothly instead of teleporting)
+struct WindPushAnim {
+    bool is_human = false;
+    size_t zombie_idx = 0;   // valid if !is_human && !is_loot && !is_grenade
+    bool is_loot = false;
+    size_t loot_idx = 0;
+    bool is_grenade = false;
+    size_t grenade_idx = 0;
+    Position from{0,0};
+    Position to{0,0};
+    float timer = 0.0f;
+    float duration = 0.3f;
+};
+
 // Animation for ice slide (entity moves step by step)
 struct IceSlideAnimation {
     bool active = false;
@@ -123,6 +137,7 @@ struct VisualFX {
     int dy = 0;
     std::string banner_text = "";
     float overlay_intensity = 0.0f;  // For heatwave/blizzard overlay
+    int lightning_seed = 0;          // Fixed seed for this strike's zigzag shape
 };
 
 // System for dynamic floating damage/heal numbers
