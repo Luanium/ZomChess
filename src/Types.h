@@ -27,6 +27,11 @@ struct Position {
     }
 };
 
+struct ZombieSpawn {
+    Position pos;
+    ZombieType type;
+};
+
 struct GameConfig {
     int map_width  = GameConstants::Defaults::MAP_WIDTH;
     int map_height = GameConstants::Defaults::MAP_HEIGHT;
@@ -67,6 +72,8 @@ struct GameConfig {
     int env_prob_blizzard  = GameConstants::Defaults::ENV_PROB_BLIZZARD;  // Băng giá
 
     Position custom_human_pos{GameConstants::Defaults::CUSTOM_HUMAN_X, GameConstants::Defaults::CUSTOM_HUMAN_Y};
+    bool custom_human_pos_set = false;
+    std::vector<ZombieSpawn> custom_zombie_spawns;
     std::vector<std::vector<Terrain>> custom_grid;
 };
 

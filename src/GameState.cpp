@@ -268,6 +268,7 @@ bool GameState::export_challenge_file(const std::string& path) {
     outFile << "RATIO_ICE "       << active_config.ratio_ice << "\n";
     outFile << "CUST_HUMAN_X "    << active_config.custom_human_pos.x << "\n";
     outFile << "CUST_HUMAN_Y "    << active_config.custom_human_pos.y << "\n";
+    outFile << "CUST_HUMAN_SET "  << (active_config.custom_human_pos_set ? 1 : 0) << "\n";
     outFile << "ENV_PROB_CLEAR "  << active_config.env_prob_clear << "\n";
     outFile << "ENV_PROB_WIND "   << active_config.env_prob_wind << "\n";
     outFile << "ENV_PROB_RAIN "   << active_config.env_prob_rain << "\n";
@@ -284,6 +285,10 @@ bool GameState::export_challenge_file(const std::string& path) {
             }
             outFile << "\n";
         }
+        outFile << "ZOMBIE_SPAWNS " << active_config.custom_zombie_spawns.size() << "\n";
+        for (const auto& zs : active_config.custom_zombie_spawns) {
+            outFile << zs.pos.x << " " << zs.pos.y << " " << static_cast<int>(zs.type) << "\n";
+        }
     }
     outFile.close();
     return true;
@@ -293,6 +298,7 @@ bool GameState::import_challenge_file(const std::string& path) {
     std::ifstream inFile(path);
     if (!inFile.is_open()) return false;
     std::string key; int val;
+    active_config.custom_zombie_spawns.clear();
     while (inFile >> key) {
         if (key == "GRID_DATA") {
             active_config.custom_grid.assign(active_config.map_width, std::vector<Terrain>(active_config.map_height, Terrain::Dirt));
@@ -302,7 +308,18 @@ bool GameState::import_challenge_file(const std::string& path) {
                     if (inFile >> t_val) active_config.custom_grid[x][y] = static_cast<Terrain>(t_val);
                 }
             }
-            break; 
+            continue;
+        }
+        if (key == "ZOMBIE_SPAWNS") {
+            int count;
+            inFile >> count;
+            active_config.custom_zombie_spawns.clear();
+            for (int i = 0; i < count; ++i) {
+                int zx, zy, zt;
+                inFile >> zx >> zy >> zt;
+                active_config.custom_zombie_spawns.push_back({Position{zx, zy}, static_cast<ZombieType>(zt)});
+            }
+            continue;
         }
         inFile >> val;
         if (key == "MAP_W")            active_config.map_width = val;
@@ -326,6 +343,7 @@ bool GameState::import_challenge_file(const std::string& path) {
         else if (key == "FIXED_STAMINA") active_config.fixed_stamina = (val == 1);
         else if (key == "CUST_HUMAN_X") active_config.custom_human_pos.x = val;
         else if (key == "CUST_HUMAN_Y") active_config.custom_human_pos.y = val;
+        else if (key == "CUST_HUMAN_SET") active_config.custom_human_pos_set = (val == 1);
         else if (key == "RATIO_WALL")   active_config.ratio_wall = val;
         else if (key == "RATIO_WATER")  active_config.ratio_water = val;
         else if (key == "RATIO_FOREST") active_config.ratio_forest = val;
@@ -387,12 +405,26 @@ void GameState::init_game() {
         if (active_config.custom_grid.size() != static_cast<size_t>(width) || 
             active_config.custom_grid[0].size() != static_cast<size_t>(height)) {
             active_config.custom_grid.assign(width, std::vector<Terrain>(height, Terrain::Dirt));
-            active_config.custom_human_pos = {1, 1};
+            active_config.custom_human_pos_set = false;
         }
         grid = active_config.custom_grid;
-        human.pos = active_config.custom_human_pos;
-        if (grid[human.pos.x][human.pos.y] == Terrain::Wall) {
-            grid[human.pos.x][human.pos.y] = Terrain::Dirt;
+        if (active_config.custom_human_pos_set) {
+            human.pos = active_config.custom_human_pos;
+            if (grid[human.pos.x][human.pos.y] == Terrain::Wall) {
+                grid[human.pos.x][human.pos.y] = Terrain::Dirt;
+            }
+        } else {
+            std::uniform_int_distribution<int> dist_hx(0, width - 1);
+            std::uniform_int_distribution<int> dist_hy(0, height - 1);
+            human.pos = {dist_hx(rng), dist_hy(rng)};
+            int attempts = 0;
+            while (grid[human.pos.x][human.pos.y] == Terrain::Wall && attempts < 500) {
+                human.pos = {dist_hx(rng), dist_hy(rng)};
+                attempts++;
+            }
+            if (grid[human.pos.x][human.pos.y] == Terrain::Wall) {
+                grid[human.pos.x][human.pos.y] = Terrain::Dirt;
+            }
         }
     } 
     else {
@@ -486,39 +518,74 @@ void GameState::init_game() {
         }
     }
 
-    std::uniform_int_distribution<int> dist_x(0, width - 1);
-    std::uniform_int_distribution<int> dist_y(0, height - 1);
-
-    auto spawn_zombie_lambda = [&](ZombieType z_type, int count, const std::string& name, int max_hp) {
-        for (int i = 0; i < count; ++i) {
-            Position z_pos = {dist_x(rng), dist_y(rng)};
-            int attempts = 0;
-            while (true) {
-                bool invalid_pos = false;
-                if (grid[z_pos.x][z_pos.y] == Terrain::Wall) invalid_pos = true;
-                if (z_pos == human.pos) invalid_pos = true;
-                if (active_config.spawn_shield && std::abs(z_pos.x - human.pos.x) <= GameConstants::MapGen::SPAWN_SHIELD_RADIUS && std::abs(z_pos.y - human.pos.y) <= GameConstants::MapGen::SPAWN_SHIELD_RADIUS) invalid_pos = true;
-                for (const auto& z : zombies) { if (z->pos == z_pos) { invalid_pos = true; break; } }
-                if (!invalid_pos || attempts > 200) break;
-                z_pos = {dist_x(rng), dist_y(rng)};
-                attempts++;
+    if (active_config.custom_map_mode) {
+        auto zombie_name = [](ZombieType t) -> std::string {
+            switch (t) {
+                case ZombieType::Clever:    return "Clever Zom";
+                case ZombieType::Fast:      return "Fast Sprinter";
+                case ZombieType::Exploding: return "Exploder";
+                case ZombieType::Vampire:   return "Vampire Dracula";
+                case ZombieType::Sick:      return "Sick Carrier";
             }
-            if (grid[z_pos.x][z_pos.y] == Terrain::Wall) {
-                grid[z_pos.x][z_pos.y] = Terrain::Dirt;
+            return "Zombie";
+        };
+        auto zombie_hp = [](ZombieType t) -> int {
+            switch (t) {
+                case ZombieType::Clever:    return GameConstants::Zombies::BASE_HP_NORMAL;
+                case ZombieType::Fast:      return GameConstants::Zombies::BASE_HP_FAST;
+                case ZombieType::Exploding: return GameConstants::Zombies::BASE_HP_EXPLODING;
+                case ZombieType::Vampire:   return GameConstants::Zombies::BASE_HP_VAMPIRE;
+                case ZombieType::Sick:      return GameConstants::Zombies::BASE_HP_SICK;
             }
-            if (z_type == ZombieType::Clever) zombies.push_back(std::make_unique<CleverZombie>(z_pos, max_hp, name, z_type));
-            else if (z_type == ZombieType::Fast) zombies.push_back(std::make_unique<FastZombie>(z_pos, max_hp, name, z_type));
-            else if (z_type == ZombieType::Exploding) zombies.push_back(std::make_unique<ExplodingZombie>(z_pos, max_hp, name, z_type));
-            else if (z_type == ZombieType::Vampire) zombies.push_back(std::make_unique<VampireZombie>(z_pos, max_hp, name, z_type));
-            else if (z_type == ZombieType::Sick) zombies.push_back(std::make_unique<SickZombie>(z_pos, max_hp, name, z_type));
+            return 1;
+        };
+        for (const auto& zs : active_config.custom_zombie_spawns) {
+            if (zs.pos.x < 0 || zs.pos.x >= width || zs.pos.y < 0 || zs.pos.y >= height) continue;
+            if (grid[zs.pos.x][zs.pos.y] == Terrain::Wall) continue;
+            if (zs.pos == human.pos) continue;
+            int hp = zombie_hp(zs.type);
+            std::string name = zombie_name(zs.type);
+            if (zs.type == ZombieType::Clever) zombies.push_back(std::make_unique<CleverZombie>(zs.pos, hp, name, zs.type));
+            else if (zs.type == ZombieType::Fast) zombies.push_back(std::make_unique<FastZombie>(zs.pos, hp, name, zs.type));
+            else if (zs.type == ZombieType::Exploding) zombies.push_back(std::make_unique<ExplodingZombie>(zs.pos, hp, name, zs.type));
+            else if (zs.type == ZombieType::Vampire) zombies.push_back(std::make_unique<VampireZombie>(zs.pos, hp, name, zs.type));
+            else if (zs.type == ZombieType::Sick) zombies.push_back(std::make_unique<SickZombie>(zs.pos, hp, name, zs.type));
         }
-    };
+    } else {
+        std::uniform_int_distribution<int> dist_x(0, width - 1);
+        std::uniform_int_distribution<int> dist_y(0, height - 1);
 
-    spawn_zombie_lambda(ZombieType::Clever, active_config.count_normal, "Clever Zom", GameConstants::Zombies::BASE_HP_NORMAL);
-    spawn_zombie_lambda(ZombieType::Fast, active_config.count_fast, "Fast Sprinter", GameConstants::Zombies::BASE_HP_FAST);
-    spawn_zombie_lambda(ZombieType::Exploding, active_config.count_exploding, "Exploder", GameConstants::Zombies::BASE_HP_EXPLODING);
-    spawn_zombie_lambda(ZombieType::Vampire, active_config.count_vampire, "Vampire Dracula", GameConstants::Zombies::BASE_HP_VAMPIRE);
-    spawn_zombie_lambda(ZombieType::Sick, active_config.count_sick, "Sick Carrier", GameConstants::Zombies::BASE_HP_SICK);
+        auto spawn_zombie_lambda = [&](ZombieType z_type, int count, const std::string& name, int max_hp) {
+            for (int i = 0; i < count; ++i) {
+                Position z_pos = {dist_x(rng), dist_y(rng)};
+                int attempts = 0;
+                while (true) {
+                    bool invalid_pos = false;
+                    if (grid[z_pos.x][z_pos.y] == Terrain::Wall) invalid_pos = true;
+                    if (z_pos == human.pos) invalid_pos = true;
+                    if (active_config.spawn_shield && std::abs(z_pos.x - human.pos.x) <= GameConstants::MapGen::SPAWN_SHIELD_RADIUS && std::abs(z_pos.y - human.pos.y) <= GameConstants::MapGen::SPAWN_SHIELD_RADIUS) invalid_pos = true;
+                    for (const auto& z : zombies) { if (z->pos == z_pos) { invalid_pos = true; break; } }
+                    if (!invalid_pos || attempts > 200) break;
+                    z_pos = {dist_x(rng), dist_y(rng)};
+                    attempts++;
+                }
+                if (grid[z_pos.x][z_pos.y] == Terrain::Wall) {
+                    grid[z_pos.x][z_pos.y] = Terrain::Dirt;
+                }
+                if (z_type == ZombieType::Clever) zombies.push_back(std::make_unique<CleverZombie>(z_pos, max_hp, name, z_type));
+                else if (z_type == ZombieType::Fast) zombies.push_back(std::make_unique<FastZombie>(z_pos, max_hp, name, z_type));
+                else if (z_type == ZombieType::Exploding) zombies.push_back(std::make_unique<ExplodingZombie>(z_pos, max_hp, name, z_type));
+                else if (z_type == ZombieType::Vampire) zombies.push_back(std::make_unique<VampireZombie>(z_pos, max_hp, name, z_type));
+                else if (z_type == ZombieType::Sick) zombies.push_back(std::make_unique<SickZombie>(z_pos, max_hp, name, z_type));
+            }
+        };
+
+        spawn_zombie_lambda(ZombieType::Clever, active_config.count_normal, "Clever Zom", GameConstants::Zombies::BASE_HP_NORMAL);
+        spawn_zombie_lambda(ZombieType::Fast, active_config.count_fast, "Fast Sprinter", GameConstants::Zombies::BASE_HP_FAST);
+        spawn_zombie_lambda(ZombieType::Exploding, active_config.count_exploding, "Exploder", GameConstants::Zombies::BASE_HP_EXPLODING);
+        spawn_zombie_lambda(ZombieType::Vampire, active_config.count_vampire, "Vampire Dracula", GameConstants::Zombies::BASE_HP_VAMPIRE);
+        spawn_zombie_lambda(ZombieType::Sick, active_config.count_sick, "Sick Carrier", GameConstants::Zombies::BASE_HP_SICK);
+    }
 
     //add_log("Tactical Battleground initialized with dynamic safety boundaries!", ImVec4(0, 1, 1, 1));
     add_log("=== HUMAN TURN " + std::to_string(current_turn) + " START ===", ImVec4(1.0f, 0.95f, 0.25f, 1.0f));

@@ -372,6 +372,7 @@ int main() {
     Rectangle exportBtn = { 60, 440, 125, 38 };
     Rectangle importBtn = { 195, 440, 125, 38 };
     Rectangle startCustomBtn = { 60, 490, 260, 40 };
+    Rectangle quitGameBtn = { 60, 560, 260, 40 };
     std::string ioMessage;
     float ioMessageTimer = 0.0f;
     bool hasImportedConfig = false;
@@ -399,6 +400,16 @@ int main() {
     };
 
     Terrain editorSelectedTerrain = Terrain::Wall;
+    bool editorPlacingZombie = false;
+    bool editorEraseZombieMode = false;
+    bool editorPlacingHuman = false;
+    bool showConfirmEraseAllZombies = false;
+    bool showConfirmResetMap = false;
+    bool showConfirmResetTerrain = false;
+    bool eraseAllZombiesJustOpened = false;
+    bool resetMapJustOpened = false;
+    bool resetTerrainJustOpened = false;
+    ZombieType editorSelectedZombieType = ZombieType::Clever;   
 
     FileBrowser saveBrowser, loadBrowser;
 
@@ -467,6 +478,9 @@ int main() {
                     state.current_scene = GameScene::Playing;
                     AudioManager::getInstance().playMusic("battle");
                 }
+                if (CheckCollisionPointRec(mouse, quitGameBtn)) {
+                    showConfirmExitGame = true;
+                }
             }
 
             BeginDrawing();
@@ -510,6 +524,9 @@ int main() {
             DrawRectangleRec(startCustomBtn, hasImportedConfig ? (Color){160,60,180,255} : (Color){60,60,60,255});
             drawCenteredText("Start Imported Game", startCustomBtn, 16, WHITE);
 
+            DrawRectangleRec(quitGameBtn, (Color){140,20,20,255});
+            drawCenteredText("Quit Game", quitGameBtn, 16, WHITE);
+
             if (!ioMessage.empty()) {
                 DrawText(ioMessage.c_str(), 60, 540, 15, (Color){255, 220, 100, 255});
             }
@@ -519,9 +536,11 @@ int main() {
             DrawLine((int)sliderX - 30, 30, (int)sliderX - 30, 620, (Color){70,70,70,255});
 
             static float customScroll = 0.0f;
+            static float customScrollMaxCache = 0.0f;
             Rectangle scrollArea = { sliderX - 15, 68, sliderW + 30, 500 };
             if (CheckCollisionPointRec(mouse, scrollArea)) {
                 customScroll -= GetMouseWheelMove() * 30.0f;
+                customScroll = std::max(0.0f, std::min(customScroll, customScrollMaxCache));
             }
 
             float colAW = 330.0f; // left sub-column width (Map/Human/Weapons/Zombies)
@@ -550,13 +569,37 @@ int main() {
 
             // ── COLUMN A: Map / Human / Weapons / Zombie counts ──
             float ay = baseY;
-            DrawText("Map & Human", (int)sliderX, (int)ay, 17, (Color){130,220,255,255}); ay += 24;
-            drawSliderW("Map Width", &state.active_config.map_width,
-                        GameConstants::Difficulty::SliderBounds::MAP_WIDTH_MIN,
-                        GameConstants::Difficulty::SliderBounds::MAP_WIDTH_MAX, sliderX, colAW, ay, (Color){80,160,220,255}); ay += 42;
-            drawSliderW("Map Height", &state.active_config.map_height,
-                        GameConstants::Difficulty::SliderBounds::MAP_HEIGHT_MIN,
-                        GameConstants::Difficulty::SliderBounds::MAP_HEIGHT_MAX, sliderX, colAW, ay, (Color){80,160,220,255}); ay += 42;
+            DrawText("Map Size", (int)sliderX, (int)ay, 17, (Color){130,220,255,255}); ay += 24;
+            static int savedManualMapW = state.active_config.map_width;
+            static int savedManualMapH = state.active_config.map_height;
+
+            if (state.active_config.custom_map_mode) {
+                // Locked: map size always matches the custom_grid actual size
+                state.active_config.map_width  = (int)state.active_config.custom_grid.size();
+                state.active_config.map_height = state.active_config.custom_grid.empty() ? 0 : (int)state.active_config.custom_grid[0].size();
+
+                DrawText(TextFormat("Map Width: %d (locked - edit in Map Editor)", state.active_config.map_width), (int)sliderX, (int)ay, 14, (Color){150,150,150,255});
+                Rectangle trackW = { sliderX, ay + 20, colAW, 7 };
+                DrawRectangleRounded(trackW, 0.5f, 4, (Color){30,30,30,255});
+                ay += 42;
+
+                DrawText(TextFormat("Map Height: %d (locked - edit in Map Editor)", state.active_config.map_height), (int)sliderX, (int)ay, 14, (Color){150,150,150,255});
+                Rectangle trackH = { sliderX, ay + 20, colAW, 7 };
+                DrawRectangleRounded(trackH, 0.5f, 4, (Color){30,30,30,255});
+                ay += 42;
+            } else {
+                state.active_config.map_width  = savedManualMapW;
+                state.active_config.map_height = savedManualMapH;
+                drawSliderW("Map Width", &state.active_config.map_width,
+                            GameConstants::Difficulty::SliderBounds::MAP_WIDTH_MIN,
+                            GameConstants::Difficulty::SliderBounds::MAP_WIDTH_MAX, sliderX, colAW, ay, (Color){80,160,220,255}); ay += 42;
+                drawSliderW("Map Height", &state.active_config.map_height,
+                            GameConstants::Difficulty::SliderBounds::MAP_HEIGHT_MIN,
+                            GameConstants::Difficulty::SliderBounds::MAP_HEIGHT_MAX, sliderX, colAW, ay, (Color){80,160,220,255}); ay += 42;
+                savedManualMapW = state.active_config.map_width;
+                savedManualMapH = state.active_config.map_height;
+            }
+            DrawText("Human Status", (int)sliderX, (int)ay, 17, (Color){130,220,255,255}); ay += 24;
             drawSliderW("Human HP", &state.active_config.human_hp,
                         GameConstants::Difficulty::SliderBounds::HUMAN_HP_MIN,
                         GameConstants::Difficulty::SliderBounds::HUMAN_HP_MAX, sliderX, colAW, ay, (Color){220,180,60,255}); ay += 42;
@@ -655,22 +698,51 @@ int main() {
                 }
             };
 
-            DrawText("Terrain Ratios (sum = 100%)", (int)colBX, (int)by, 16, (Color){230,210,100,255}); by += 26;
+            bool terrainRatioLocked = state.active_config.custom_map_mode;
+            DrawText("Terrain Ratios (sum = 100%)", (int)colBX, (int)by,
+                     16, terrainRatioLocked ? (Color){110,110,60,255} : (Color){230,210,100,255});
+            if (terrainRatioLocked) {
+                DrawText("(locked - using Custom Map)", (int)colBX + 260, (int)by + 2, 13, (Color){200,200,80,255});
+            }
+            by += 26;
             {
                 int* tv[5] = { &state.active_config.ratio_dirt, &state.active_config.ratio_wall,
                                &state.active_config.ratio_water, &state.active_config.ratio_forest,
                                &state.active_config.ratio_ice };
-                Color tc[5] = { {105,60,35,255}, {60,62,66,255}, {35,75,115,255}, {34,110,48,255}, {160,210,240,255} };
+                Color tcFull[5] = { {105,60,35,255}, {60,62,66,255}, {35,75,115,255}, {34,110,48,255}, {160,210,240,255} };
+                Color tc[5];
+                for (int i = 0; i < 5; ++i) {
+                    tc[i] = terrainRatioLocked
+                        ? Color{ (unsigned char)(tcFull[i].r/3), (unsigned char)(tcFull[i].g/3), (unsigned char)(tcFull[i].b/3), 255 }
+                        : tcFull[i];
+                }
                 const char* tl[5] = { "Dirt", "Wall", "Water", "Forest", "Ice" };
-                drawMultiSlider(tv, tc, tl, 5, colBX, colBW, by, 1001);
+
+                if (terrainRatioLocked) {
+                    // Draw a disabled, non-interactive bar
+                    float barW = colBW;
+                    float barH = 14.0f;
+                    Rectangle disBar = { colBX, by, barW, barH };
+                    DrawRectangleRec(disBar, (Color){25,25,28,255});
+                    float pAcc = 0.0f;
+                    for (int i = 0; i < 5; ++i) {
+                        float segW = barW * (*tv[i] / 100.0f);
+                        DrawRectangle((int)(colBX + pAcc), (int)by, (int)segW, (int)barH, tc[i]);
+                        pAcc += segW;
+                    }
+                    DrawRectangleLinesEx(disBar, 1, (Color){20,20,20,200});
+                } else {
+                    drawMultiSlider(tv, tc, tl, 5, colBX, colBW, by, 1001);
+                }
                 by += 34;
                 // Legend, 3-per-row
                 float legW = colBW / 3.0f;
+                Color legTextCol = terrainRatioLocked ? (Color){110,110,110,255} : RAYWHITE;
                 for (int i = 0; i < 5; ++i) {
                     float lx = colBX + (i % 3) * legW;
                     float ly = by + (i / 3) * 22.0f;
                     DrawRectangle((int)lx, (int)ly + 2, 12, 12, tc[i]);
-                    DrawText(TextFormat("%s: %d%%", tl[i], *tv[i]), (int)lx + 18, (int)ly, 13, RAYWHITE);
+                    DrawText(TextFormat("%s: %d%%", tl[i], *tv[i]), (int)lx + 18, (int)ly, 13, legTextCol);
                 }
                 by += 22.0f * 2 + 12;
             }
@@ -690,8 +762,8 @@ int main() {
                                &state.active_config.env_prob_rain, &state.active_config.env_prob_clouds,
                                &state.active_config.env_prob_lightning, &state.active_config.env_prob_heatwave,
                                &state.active_config.env_prob_blizzard };
-                Color wcFull[7] = { {150,180,220,255}, {170,200,230,255}, {90,140,220,255}, {90,90,100,255},
-                                    {230,220,60,255}, {230,130,50,255}, {160,210,240,255} };
+                Color wcFull[7] = { {120,190,230,255}, {200,220,90,255}, {40,110,210,255}, {70,70,80,255},
+                                    {255,230,40,255}, {235,110,30,255}, {200,240,255,255} };
                 Color wc[7];
                 bool envOn = state.active_config.enable_environment;
                 for (int i = 0; i < 7; ++i) {
@@ -725,17 +797,46 @@ int main() {
             }
 
             // ── Zombie Counts (moved here, below Weather) ──
-            DrawText("Zombie Counts", (int)colBX, (int)by, 17, (Color){255,100,100,255}); by += 24;
-            drawSliderW("Clever Zombies", &state.active_config.count_normal, 0,
-                        GameConstants::Difficulty::SliderBounds::COUNT_CLEVER_MAX, colBX, colBW, by, (Color){45,175,90,255}); by += 42;
-            drawSliderW("Fast Sprinters", &state.active_config.count_fast, 0,
-                        GameConstants::Difficulty::SliderBounds::COUNT_FAST_MAX, colBX, colBW, by, (Color){55,168,255,255}); by += 42;
-            drawSliderW("Volatile Exploders", &state.active_config.count_exploding, 0,
-                        GameConstants::Difficulty::SliderBounds::COUNT_EXPLODING_MAX, colBX, colBW, by, (Color){230,140,20,255}); by += 42;
-            drawSliderW("Vampiric Draculas", &state.active_config.count_vampire, 0,
-                        GameConstants::Difficulty::SliderBounds::COUNT_VAMPIRE_MAX, colBX, colBW, by, (Color){170,50,170,255}); by += 42;
-            drawSliderW("Sick Carriers", &state.active_config.count_sick, 0,
-                        GameConstants::Difficulty::SliderBounds::COUNT_SICK_MAX, colBX, colBW, by, (Color){210,190,65,255}); by += 42;
+            bool zombieCountsLocked = state.active_config.custom_map_mode && !state.active_config.custom_zombie_spawns.empty();
+
+            DrawText("Zombie Counts", (int)colBX, (int)by, 17, (Color){255,100,100,255});
+            if (zombieCountsLocked) {
+                DrawText("(locked - set via Map Editor)", (int)colBX + 160, (int)by + 2, 13, (Color){200,200,80,255});
+            }
+            by += 24;
+
+            if (zombieCountsLocked) {
+                auto drawLockedSliderW = [&](const char* label, int val, int minV, int maxV, float x, float w, float y, Color barColor) {
+                    DrawText(TextFormat("%s: %d", label, val), (int)x, (int)y, 14, (Color){150,150,150,255});
+                    Rectangle track = { x, y + 20, w, 7 };
+                    DrawRectangleRounded(track, 0.5f, 4, (Color){30,30,30,255});
+                    float pct = (maxV > minV) ? (float)(val - minV) / (float)(maxV - minV) : 0.0f;
+                    Rectangle fill = { x, y + 20, w * pct, 7 };
+                    Color dim = { (unsigned char)(barColor.r/2), (unsigned char)(barColor.g/2), (unsigned char)(barColor.b/2), 255 };
+                    DrawRectangleRounded(fill, 0.5f, 4, dim);
+                };
+                drawLockedSliderW("Clever Zombies", state.active_config.count_normal, 0,
+                            GameConstants::Difficulty::SliderBounds::COUNT_CLEVER_MAX, colBX, colBW, by, (Color){45,175,90,255}); by += 42;
+                drawLockedSliderW("Fast Sprinters", state.active_config.count_fast, 0,
+                            GameConstants::Difficulty::SliderBounds::COUNT_FAST_MAX, colBX, colBW, by, (Color){55,168,255,255}); by += 42;
+                drawLockedSliderW("Volatile Exploders", state.active_config.count_exploding, 0,
+                            GameConstants::Difficulty::SliderBounds::COUNT_EXPLODING_MAX, colBX, colBW, by, (Color){230,140,20,255}); by += 42;
+                drawLockedSliderW("Vampiric Draculas", state.active_config.count_vampire, 0,
+                            GameConstants::Difficulty::SliderBounds::COUNT_VAMPIRE_MAX, colBX, colBW, by, (Color){170,50,170,255}); by += 42;
+                drawLockedSliderW("Sick Carriers", state.active_config.count_sick, 0,
+                            GameConstants::Difficulty::SliderBounds::COUNT_SICK_MAX, colBX, colBW, by, (Color){210,190,65,255}); by += 42;
+            } else {
+                drawSliderW("Clever Zombies", &state.active_config.count_normal, 0,
+                            GameConstants::Difficulty::SliderBounds::COUNT_CLEVER_MAX, colBX, colBW, by, (Color){45,175,90,255}); by += 42;
+                drawSliderW("Fast Sprinters", &state.active_config.count_fast, 0,
+                            GameConstants::Difficulty::SliderBounds::COUNT_FAST_MAX, colBX, colBW, by, (Color){55,168,255,255}); by += 42;
+                drawSliderW("Volatile Exploders", &state.active_config.count_exploding, 0,
+                            GameConstants::Difficulty::SliderBounds::COUNT_EXPLODING_MAX, colBX, colBW, by, (Color){230,140,20,255}); by += 42;
+                drawSliderW("Vampiric Draculas", &state.active_config.count_vampire, 0,
+                            GameConstants::Difficulty::SliderBounds::COUNT_VAMPIRE_MAX, colBX, colBW, by, (Color){170,50,170,255}); by += 42;
+                drawSliderW("Sick Carriers", &state.active_config.count_sick, 0,
+                            GameConstants::Difficulty::SliderBounds::COUNT_SICK_MAX, colBX, colBW, by, (Color){210,190,65,255}); by += 42;
+            }
 
             available = state.calculate_available_spawn_cells();
             totalZoms = state.active_config.count_normal + state.active_config.count_fast +
@@ -747,9 +848,14 @@ int main() {
             by += 30;
 
             // ── Spawn Shield checkbox (column A, below zombie counts) ──
-            bool spawnShieldClick = drawCheckbox(mouse, mouseClicked, sliderX, ay, state.active_config.spawn_shield, "Spawn Shield (safe 5x5 zone)");
-            if (spawnShieldClick) {
-                state.active_config.spawn_shield = !state.active_config.spawn_shield;
+            if (state.active_config.custom_map_mode) {
+                state.active_config.spawn_shield = false;
+                drawCheckbox(mouse, false, sliderX, ay, false, "Spawn Shield (disabled with Custom Map)");
+            } else {
+                bool spawnShieldClick = drawCheckbox(mouse, mouseClicked, sliderX, ay, state.active_config.spawn_shield, "Spawn Shield (safe 5x5 zone)");
+                if (spawnShieldClick) {
+                    state.active_config.spawn_shield = !state.active_config.spawn_shield;
+                }
             }
             ay += 32;
 
@@ -768,6 +874,7 @@ int main() {
             float contentHeight = contentBottom + customScroll - 68.0f;
             float maxScroll = std::max(0.0f, contentHeight - scrollArea.height);
             customScroll = std::max(0.0f, std::min(customScroll, maxScroll));
+            customScrollMaxCache = maxScroll;
             if (maxScroll > 0.0f) {
                 float barH = scrollArea.height * (scrollArea.height / contentHeight);
                 float barY = scrollArea.y + (customScroll / maxScroll) * (scrollArea.height - barH);
@@ -778,14 +885,62 @@ int main() {
             float fixedY = scrollArea.y + scrollArea.height + 10.0f;
 
             // Custom Map checkbox + Open Editor button
+            static int savedManualCount[5] = {-1,-1,-1,-1,-1}; // -1 = chưa lưu lần nào
+            static bool customMapEverInitialized = false;
+            auto syncCountsFromSpawns = [&]() {
+                int c[5] = {0,0,0,0,0};
+                for (const auto& zs : state.active_config.custom_zombie_spawns) {
+                    switch (zs.type) {
+                        case ZombieType::Clever:    c[0]++; break;
+                        case ZombieType::Fast:      c[1]++; break;
+                        case ZombieType::Exploding: c[2]++; break;
+                        case ZombieType::Vampire:   c[3]++; break;
+                        case ZombieType::Sick:      c[4]++; break;
+                    }
+                }
+                state.active_config.count_normal    = c[0];
+                state.active_config.count_fast      = c[1];
+                state.active_config.count_exploding = c[2];
+                state.active_config.count_vampire   = c[3];
+                state.active_config.count_sick      = c[4];
+            };
+
             bool customMapClick = drawCheckbox(mouse, mouseClicked, sliderX, fixedY, state.active_config.custom_map_mode, "Use Custom Map");
             if (customMapClick) {
-                state.active_config.custom_map_mode = !state.active_config.custom_map_mode;
-                if (state.active_config.custom_map_mode) {
-                    state.active_config.custom_grid.assign(state.active_config.map_width,
-                        std::vector<Terrain>(state.active_config.map_height, Terrain::Dirt));
-                    state.active_config.custom_human_pos = {1, 1};
+                bool wasOn = state.active_config.custom_map_mode;
+                state.active_config.custom_map_mode = !wasOn;
+                if (!wasOn) {
+                    // Turning ON custom map — only reinitialize from Main Menu sliders the FIRST time ever
+                    if (!customMapEverInitialized) {
+                        state.active_config.custom_grid.assign(state.active_config.map_width,
+                            std::vector<Terrain>(state.active_config.map_height, Terrain::Dirt));
+                        state.active_config.custom_zombie_spawns.clear();
+                        state.active_config.custom_human_pos_set = false;
+                        customMapEverInitialized = true;
+                    }
+                    if (!state.active_config.custom_zombie_spawns.empty()) {
+                        syncCountsFromSpawns();
+                    }
+                } else {
+                    // Turning OFF custom map — restore manual counts if we saved any
+                    if (savedManualCount[0] >= 0) {
+                        state.active_config.count_normal    = savedManualCount[0];
+                        state.active_config.count_fast      = savedManualCount[1];
+                        state.active_config.count_exploding = savedManualCount[2];
+                        state.active_config.count_vampire   = savedManualCount[3];
+                        state.active_config.count_sick      = savedManualCount[4];
+                    }
                 }
+            }
+
+            // Whenever the slider is unlocked (custom map off, or on but no manual zombie spawns yet),
+            // keep tracking the player's manually-adjusted counts so we can restore them later.
+            if (!state.active_config.custom_map_mode || state.active_config.custom_zombie_spawns.empty()) {
+                savedManualCount[0] = state.active_config.count_normal;
+                savedManualCount[1] = state.active_config.count_fast;
+                savedManualCount[2] = state.active_config.count_exploding;
+                savedManualCount[3] = state.active_config.count_vampire;
+                savedManualCount[4] = state.active_config.count_sick;
             }
             if (state.active_config.custom_map_mode) {
                 Rectangle editorBtn = { sliderX + 230, fixedY - 3, 200, 28 };
@@ -923,6 +1078,28 @@ int main() {
             drawFileBrowser(saveBrowser, "Save Challenge File (.zom)");
             drawFileBrowser(loadBrowser, "Load Challenge File (.zom)");
 
+            if (showConfirmExitGame) {
+                DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), (Color){0, 0, 0, 150});
+                Rectangle popup = { GetScreenWidth()/2.0f - 240, GetScreenHeight()/2.0f - 90, 480, 180 };
+                DrawRectangleRec(popup, (Color){35, 36, 40, 255});
+                DrawRectangleLinesEx(popup, 2, (Color){100, 100, 100, 255});
+                DrawText("Are you sure you want to quit the game?", (int)popup.x + 20, (int)popup.y + 30, 16, RAYWHITE);
+
+                Rectangle yesBtn = { popup.x + 40,  popup.y + 110, 180, 40 };
+                Rectangle noBtn  = { popup.x + 260, popup.y + 110, 180, 40 };
+                DrawRectangleRec(yesBtn, (Color){160, 20, 20, 255});
+                drawCenteredText("Yes, Quit Game", yesBtn, 16, WHITE);
+                DrawRectangleRec(noBtn, (Color){60, 60, 60, 255});
+                drawCenteredText("Cancel", noBtn, 16, WHITE);
+
+                if (mouseClicked && CheckCollisionPointRec(mouse, yesBtn)) {
+                    shouldQuit = true;
+                    showConfirmExitGame = false;
+                } else if (mouseClicked && CheckCollisionPointRec(mouse, noBtn)) {
+                    showConfirmExitGame = false;
+                }
+            }
+
             EndDrawing();
             continue;
         }
@@ -931,31 +1108,185 @@ int main() {
             int mw = state.active_config.map_width;
             int mh = state.active_config.map_height;
 
-            Rectangle brushDirt   = { boardOffset + mw * cellSize + 30, 40,  200, 36 };
-            Rectangle brushWall   = { boardOffset + mw * cellSize + 30, 80,  200, 36 };
-            Rectangle brushWater  = { boardOffset + mw * cellSize + 30, 120, 200, 36 };
-            Rectangle brushForest = { boardOffset + mw * cellSize + 30, 160, 200, 36 };
-            Rectangle brushIce    = { boardOffset + mw * cellSize + 30, 200, 200, 36 };
-            Rectangle saveReturnBtn = { boardOffset + mw * cellSize + 30, 260, 200, 44 };
+            static int editorViewX = 0;
+            static int editorViewY = 0;
+            int editorMaxViewX = std::max(0, mw - VIEW_CELLS);
+            int editorMaxViewY = std::max(0, mh - VIEW_CELLS);
+            editorViewX = std::max(0, std::min(editorViewX, editorMaxViewX));
+            editorViewY = std::max(0, std::min(editorViewY, editorMaxViewY));
 
-            if (mouseClicked) {
-                if (CheckCollisionPointRec(mouse, brushDirt))   editorSelectedTerrain = Terrain::Dirt;
-                if (CheckCollisionPointRec(mouse, brushWall))   editorSelectedTerrain = Terrain::Wall;
-                if (CheckCollisionPointRec(mouse, brushWater))  editorSelectedTerrain = Terrain::Water;
-                if (CheckCollisionPointRec(mouse, brushForest)) editorSelectedTerrain = Terrain::Forest;
-                if (CheckCollisionPointRec(mouse, brushIce))    editorSelectedTerrain = Terrain::Ice;
+            float scrollThicknessEditor = 12.0f;
+            float colTerrainX = boardOffset + VIEW_CELLS * cellSize + 6.0f + scrollThicknessEditor + 24.0f;
+            float colZombieX  = colTerrainX + 210;
+            float colHumanX   = colZombieX + 210;
+
+            auto resizeCustomMap = [&](int newW, int newH) {
+                newW = std::max(1, newW);
+                newH = std::max(1, newH);
+                auto oldGrid = state.active_config.custom_grid;
+                int oldW = (int)oldGrid.size();
+                int oldH = oldGrid.empty() ? 0 : (int)oldGrid[0].size();
+
+                std::vector<std::vector<Terrain>> newGrid(newW, std::vector<Terrain>(newH, Terrain::Dirt));
+                for (int x = 0; x < std::min(oldW, newW); ++x)
+                    for (int y = 0; y < std::min(oldH, newH); ++y)
+                        newGrid[x][y] = oldGrid[x][y];
+                state.active_config.custom_grid = newGrid;
+                state.active_config.map_width = newW;
+                state.active_config.map_height = newH;
+
+                auto& spawns = state.active_config.custom_zombie_spawns;
+                spawns.erase(std::remove_if(spawns.begin(), spawns.end(),
+                    [&](const ZombieSpawn& zs) { return zs.pos.x >= newW || zs.pos.y >= newH; }),
+                    spawns.end());
+
+                if (state.active_config.custom_human_pos_set &&
+                    (state.active_config.custom_human_pos.x >= newW || state.active_config.custom_human_pos.y >= newH)) {
+                    state.active_config.custom_human_pos_set = false;
+                }
+
+                editorViewX = std::max(0, std::min(editorViewX, std::max(0, newW - VIEW_CELLS)));
+                editorViewY = std::max(0, std::min(editorViewY, std::max(0, newH - VIEW_CELLS)));
+            };
+
+            Rectangle mapWField    = { colTerrainX, 40, 150, 30 };
+            Rectangle mapWMinus    = { colTerrainX + 155, 40, 26, 30 };
+            Rectangle mapWPlus     = { colTerrainX + 185, 40, 26, 30 };
+            Rectangle mapHField    = { colZombieX, 40, 150, 30 };
+            Rectangle mapHMinus    = { colZombieX + 155, 40, 26, 30 };
+            Rectangle mapHPlus     = { colZombieX + 185, 40, 26, 30 };
+
+            const float btnH = 36.0f;
+            const float btnStep = 40.0f;
+            const float btnStartY = 130.0f;
+
+            Rectangle brushDirt   = { colTerrainX, btnStartY + 0*btnStep, 200, btnH };
+            Rectangle brushWall   = { colTerrainX, btnStartY + 1*btnStep, 200, btnH };
+            Rectangle brushWater  = { colTerrainX, btnStartY + 2*btnStep, 200, btnH };
+            Rectangle brushForest = { colTerrainX, btnStartY + 3*btnStep, 200, btnH };
+            Rectangle brushIce    = { colTerrainX, btnStartY + 4*btnStep, 200, btnH };
+            Rectangle brushResetTerrain = { colTerrainX, btnStartY + 5*btnStep, 200, btnH };
+
+            Rectangle brushZClever   = { colZombieX, btnStartY + 0*btnStep, 200, btnH };
+            Rectangle brushZFast     = { colZombieX, btnStartY + 1*btnStep, 200, btnH };
+            Rectangle brushZExplode  = { colZombieX, btnStartY + 2*btnStep, 200, btnH };
+            Rectangle brushZVampire  = { colZombieX, btnStartY + 3*btnStep, 200, btnH };
+            Rectangle brushZSick     = { colZombieX, btnStartY + 4*btnStep, 200, btnH };
+            Rectangle brushZErase    = { colZombieX, btnStartY + 5*btnStep, 200, btnH };
+            Rectangle brushZEraseAll = { colZombieX, btnStartY + 6*btnStep, 200, btnH };
+
+            Rectangle brushHuman       = { colHumanX, btnStartY + 0*btnStep, 200, btnH };
+            Rectangle brushHumanUnset  = { colHumanX, btnStartY + 1*btnStep, 200, btnH };
+
+            float belowColumnsY = btnStartY + 7 * btnStep + 60.0f;
+            Rectangle resetMapBtn    = { colTerrainX, belowColumnsY,        260, 44 };
+            Rectangle saveReturnBtn  = { colTerrainX, belowColumnsY + 60.0f, 260, 44 };
+
+            bool anyPopupOpen = showConfirmEraseAllZombies || showConfirmResetMap || showConfirmResetTerrain;
+            if (mouseClicked && !anyPopupOpen) {
+                if (CheckCollisionPointRec(mouse, mapWMinus)) resizeCustomMap(mw - 1, mh);
+                if (CheckCollisionPointRec(mouse, mapWPlus))  resizeCustomMap(mw + 1, mh);
+                if (CheckCollisionPointRec(mouse, mapHMinus)) resizeCustomMap(mw, mh - 1);
+                if (CheckCollisionPointRec(mouse, mapHPlus))  resizeCustomMap(mw, mh + 1);
+
+                if (CheckCollisionPointRec(mouse, brushDirt))   { editorSelectedTerrain = Terrain::Dirt;   editorPlacingZombie = false; editorPlacingHuman = false; }
+                if (CheckCollisionPointRec(mouse, brushWall))   { editorSelectedTerrain = Terrain::Wall;   editorPlacingZombie = false; editorPlacingHuman = false; }
+                if (CheckCollisionPointRec(mouse, brushWater))  { editorSelectedTerrain = Terrain::Water;  editorPlacingZombie = false; editorPlacingHuman = false; }
+                if (CheckCollisionPointRec(mouse, brushForest)) { editorSelectedTerrain = Terrain::Forest; editorPlacingZombie = false; editorPlacingHuman = false; }
+                if (CheckCollisionPointRec(mouse, brushIce))    { editorSelectedTerrain = Terrain::Ice;    editorPlacingZombie = false; editorPlacingHuman = false; }
+                if (CheckCollisionPointRec(mouse, brushResetTerrain)) {
+                    showConfirmResetTerrain = true;
+                    resetTerrainJustOpened = true;
+                }
+
+                if (CheckCollisionPointRec(mouse, brushZClever))  { editorPlacingZombie = true; editorPlacingHuman = false; editorEraseZombieMode = false; editorSelectedZombieType = ZombieType::Clever; }
+                if (CheckCollisionPointRec(mouse, brushZFast))    { editorPlacingZombie = true; editorPlacingHuman = false; editorEraseZombieMode = false; editorSelectedZombieType = ZombieType::Fast; }
+                if (CheckCollisionPointRec(mouse, brushZExplode)) { editorPlacingZombie = true; editorPlacingHuman = false; editorEraseZombieMode = false; editorSelectedZombieType = ZombieType::Exploding; }
+                if (CheckCollisionPointRec(mouse, brushZVampire)) { editorPlacingZombie = true; editorPlacingHuman = false; editorEraseZombieMode = false; editorSelectedZombieType = ZombieType::Vampire; }
+                if (CheckCollisionPointRec(mouse, brushZSick))    { editorPlacingZombie = true; editorPlacingHuman = false; editorEraseZombieMode = false; editorSelectedZombieType = ZombieType::Sick; }
+                if (CheckCollisionPointRec(mouse, brushZErase))   { editorPlacingZombie = true; editorPlacingHuman = false; editorEraseZombieMode = true; }
+
+                if (CheckCollisionPointRec(mouse, brushHuman))    { editorPlacingHuman = true; editorPlacingZombie = false; }
+                if (CheckCollisionPointRec(mouse, brushHumanUnset)) {
+                    state.active_config.custom_human_pos_set = false;
+                    editorPlacingHuman = false;
+                }
+                if (CheckCollisionPointRec(mouse, brushZEraseAll)) {
+                    showConfirmEraseAllZombies = true;
+                    eraseAllZombiesJustOpened = true;
+                }
+
+                if (CheckCollisionPointRec(mouse, resetMapBtn)) {
+                    showConfirmResetMap = true;
+                    resetMapJustOpened = true;
+                }
+
                 if (CheckCollisionPointRec(mouse, saveReturnBtn)) {
+                    if (!state.active_config.custom_zombie_spawns.empty()) {
+                        int cClever = 0, cFast = 0, cExplode = 0, cVampire = 0, cSick = 0;
+                        for (const auto& zs : state.active_config.custom_zombie_spawns) {
+                            switch (zs.type) {
+                                case ZombieType::Clever:    cClever++; break;
+                                case ZombieType::Fast:      cFast++; break;
+                                case ZombieType::Exploding: cExplode++; break;
+                                case ZombieType::Vampire:   cVampire++; break;
+                                case ZombieType::Sick:      cSick++; break;
+                            }
+                        }
+                        state.active_config.count_normal    = cClever;
+                        state.active_config.count_fast      = cFast;
+                        state.active_config.count_exploding = cExplode;
+                        state.active_config.count_vampire   = cVampire;
+                        state.active_config.count_sick      = cSick;
+                    }
                     state.current_scene = GameScene::MainMenu;
                 }
             }
-            // Paint while holding left mouse button, like the original (Selectable-style painting)
-            if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-                int tx = (int)((mouse.x - boardOffset) / cellSize);
-                int ty = (int)((mouse.y - boardOffset) / cellSize);
-                if (tx >= 0 && tx < mw && ty >= 0 && ty < mh) {
-                    state.active_config.custom_grid[tx][ty] = editorSelectedTerrain;
-                    if (editorSelectedTerrain == Terrain::Dirt && IsKeyDown(KEY_LEFT_SHIFT)) {
-                        state.active_config.custom_human_pos = {tx, ty};
+            // Human placement: only on click, never on Wall tiles
+            if (editorPlacingHuman && mouseClicked && !anyPopupOpen) {
+                int lx = (int)((mouse.x - boardOffset) / cellSize);
+                int ly = (int)((mouse.y - boardOffset) / cellSize);
+                int tx = editorViewX + lx;
+                int ty = editorViewY + ly;
+                if (lx >= 0 && lx < VIEW_CELLS && ly >= 0 && ly < VIEW_CELLS &&
+                    tx >= 0 && tx < mw && ty >= 0 && ty < mh &&
+                    state.active_config.custom_grid[tx][ty] != Terrain::Wall) {
+                    state.active_config.custom_human_pos = {tx, ty};
+                    state.active_config.custom_human_pos_set = true;
+                }
+            }
+
+            // Zombie placement: only on click (not held), and never on Wall tiles
+            if (editorPlacingZombie && mouseClicked && !anyPopupOpen) {
+                int lx = (int)((mouse.x - boardOffset) / cellSize);
+                int ly = (int)((mouse.y - boardOffset) / cellSize);
+                int tx = editorViewX + lx;
+                int ty = editorViewY + ly;
+                if (lx >= 0 && lx < VIEW_CELLS && ly >= 0 && ly < VIEW_CELLS &&
+                    tx >= 0 && tx < mw && ty >= 0 && ty < mh) {
+                    auto& spawns = state.active_config.custom_zombie_spawns;
+                    spawns.erase(std::remove_if(spawns.begin(), spawns.end(),
+                        [&](const ZombieSpawn& zs) { return zs.pos.x == tx && zs.pos.y == ty; }),
+                        spawns.end());
+                    if (!editorEraseZombieMode && state.active_config.custom_grid[tx][ty] != Terrain::Wall) {
+                        spawns.push_back({Position{tx, ty}, editorSelectedZombieType});
+                    }
+                }
+            }
+
+            // Terrain painting: held drag, like before
+            if (!editorPlacingZombie && !editorPlacingHuman && !anyPopupOpen && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+                int lx = (int)((mouse.x - boardOffset) / cellSize);
+                int ly = (int)((mouse.y - boardOffset) / cellSize);
+                int tx = editorViewX + lx;
+                int ty = editorViewY + ly;
+                if (lx >= 0 && lx < VIEW_CELLS && ly >= 0 && ly < VIEW_CELLS &&
+                    tx >= 0 && tx < mw && ty >= 0 && ty < mh) {
+                    if (state.active_config.custom_human_pos.x == tx && state.active_config.custom_human_pos.y == ty &&
+                        editorSelectedTerrain == Terrain::Wall) {
+                        // Prevent placing Wall directly on Human's spawn tile
+                    } else {
+                        state.active_config.custom_grid[tx][ty] = editorSelectedTerrain;
                     }
                 }
             }
@@ -963,32 +1294,296 @@ int main() {
             BeginDrawing();
             ClearBackground((Color){22, 23, 25, 255});
 
-            for (int x = 0; x < mw; ++x) {
-                for (int y = 0; y < mh; ++y) {
-                    DrawRectangle((int)(x * cellSize + boardOffset), (int)(y * cellSize + boardOffset),
+            for (int lx = 0; lx < VIEW_CELLS; ++lx) {
+                for (int ly = 0; ly < VIEW_CELLS; ++ly) {
+                    int x = editorViewX + lx;
+                    int y = editorViewY + ly;
+                    if (x >= mw || y >= mh) continue;
+                    DrawRectangle((int)(lx * cellSize + boardOffset), (int)(ly * cellSize + boardOffset),
                                   (int)(cellSize - 2), (int)(cellSize - 2), terrainColor(state.active_config.custom_grid[x][y]));
-                    if (x == state.active_config.custom_human_pos.x && y == state.active_config.custom_human_pos.y) {
-                        DrawCircle((int)(x * cellSize + boardOffset + cellSize/2), (int)(y * cellSize + boardOffset + cellSize/2), 8.0f, WHITE);
+                    if (state.active_config.custom_human_pos_set &&
+                        x == state.active_config.custom_human_pos.x && y == state.active_config.custom_human_pos.y) {
+                        DrawCircle((int)(lx * cellSize + boardOffset + cellSize/2), (int)(ly * cellSize + boardOffset + cellSize/2), 8.0f, WHITE);
                     }
                 }
             }
 
-            DrawText("Brush:", (int)brushDirt.x, 15, 18, (Color){255, 140, 220, 255});
-            DrawRectangleRec(brushDirt, editorSelectedTerrain == Terrain::Dirt ? (Color){160,90,40,255} : DARKGRAY);
-            drawCenteredText("Dirt", brushDirt, 16, WHITE);
-            DrawRectangleRec(brushWall, editorSelectedTerrain == Terrain::Wall ? (Color){110,110,120,255} : DARKGRAY);
-            drawCenteredText("Wall", brushWall, 16, WHITE);
-            DrawRectangleRec(brushWater, editorSelectedTerrain == Terrain::Water ? (Color){60,120,180,255} : DARKGRAY);
-            drawCenteredText("Water", brushWater, 16, WHITE);
-            DrawRectangleRec(brushForest, editorSelectedTerrain == Terrain::Forest ? (Color){50,150,60,255} : DARKGRAY);
-            drawCenteredText("Forest", brushForest, 16, WHITE);
-            DrawRectangleRec(brushIce, editorSelectedTerrain == Terrain::Ice ? (Color){140,200,240,255} : DARKGRAY);
-            drawCenteredText("Ice", brushIce, 16, WHITE);
+            // Coordinate labels
+            for (int lx = 0; lx < VIEW_CELLS; ++lx) {
+                int mapX = editorViewX + lx;
+                if (mapX >= mw) continue;
+                DrawText(TextFormat("%d", mapX + 1), (int)(lx * cellSize + boardOffset + cellSize * 0.35f), (int)(boardOffset - 16), 12, (Color){180,190,205,255});
+            }
+            for (int ly = 0; ly < VIEW_CELLS; ++ly) {
+                int mapY = editorViewY + ly;
+                if (mapY >= mh) continue;
+                DrawText(TextFormat("%d", mapY + 1), (int)(boardOffset - 16), (int)(ly * cellSize + boardOffset + cellSize * 0.28f), 12, (Color){180,190,205,255});
+            }
 
-            DrawText("Shift+Click Dirt = set Human spawn", (int)brushDirt.x, 240, 13, LIGHTGRAY);
+            for (const auto& zs : state.active_config.custom_zombie_spawns) {
+                int zlx = zs.pos.x - editorViewX;
+                int zly = zs.pos.y - editorViewY;
+                if (zlx < 0 || zlx >= VIEW_CELLS || zly < 0 || zly >= VIEW_CELLS) continue;
+                float zx = zlx * cellSize + boardOffset + 3.0f;
+                float zy = zly * cellSize + boardOffset + 3.0f;
+                DrawRectangle((int)zx, (int)zy, (int)(cellSize - 6), (int)(cellSize - 6), zombieColor(zs.type));
+            }
+
+            // ── Horizontal scrollbar ──
+            {
+                static bool ehDragging = false;
+                static float ehDragStartMouseX = 0.0f;
+                static float ehDragStartPct = 0.0f;
+
+                float trackW = VIEW_CELLS * cellSize;
+                Rectangle hTrack = { boardOffset, boardOffset + VIEW_CELLS * cellSize + 6, trackW, scrollThicknessEditor };
+                DrawRectangleRounded(hTrack, 0.5f, 4, (Color){40,40,40,255});
+                if (editorMaxViewX > 0) {
+                    float thumbW = std::max(30.0f, (float)VIEW_CELLS / mw * trackW);
+                    float curPct = (float)editorViewX / editorMaxViewX;
+                    float thumbX = hTrack.x + curPct * (trackW - thumbW);
+                    Rectangle hThumb = { thumbX, hTrack.y, thumbW, scrollThicknessEditor };
+                    bool hHover = CheckCollisionPointRec(mouse, hThumb);
+                    DrawRectangleRounded(hThumb, 0.5f, 4, hHover ? (Color){170,170,170,255} : (Color){110,110,110,255});
+
+                    if (mouseDown) {
+                        if (!ehDragging && CheckCollisionPointRec(mouse, hThumb)) {
+                            ehDragging = true;
+                            ehDragStartMouseX = mouse.x;
+                            ehDragStartPct = curPct;
+                        }
+                        if (ehDragging) {
+                            float deltaPx = mouse.x - ehDragStartMouseX;
+                            float deltaPct = deltaPx / (trackW - thumbW);
+                            float newPct = std::max(0.0f, std::min(1.0f, ehDragStartPct + deltaPct));
+                            editorViewX = (int)std::round(newPct * editorMaxViewX);
+                        }
+                    } else {
+                        ehDragging = false;
+                    }
+                }
+            }
+
+            // ── Vertical scrollbar ──
+            {
+                static bool evDragging = false;
+                static float evDragStartMouseY = 0.0f;
+                static float evDragStartPct = 0.0f;
+
+                float trackH = VIEW_CELLS * cellSize;
+                Rectangle vTrack = { boardOffset + VIEW_CELLS * cellSize + 6, boardOffset, scrollThicknessEditor, trackH };
+                DrawRectangleRounded(vTrack, 0.5f, 4, (Color){40,40,40,255});
+                if (editorMaxViewY > 0) {
+                    float thumbH = std::max(30.0f, (float)VIEW_CELLS / mh * trackH);
+                    float curPct = (float)editorViewY / editorMaxViewY;
+                    float thumbY = vTrack.y + curPct * (trackH - thumbH);
+                    Rectangle vThumb = { vTrack.x, thumbY, scrollThicknessEditor, thumbH };
+                    bool vHover = CheckCollisionPointRec(mouse, vThumb);
+                    DrawRectangleRounded(vThumb, 0.5f, 4, vHover ? (Color){170,170,170,255} : (Color){110,110,110,255});
+
+                    if (mouseDown) {
+                        if (!evDragging && CheckCollisionPointRec(mouse, vThumb)) {
+                            evDragging = true;
+                            evDragStartMouseY = mouse.y;
+                            evDragStartPct = curPct;
+                        }
+                        if (evDragging) {
+                            float deltaPx = mouse.y - evDragStartMouseY;
+                            float deltaPct = deltaPx / (trackH - thumbH);
+                            float newPct = std::max(0.0f, std::min(1.0f, evDragStartPct + deltaPct));
+                            editorViewY = (int)std::round(newPct * editorMaxViewY);
+                        }
+                    } else {
+                        evDragging = false;
+                    }
+                }
+            }
+
+            // ── Map size row ──
+            // ── Map size row ──
+            DrawText("Map Size:", (int)colTerrainX, 15, 18, (Color){255, 140, 220, 255});
+
+            DrawRectangleRec(mapWField, (Color){35,35,38,255});
+            drawCenteredText(TextFormat("Width: %d", mw), mapWField, 15, WHITE);
+            DrawRectangleRec(mapWMinus, DARKGRAY);
+            drawCenteredText("-", mapWMinus, 16, WHITE);
+            DrawRectangleRec(mapWPlus, DARKGRAY);
+            drawCenteredText("+", mapWPlus, 16, WHITE);
+
+            DrawRectangleRec(mapHField, (Color){35,35,38,255});
+            drawCenteredText(TextFormat("Height: %d", mh), mapHField, 15, WHITE);
+            DrawRectangleRec(mapHMinus, DARKGRAY);
+            drawCenteredText("-", mapHMinus, 16, WHITE);
+            DrawRectangleRec(mapHPlus, DARKGRAY);
+            drawCenteredText("+", mapHPlus, 16, WHITE);
+
+            DrawText("Shrinking removes terrain/zombies outside new bounds; Human position may unset.",
+                     (int)mapWField.x, (int)(mapWField.y + mapWField.height + 6), 12, (Color){255,200,80,255});
+
+            // ── Column 1: Terrain ──
+            DrawText("Terrain:", (int)brushDirt.x, btnStartY - 24.0f, 18, (Color){255, 140, 220, 255});
+            DrawRectangleRec(brushDirt, (!editorPlacingZombie && !editorPlacingHuman && editorSelectedTerrain == Terrain::Dirt) ? (Color){160,90,40,255} : DARKGRAY);
+            drawCenteredText("Dirt", brushDirt, 16, WHITE);
+            DrawRectangleRec(brushWall, (!editorPlacingZombie && !editorPlacingHuman && editorSelectedTerrain == Terrain::Wall) ? (Color){110,110,120,255} : DARKGRAY);
+            drawCenteredText("Wall", brushWall, 16, WHITE);
+            DrawRectangleRec(brushWater, (!editorPlacingZombie && !editorPlacingHuman && editorSelectedTerrain == Terrain::Water) ? (Color){60,120,180,255} : DARKGRAY);
+            drawCenteredText("Water", brushWater, 16, WHITE);
+            DrawRectangleRec(brushForest, (!editorPlacingZombie && !editorPlacingHuman && editorSelectedTerrain == Terrain::Forest) ? (Color){50,150,60,255} : DARKGRAY);
+            drawCenteredText("Forest", brushForest, 16, WHITE);
+            DrawRectangleRec(brushIce, (!editorPlacingZombie && !editorPlacingHuman && editorSelectedTerrain == Terrain::Ice) ? (Color){140,200,240,255} : DARKGRAY);
+            drawCenteredText("Ice", brushIce, 16, WHITE);
+            auto terrainNameStr = [](Terrain t) -> const char* {
+                switch (t) {
+                    case Terrain::Dirt:   return "Dirt";
+                    case Terrain::Wall:   return "Wall";
+                    case Terrain::Water:  return "Water";
+                    case Terrain::Forest: return "Forest";
+                    case Terrain::Ice:    return "Ice";
+                    default: return "?";
+                }
+            };
+            DrawRectangleRec(brushResetTerrain, (Color){140,20,20,255});
+            drawCenteredText(TextFormat("Fill All: %s", terrainNameStr(editorSelectedTerrain)), brushResetTerrain, 14, WHITE);
+
+            // ── Column 2: Zombies ──
+            DrawText("Zombies:", (int)brushZClever.x, btnStartY - 24.0f, 18, (Color){255, 140, 220, 255});
+            auto zBrushColor = [&](ZombieType t, bool erase) -> Color {
+                if (editorPlacingZombie && ((erase && editorEraseZombieMode) || (!erase && !editorEraseZombieMode && editorSelectedZombieType == t)))
+                    return (Color){200, 60, 60, 255};
+                return DARKGRAY;
+            };
+            DrawRectangleRec(brushZClever, zBrushColor(ZombieType::Clever, false));
+            drawCenteredText("Clever", brushZClever, 15, (Color){45,175,90,255});
+            DrawRectangleRec(brushZFast, zBrushColor(ZombieType::Fast, false));
+            drawCenteredText("Fast", brushZFast, 15, (Color){55,168,255,255});
+            DrawRectangleRec(brushZExplode, zBrushColor(ZombieType::Exploding, false));
+            drawCenteredText("Exploding", brushZExplode, 15, (Color){220,110,15,255});
+            DrawRectangleRec(brushZVampire, zBrushColor(ZombieType::Vampire, false));
+            drawCenteredText("Vampire", brushZVampire, 15, (Color){130,30,130,255});
+            DrawRectangleRec(brushZSick, zBrushColor(ZombieType::Sick, false));
+            drawCenteredText("Sick", brushZSick, 15, (Color){210,190,65,255});
+            DrawRectangleRec(brushZErase, (editorPlacingZombie && editorEraseZombieMode) ? (Color){200,60,60,255} : DARKGRAY);
+            drawCenteredText("Erase Zombie", brushZErase, 15, WHITE);
+            DrawRectangleRec(brushZEraseAll, (Color){140,20,20,255});
+            drawCenteredText("Erase All Zombies", brushZEraseAll, 15, WHITE);
+            if (state.active_config.custom_zombie_spawns.empty()) {
+                DrawText("(random spawn)", (int)brushZClever.x, (int)(brushZEraseAll.y + brushZEraseAll.height + 8), 13, LIGHTGRAY);
+            }
+
+            // ── Column 3: Human ──
+            DrawText("Human:", (int)brushHuman.x, btnStartY - 24.0f, 18, (Color){255, 140, 220, 255});
+            DrawRectangleRec(brushHuman, editorPlacingHuman ? (Color){200,60,60,255} : DARKGRAY);
+            drawCenteredText("Place Human", brushHuman, 15, WHITE);
+            DrawRectangleRec(brushHumanUnset, DARKGRAY);
+            drawCenteredText("Unset Position", brushHumanUnset, 15, WHITE);
+            if (!state.active_config.custom_human_pos_set) {
+                DrawText("(random spawn)", (int)brushHuman.x, (int)(brushHumanUnset.y + brushHumanUnset.height + 8), 13, LIGHTGRAY);
+            }
 
             DrawRectangleRec(saveReturnBtn, (Color){15,110,15,255});
             drawCenteredText("Save & Return", saveReturnBtn, 16, WHITE);
+            DrawRectangleRec(resetMapBtn, (Color){140,20,20,255});
+            drawCenteredText("Reset to Empty Map", resetMapBtn, 16, WHITE);
+
+            if (showConfirmEraseAllZombies) {
+                DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), (Color){0, 0, 0, 150});
+                Rectangle popup = { GetScreenWidth()/2.0f - 220, GetScreenHeight()/2.0f - 80, 440, 160 };
+                DrawRectangleRec(popup, (Color){35, 36, 40, 255});
+                DrawRectangleLinesEx(popup, 2, (Color){100, 100, 100, 255});
+                DrawText("Erase ALL placed zombies from this map?", (int)popup.x + 20, (int)popup.y + 25, 16, RAYWHITE);
+                DrawText("This cannot be undone.", (int)popup.x + 20, (int)popup.y + 50, 14, (Color){255,200,80,255});
+
+                Rectangle yesBtn = { popup.x + 40,  popup.y + 100, 170, 40 };
+                Rectangle noBtn  = { popup.x + 230, popup.y + 100, 170, 40 };
+                DrawRectangleRec(yesBtn, (Color){160, 20, 20, 255});
+                drawCenteredText("Yes, Erase All", yesBtn, 15, WHITE);
+                DrawRectangleRec(noBtn, (Color){60, 60, 60, 255});
+                drawCenteredText("Cancel", noBtn, 15, WHITE);
+
+                if (mouseClicked && !eraseAllZombiesJustOpened && CheckCollisionPointRec(mouse, yesBtn)) {
+                    state.active_config.custom_zombie_spawns.clear();
+                    showConfirmEraseAllZombies = false;
+                } else if (mouseClicked && !eraseAllZombiesJustOpened && CheckCollisionPointRec(mouse, noBtn)) {
+                    showConfirmEraseAllZombies = false;
+                }
+                eraseAllZombiesJustOpened = false;
+            }
+
+            if (showConfirmResetMap) {
+                DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), (Color){0, 0, 0, 150});
+                Rectangle popup = { GetScreenWidth()/2.0f - 220, GetScreenHeight()/2.0f - 80, 440, 160 };
+                DrawRectangleRec(popup, (Color){35, 36, 40, 255});
+                DrawRectangleLinesEx(popup, 2, (Color){100, 100, 100, 255});
+                DrawText("Reset map to empty?", (int)popup.x + 20, (int)popup.y + 22, 16, RAYWHITE);
+                DrawText("(All Dirt, no zombies, no Human)", (int)popup.x + 20, (int)popup.y + 44, 13, (Color){200,200,200,255});
+                DrawText("This cannot be undone.", (int)popup.x + 20, (int)popup.y + 68, 14, (Color){255,200,80,255});
+
+                Rectangle yesBtn = { popup.x + 40,  popup.y + 100, 170, 40 };
+                Rectangle noBtn  = { popup.x + 230, popup.y + 100, 170, 40 };
+                DrawRectangleRec(yesBtn, (Color){160, 20, 20, 255});
+                drawCenteredText("Yes, Reset", yesBtn, 15, WHITE);
+                DrawRectangleRec(noBtn, (Color){60, 60, 60, 255});
+                drawCenteredText("Cancel", noBtn, 15, WHITE);
+
+                if (mouseClicked && !resetMapJustOpened && CheckCollisionPointRec(mouse, yesBtn)) {
+                    state.active_config.custom_grid.assign(mw, std::vector<Terrain>(mh, Terrain::Dirt));
+                    state.active_config.custom_zombie_spawns.clear();
+                    state.active_config.custom_human_pos_set = false;
+                    showConfirmResetMap = false;
+                } else if (mouseClicked && !resetMapJustOpened && CheckCollisionPointRec(mouse, noBtn)) {
+                    showConfirmResetMap = false;
+                }
+                resetMapJustOpened = false;
+            }
+
+            if (showConfirmResetTerrain) {
+                DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), (Color){0, 0, 0, 150});
+                Rectangle popup = { GetScreenWidth()/2.0f - 220, GetScreenHeight()/2.0f - 80, 440, 160 };
+                DrawRectangleRec(popup, (Color){35, 36, 40, 255});
+                DrawRectangleLinesEx(popup, 2, (Color){100, 100, 100, 255});
+                DrawText(TextFormat("Fill ALL terrain with %s?", terrainNameStr(editorSelectedTerrain)),
+                         (int)popup.x + 20, (int)popup.y + 22, 16, RAYWHITE);
+                DrawText("Zombies and Human position are kept.", (int)popup.x + 20, (int)popup.y + 44, 13, (Color){200,200,200,255});
+                DrawText("This cannot be undone.", (int)popup.x + 20, (int)popup.y + 68, 14, (Color){255,200,80,255});
+
+                Rectangle yesBtn = { popup.x + 40,  popup.y + 100, 170, 40 };
+                Rectangle noBtn  = { popup.x + 230, popup.y + 100, 170, 40 };
+                DrawRectangleRec(yesBtn, (Color){160, 20, 20, 255});
+                drawCenteredText("Yes, Fill", yesBtn, 15, WHITE);
+                DrawRectangleRec(noBtn, (Color){60, 60, 60, 255});
+                drawCenteredText("Cancel", noBtn, 15, WHITE);
+
+                if (mouseClicked && !resetTerrainJustOpened && CheckCollisionPointRec(mouse, yesBtn)) {
+                    state.active_config.custom_grid.assign(mw, std::vector<Terrain>(mh, editorSelectedTerrain));
+                    showConfirmResetTerrain = false;
+                } else if (mouseClicked && !resetTerrainJustOpened && CheckCollisionPointRec(mouse, noBtn)) {
+                    showConfirmResetTerrain = false;
+                }
+                resetTerrainJustOpened = false;
+            }
+
+            if (showConfirmExitGame) {
+                DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), (Color){0, 0, 0, 150});
+                Rectangle popup = { GetScreenWidth()/2.0f - 240, GetScreenHeight()/2.0f - 90, 480, 180 };
+                DrawRectangleRec(popup, (Color){35, 36, 40, 255});
+                DrawRectangleLinesEx(popup, 2, (Color){100, 100, 100, 255});
+                DrawText("WARNING: All unsaved progress will be permanently lost!", (int)popup.x + 20, (int)popup.y + 20, 15, (Color){255,200,80,255});
+                DrawText("Are you sure you want to quit the game?", (int)popup.x + 20, (int)popup.y + 45, 15, RAYWHITE);
+
+                Rectangle yesBtn = { popup.x + 40,  popup.y + 110, 180, 40 };
+                Rectangle noBtn  = { popup.x + 260, popup.y + 110, 180, 40 };
+                DrawRectangleRec(yesBtn, (Color){160, 20, 20, 255});
+                drawCenteredText("Yes, Quit Game", yesBtn, 16, WHITE);
+                DrawRectangleRec(noBtn, (Color){60, 60, 60, 255});
+                drawCenteredText("Cancel", noBtn, 16, WHITE);
+
+                if (mouseClicked && CheckCollisionPointRec(mouse, yesBtn)) {
+                    shouldQuit = true;
+                    showConfirmExitGame = false;
+                } else if (mouseClicked && CheckCollisionPointRec(mouse, noBtn)) {
+                    showConfirmExitGame = false;
+                }
+            }
 
             EndDrawing();
             continue;
