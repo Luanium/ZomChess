@@ -11,12 +11,12 @@
 #include "GameConstants.h"
 
 enum class Terrain { Dirt, Water, Wall, Fire, Forest, Ice };
-enum class InputMode { MoveMode, TargetKnife, TargetPistol, TargetShotgun, TargetGrenade, TargetMolotov, UseIcePick };
+enum class InputMode { MoveMode, TargetKnife, TargetPistol, TargetShotgun, TargetGrenade, TargetMolotov, TargetWarpBolt, UseIcePick };
 enum class ZombieType { Clever, Fast, Exploding, Vampire, Sick };
 enum class TurnPhase { HumanTurn, ZombieAnimating, EnvironmentAnimating };
 
 // Added Bite and Scratch FX
-enum class FXType { None, Knife, Pistol, Shotgun, Explosion, Molotov, Bite, Scratch, Wind, Rain, DarkCloud, Lightning, Electricity, GrenadeFly, Heatwave, Blizzard };
+enum class FXType { None, Knife, Pistol, Shotgun, Explosion, Molotov, Bite, Scratch, Wind, Rain, DarkCloud, Lightning, Electricity, GrenadeFly, Heatwave, Blizzard, WarpBolt };
 enum class GameScene { MainMenu, Playing, MapEditor };
 
 struct Position {
@@ -49,6 +49,7 @@ struct GameConfig {
     int grenades      = GameConstants::Difficulty::Medium::GRENADES;
     int mines         = GameConstants::Difficulty::Medium::MINES;
     int molotovs      = GameConstants::Difficulty::Medium::MOLOTOVS;
+    int warp_charges  = GameConstants::Difficulty::Medium::WARP_CHARGES;
     int turn_limit    = GameConstants::Defaults::TURN_LIMIT;
 
     int count_normal   = GameConstants::Difficulty::Medium::COUNT_NORMAL;
@@ -161,6 +162,7 @@ enum class LootType {
     StaminaPotion,// Stamina về 6
     PistolAmmo,   // +3 đạn pistol
     ShotgunAmmo,  // +1 đạn shotgun
+    WarpBolt,     // +1 warp bolt
     Grenade,      // +1 lựu đạn
     Molotov,      // +1 bom xăng
     Mine          // +1 mìn

@@ -3,6 +3,8 @@
 
 namespace GameConstants {
 
+    constexpr const char* GAME_VERSION = "v3.0.0";
+
     // =========================================================================
     // SECTION 1: MAP GENERATION & BOUNDARIES
     // =========================================================================
@@ -34,12 +36,13 @@ namespace GameConstants {
             constexpr int GRENADES = 5;
             constexpr int MINES = 4;
             constexpr int MOLOTOVS = 4;
+            constexpr int WARP_CHARGES = 3; 
             constexpr int COUNT_NORMAL = 5;
             constexpr int COUNT_FAST = 2;
             constexpr int COUNT_EXPLODING = 1;
             constexpr int COUNT_VAMPIRE = 1;
             constexpr int COUNT_SICK = 1;
-            constexpr int TURN_LIMIT = 50;
+            constexpr int TURN_LIMIT = 40;
 
             // Terrain ratios (sum = 100)
             constexpr int RATIO_DIRT    = 60;
@@ -67,12 +70,13 @@ namespace GameConstants {
             constexpr int GRENADES = 4;
             constexpr int MINES = 3;
             constexpr int MOLOTOVS = 3;
+            constexpr int WARP_CHARGES = 2; 
             constexpr int COUNT_NORMAL = 7;
             constexpr int COUNT_FAST = 4;
             constexpr int COUNT_EXPLODING = 3;
             constexpr int COUNT_VAMPIRE = 2;
             constexpr int COUNT_SICK = 2;
-            constexpr int TURN_LIMIT = 50;
+            constexpr int TURN_LIMIT = 30;
 
             // Terrain ratios (sum = 100)
             constexpr int RATIO_DIRT    = 52;
@@ -100,12 +104,13 @@ namespace GameConstants {
             constexpr int GRENADES = 3;
             constexpr int MINES = 2;
             constexpr int MOLOTOVS = 3;
+            constexpr int WARP_CHARGES = 1; 
             constexpr int COUNT_NORMAL = 9;
             constexpr int COUNT_FAST = 4;
             constexpr int COUNT_EXPLODING = 4;
             constexpr int COUNT_VAMPIRE = 3;
             constexpr int COUNT_SICK = 2;
-            constexpr int TURN_LIMIT = 50;
+            constexpr int TURN_LIMIT = 20;
 
             // Terrain ratios (sum = 100)
             constexpr int RATIO_DIRT    = 42;
@@ -133,12 +138,13 @@ namespace GameConstants {
             constexpr int GRENADES = 1;
             constexpr int MINES = 1;
             constexpr int MOLOTOVS = 1;
+            constexpr int WARP_CHARGES = 0; 
             constexpr int COUNT_NORMAL = 8;
             constexpr int COUNT_FAST = 4;
             constexpr int COUNT_EXPLODING = 6;
             constexpr int COUNT_VAMPIRE = 3;
             constexpr int COUNT_SICK = 3;
-            constexpr int TURN_LIMIT = 50;
+            constexpr int TURN_LIMIT = 15;
 
             // Terrain ratios (sum = 100)
             constexpr int RATIO_DIRT    = 32;
@@ -180,6 +186,8 @@ namespace GameConstants {
             constexpr int MINES_MAX            = 20;
             constexpr int MOLOTOVS_MIN         = 0;
             constexpr int MOLOTOVS_MAX         = 20;
+            constexpr int WARP_CHARGES_MIN     = 0;
+            constexpr int WARP_CHARGES_MAX     = 5;
             constexpr int TURN_LIMIT_MIN       = 1;
             constexpr int TURN_LIMIT_MAX       = 100;
 
@@ -213,6 +221,9 @@ namespace GameConstants {
         constexpr int SHOTGUN_DAMAGE = 1;
         constexpr int SHOTGUN_RANGE = 3; // straightforward step range
         constexpr int SHOTGUN_WALL_IMPACT_DAMAGE = 1; // self damage when blasting wall adjacent to you
+
+        // Warp Bolt (teleport swap tool) parameters
+        constexpr int WARP_BOLT_STAMINA_COST = 1;
 
         // Grenade parameters
         constexpr int GRENADE_STAMINA_COST = 1;
@@ -417,6 +428,7 @@ namespace GameConstants {
         constexpr int HUMAN_DEFAULT_GRENADES     = 5;
         constexpr int HUMAN_DEFAULT_MINES        = 5;
         constexpr int HUMAN_DEFAULT_MOLOTOVS     = 5;
+        constexpr int HUMAN_DEFAULT_WARP_AMMO    = 2;
 
         // Fire duration (in turns)
         constexpr int FIRE_DURATION = 2;

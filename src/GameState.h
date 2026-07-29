@@ -102,6 +102,7 @@ public:
     void execute_explosion_internal(int cx, int cy, bool is_zombie_exploding);
     void zombie_single_step(size_t idx);
     void handle_weapon_click(int tx, int ty, float cellSize, float boardOffset);
+    void handle_warp_bolt(int dx, int dy);
     void start_zombie_phase();
     void start_environment_phase();
     void resolve_environment_turn();
@@ -156,7 +157,18 @@ public:
     void setMusicVolume(float volume);
     void setSfxEnabled(bool enabled);
 
+    struct ImportResult {
+        bool file_opened = false;      // file có mở được không
+        bool has_version = false;      // file có field VERSION không
+        std::string file_version;      // version ghi trong file (rỗng nếu không có)
+        bool version_match = false;    // file_version == GameConstants::GAME_VERSION
+        std::vector<std::string> missing_fields; // các field mong đợi bị thiếu (chỉ tính khi version match)
+    };
+
     bool export_challenge_file(const std::string& path);
+    // Đọc file & phân tích tương thích, KHÔNG áp dụng vào active_config.
+    ImportResult analyze_challenge_file(const std::string& path);
+    // Thực sự áp dụng dữ liệu từ file vào active_config (gọi sau khi đã xác nhận).
     bool import_challenge_file(const std::string& path);
 };
 

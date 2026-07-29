@@ -211,7 +211,7 @@ static void runSplashScreen(Font& gameFont) {
         DrawTextEx(gameFont, music, (Vector2){(W - mussz.x) / 2.0f, H * 0.62f + 32}, musSize, 1.0f,
                    (Color){120, 120, 120, a});
 
-        DrawTextEx(gameFont, "v2.6.0", (Vector2){(float)(W - 70), (float)(H - 30)}, 16.0f, 1.0f,
+        DrawTextEx(gameFont, GameConstants::GAME_VERSION, (Vector2){(float)(W - 70), (float)(H - 30)}, 16.0f, 1.0f,
                    (Color){90, 90, 90, a});
 
         float blink = 0.5f + 0.5f * sinf(elapsed * 3.5f);
@@ -308,7 +308,7 @@ struct FileBrowser {
 };
 
 int main() {
-    InitWindow(1400, 654, "ZomChess (Raylib)");
+    InitWindow(1400, 654, "ZomChess");
     SetTargetFPS(60);
 
     Font gameFont = LoadFontEx("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 32, nullptr, 0);
@@ -344,6 +344,12 @@ int main() {
     const float boardOffset = 20.0f;
     const int VIEW_CELLS = 15;
     int viewX = 0, viewY = 0;
+    auto centerViewOnHuman = [&]() {
+        int maxVX = std::max(0, state.width - VIEW_CELLS);
+        int maxVY = std::max(0, state.height - VIEW_CELLS);
+        viewX = std::max(0, std::min(state.human.pos.x - VIEW_CELLS / 2, maxVX));
+        viewY = std::max(0, std::min(state.human.pos.y - VIEW_CELLS / 2, maxVY));
+    };
     const float scrollThickness = 12.0f;
     const float panelX = boardOffset + VIEW_CELLS * cellSize + 30;
 
@@ -360,6 +366,7 @@ int main() {
 
     Rectangle pistolBtn  = { panelX,               boardOffset + 160, colW, 36 };
     Rectangle shotgunBtn = { panelX + colW + 10,    boardOffset + 160, colW, 36 };
+    Rectangle warpBoltBtn = { panelX + (colW+10)*2, boardOffset + 160, colW, 36 };
 
     Rectangle grenadeBtn = { panelX,               boardOffset + 205, colW, 36 };
     Rectangle molotovBtn = { panelX + colW + 10,    boardOffset + 205, colW, 36 };
@@ -376,6 +383,9 @@ int main() {
     std::string ioMessage;
     float ioMessageTimer = 0.0f;
     bool hasImportedConfig = false;
+    bool showImportWarnPopup = false;
+    std::string importWarnMessage;
+    std::string pendingImportPath;
 
     // ── Custom difficulty sliders (right column) ──
     float sliderX = 400.0f;
@@ -418,10 +428,29 @@ int main() {
     bool shouldQuit = false;
     SetExitKey(KEY_NULL); // disable default ESC-to-close, we handle confirmation ourselves
 
+    bool wasFocused = true;
+    int minimizeRestorePending = 0; // 0 = idle, >0 = counting down to restore
+
     while (!shouldQuit) {
         bool closeRequested = WindowShouldClose();
         float dtSeconds = GetFrameTime();
         AudioManager::getInstance().updateMusic();
+
+        bool isFocusedNow = IsWindowFocused();
+        if (isFocusedNow && !wasFocused && minimizeRestorePending == 0) {
+            minimizeRestorePending = 2;
+        }
+        wasFocused = isFocusedNow;
+
+        if (minimizeRestorePending > 0) {
+            minimizeRestorePending--;
+            if (minimizeRestorePending == 1) {
+                ToggleFullscreen();
+            } else if (minimizeRestorePending == 0) {
+                ToggleFullscreen();
+            }
+        }
+
         mouse = GetMousePosition();
         bool mouseDownRaw = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
         if (suppressNextClick) {
@@ -464,6 +493,7 @@ int main() {
                 if (chosen >= 0) {
                     state.apply_quick_difficulty(chosen);
                     state.init_game();
+                    centerViewOnHuman();
                     state.current_scene = GameScene::Playing;
                     AudioManager::getInstance().playMusic("battle");
                 }
@@ -475,6 +505,7 @@ int main() {
                 }
                 if (hasImportedConfig && CheckCollisionPointRec(mouse, startCustomBtn)) {
                     state.init_game();
+                    centerViewOnHuman();
                     state.current_scene = GameScene::Playing;
                     AudioManager::getInstance().playMusic("battle");
                 }
@@ -617,6 +648,9 @@ int main() {
             drawSliderW("Shotgun Ammo", &state.active_config.shotgun_ammo,
                         GameConstants::Difficulty::SliderBounds::SHOTGUN_AMMO_MIN,
                         GameConstants::Difficulty::SliderBounds::SHOTGUN_AMMO_MAX, sliderX, colAW, ay, (Color){200,120,60,255}); ay += 42;
+            drawSliderW("Warp Ammo", &state.active_config.warp_charges,
+                        GameConstants::Difficulty::SliderBounds::WARP_CHARGES_MIN,
+                        GameConstants::Difficulty::SliderBounds::WARP_CHARGES_MAX, sliderX, colAW, ay, (Color){200,120,60,255}); ay += 42;
             drawSliderW("Grenades", &state.active_config.grenades,
                         GameConstants::Difficulty::SliderBounds::GRENADES_MIN,
                         GameConstants::Difficulty::SliderBounds::GRENADES_MAX, sliderX, colAW, ay, (Color){200,120,60,255}); ay += 42;
@@ -956,6 +990,7 @@ int main() {
             drawCenteredText(overflow ? "TOO MANY ZOMBIES" : "LAUNCH CUSTOM GAME", launchBtn, 16, WHITE);
             if (!overflow && mouseClicked && CheckCollisionPointRec(mouse, launchBtn)) {
                 state.init_game();
+                centerViewOnHuman();
                 state.current_scene = GameScene::Playing;
                 AudioManager::getInstance().playMusic("battle");
             }
@@ -1097,6 +1132,45 @@ int main() {
                     showConfirmExitGame = false;
                 } else if (mouseClicked && CheckCollisionPointRec(mouse, noBtn)) {
                     showConfirmExitGame = false;
+                }
+            }
+
+            if (showImportWarnPopup) {
+                DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), (Color){0, 0, 0, 150});
+                Rectangle popup = { GetScreenWidth()/2.0f - 280, GetScreenHeight()/2.0f - 130, 560, 260 };
+                DrawRectangleRec(popup, (Color){35, 36, 40, 255});
+                DrawRectangleLinesEx(popup, 2, (Color){200, 160, 40, 255});
+                DrawText("Import Compatibility Warning", (int)popup.x + 20, (int)popup.y + 15, 18, (Color){255, 210, 80, 255});
+
+                // Multi-line message rendering
+                {
+                    float ly = popup.y + 50;
+                    size_t start = 0;
+                    while (start <= importWarnMessage.size()) {
+                        size_t nl = importWarnMessage.find('\n', start);
+                        std::string line = importWarnMessage.substr(start, nl == std::string::npos ? std::string::npos : nl - start);
+                        DrawText(line.c_str(), (int)popup.x + 20, (int)ly, 15, RAYWHITE);
+                        ly += 22;
+                        if (nl == std::string::npos) break;
+                        start = nl + 1;
+                    }
+                }
+
+                Rectangle yesBtn = { popup.x + 60,  popup.y + popup.height - 55, 200, 40 };
+                Rectangle noBtn  = { popup.x + 300, popup.y + popup.height - 55, 200, 40 };
+                DrawRectangleRec(yesBtn, (Color){160, 100, 20, 255});
+                drawCenteredText("Yes, Import Anyway", yesBtn, 15, WHITE);
+                DrawRectangleRec(noBtn, (Color){60, 60, 60, 255});
+                drawCenteredText("Cancel", noBtn, 15, WHITE);
+
+                if (mouseClicked && CheckCollisionPointRec(mouse, yesBtn)) {
+                    bool ok = state.import_challenge_file(pendingImportPath);
+                    ioMessage = ok ? ("Imported " + fs::path(pendingImportPath).filename().string()) : "Import failed!";
+                    ioMessageTimer = 3.0f;
+                    hasImportedConfig = ok;
+                    showImportWarnPopup = false;
+                } else if (mouseClicked && CheckCollisionPointRec(mouse, noBtn)) {
+                    showImportWarnPopup = false;
                 }
             }
 
@@ -1590,11 +1664,11 @@ int main() {
         }
 
         bool onPanel = CheckCollisionPointRec(mouse, endTurnBtn) || CheckCollisionPointRec(mouse, moveBtn) ||
-                       CheckCollisionPointRec(mouse, knifeBtn)   || CheckCollisionPointRec(mouse, pistolBtn) ||
-                       CheckCollisionPointRec(mouse, shotgunBtn) || CheckCollisionPointRec(mouse, grenadeBtn) ||
-                       CheckCollisionPointRec(mouse, molotovBtn) || CheckCollisionPointRec(mouse, mineBtn) ||
-                       CheckCollisionPointRec(mouse, icePickBtn) || CheckCollisionPointRec(mouse, guideBtn) ||
-                       CheckCollisionPointRec(mouse, returnHubTopBtn);
+               CheckCollisionPointRec(mouse, knifeBtn)   || CheckCollisionPointRec(mouse, pistolBtn) ||
+               CheckCollisionPointRec(mouse, shotgunBtn) || CheckCollisionPointRec(mouse, grenadeBtn) ||
+               CheckCollisionPointRec(mouse, molotovBtn) || CheckCollisionPointRec(mouse, mineBtn) ||
+               CheckCollisionPointRec(mouse, icePickBtn) || CheckCollisionPointRec(mouse, guideBtn) ||
+               CheckCollisionPointRec(mouse, returnHubTopBtn) || CheckCollisionPointRec(mouse, warpBoltBtn);
 
         // ══════════════════════════════════════════════════════════════
         // INPUT HANDLING — mirrors main.cpp's event loop for Playing scene
@@ -1621,6 +1695,8 @@ int main() {
                 state.input_mode = InputMode::TargetGrenade;
             } else if (CheckCollisionPointRec(mouse, molotovBtn) && !disabled_base && state.human.molotovs > 0) {
                 state.input_mode = InputMode::TargetMolotov;
+            } else if (CheckCollisionPointRec(mouse, warpBoltBtn) && !disabled_base && state.human.warp_ammo > 0) {
+                state.input_mode = InputMode::TargetWarpBolt;
             } else if (CheckCollisionPointRec(mouse, mineBtn) && !disabled_base && state.human.mines > 0 &&
                        state.grid[state.human.pos.x][state.human.pos.y] != Terrain::Ice &&
                        !state.mine_grid[state.human.pos.x][state.human.pos.y]) {
@@ -1710,6 +1786,15 @@ int main() {
                     bool adjacent = (dx <= 1 && dy <= 1 && (dx != 0 || dy != 0));
                     if (adjacent) {
                         state.handle_weapon_click(tx, ty, cellSize, boardOffset);
+                    }
+                } else if (state.input_mode == InputMode::TargetWarpBolt) {
+                    int dx = std::abs(tx - state.human.pos.x);
+                    int dy = std::abs(ty - state.human.pos.y);
+                    bool adjacent = (dx <= 1 && dy <= 1 && (dx != 0 || dy != 0));
+                    if (adjacent) {
+                        int vx = (tx > state.human.pos.x) - (tx < state.human.pos.x);
+                        int vy = (ty > state.human.pos.y) - (ty < state.human.pos.y);
+                        state.handle_warp_bolt(vx, vy);
                     }
                 } else {
                     // Pistol, Shotgun, Grenade, Molotov: only accept clicks within the
@@ -1876,6 +1961,17 @@ int main() {
                 DrawRectangleLinesEx((Rectangle){zx, zy, cellSize - 6.0f, cellSize - 6.0f}, 2.5f, (Color){255, 255, 60, borderA});
             }
 
+            // Clever Zombie weapon-ammo indicator: black right-angle triangle, top-right corner
+            if (z->type == ZombieType::Clever && z->hasWeaponAmmo()) {
+                float triSize = std::max(5.0f, (cellSize - 6.0f) * 0.28f);
+                float ttx = zx + (cellSize - 6.0f) - triSize;
+                float tty = zy;
+                Vector2 t1 = { ttx, tty };              // top-left
+                Vector2 t2 = { ttx + triSize, tty + triSize }; // bottom-right
+                Vector2 t3 = { ttx + triSize, tty };     // top-right
+                DrawTriangle(t1, t2, t3, (Color){0, 0, 0, 220});
+            }
+
             std::string tags;
             if (z->is_burning)   tags += "B";
             if (z->is_paralyzed) tags += "P";
@@ -2008,6 +2104,17 @@ int main() {
                     unsigned char borderA = (unsigned char)(180 + 75 * pulse);
                     DrawRectangleLinesEx((Rectangle){zx, zy, cellSize - 6.0f, cellSize - 6.0f}, 2.5f, (Color){255, 255, 60, borderA});
                 }
+
+                // Clever Zombie weapon-ammo indicator: black right-angle triangle, top-right corner
+                if (z->type == ZombieType::Clever && z->hasWeaponAmmo()) {
+                    float triSize = std::max(5.0f, (cellSize - 6.0f) * 0.28f);
+                    float ttx = zx + (cellSize - 6.0f) - triSize;
+                    float tty = zy;
+                    Vector2 t1 = { ttx, tty };              // top-left
+                    Vector2 t2 = { ttx + triSize, tty + triSize }; // bottom-right
+                    Vector2 t3 = { ttx + triSize, tty };     // top-right
+                    DrawTriangle(t1, t2, t3, (Color){0, 0, 0, 220});
+                }
             }
             // Always redraw Human on top of the shroud, regardless of fire-lit status
             if (state.human.hp > 0) {
@@ -2055,7 +2162,8 @@ int main() {
              state.input_mode == InputMode::TargetPistol ||
              state.input_mode == InputMode::TargetShotgun ||
              state.input_mode == InputMode::TargetGrenade ||
-             state.input_mode == InputMode::TargetMolotov)) {
+             state.input_mode == InputMode::TargetMolotov ||
+             state.input_mode == InputMode::TargetWarpBolt)) {
             for (int dx = -1; dx <= 1; ++dx) {
                 for (int dy = -1; dy <= 1; ++dy) {
                     if (dx == 0 && dy == 0) continue;
@@ -2100,6 +2208,7 @@ int main() {
                     if (state.input_mode == InputMode::MoveMode) arrowColor = (Color){255, 220, 50, 230};
                     else if (state.input_mode == InputMode::TargetKnife) arrowColor = (Color){200, 100, 255, 250};
                     else if (state.input_mode == InputMode::TargetPistol || state.input_mode == InputMode::TargetShotgun) arrowColor = (Color){255, 60, 60, 230};
+                    else if (state.input_mode == InputMode::TargetWarpBolt) arrowColor = (Color){150, 40, 255, 240};
                     else arrowColor = (Color){60, 255, 60, 230};
 
                     Vector2 p1 = { acx + cosf(angle) * size,        acy + sinf(angle) * size };
@@ -2278,6 +2387,44 @@ int main() {
                     float radius = 1.5f + (i % 3) * 0.8f;
                     unsigned char flakeA = (unsigned char)(alpha * (0.5f + 0.5f * ((i % 4) / 4.0f)));
                     DrawCircle((int)fx, (int)fy, radius, (Color){255, 255, 255, flakeA});
+                }
+            } else if (state.active_fx.type == FXType::WarpBolt) {
+                float t = 1.0f - progress; // 0 -> 1 over time
+
+                const float FLY_END = 0.3f;
+                const float DARK_PEAK = 0.5f;
+                const float DARK_END = 0.7f;
+
+                if (t < FLY_END) {
+                    // Phase 1: bullet flies from origin to dest
+                    float flyT = t / FLY_END;
+                    Vector2 s = { state.active_fx.start_p.x - viewX * cellSize, state.active_fx.start_p.y - viewY * cellSize };
+                    Vector2 e = { state.active_fx.end_p.x   - viewX * cellSize, state.active_fx.end_p.y   - viewY * cellSize };
+                    Vector2 pos = { s.x + (e.x - s.x) * flyT, s.y + (e.y - s.y) * flyT };
+                    DrawCircle((int)pos.x, (int)pos.y, 6.0f, (Color){180, 80, 255, 255});
+                    DrawCircle((int)pos.x, (int)pos.y, 10.0f, (Color){180, 80, 255, 100});
+                } else {
+                    // Phase 2/3: both cells darken then brighten
+                    float blackness;
+                    if (t < DARK_PEAK) blackness = (t - FLY_END) / (DARK_PEAK - FLY_END);
+                    else if (t < DARK_END) blackness = 1.0f;
+                    else blackness = std::max(0.0f, 1.0f - (t - DARK_END) / (1.0f - DARK_END));
+
+                    for (const auto& p : state.active_fx.blast_cells) {
+                        int bx = p.x - viewX, by = p.y - viewY;
+                        if (bx < 0 || bx >= VIEW_CELLS || by < 0 || by >= VIEW_CELLS) continue;
+                        unsigned char blackA = (unsigned char)(blackness * 255);
+                        DrawRectangle((int)(bx * cellSize + boardOffset), (int)(by * cellSize + boardOffset),
+                                      (int)(cellSize - 2), (int)(cellSize - 2), (Color){5, 0, 15, blackA});
+                        float swirl = GetTime() * 6.0f + (p.x + p.y);
+                        for (int i = 0; i < 4; ++i) {
+                            float ang = swirl + i * (PI / 2.0f);
+                            float r = 14.0f * blackness;
+                            float px = bx * cellSize + boardOffset + cellSize/2.0f + cosf(ang) * r;
+                            float py = by * cellSize + boardOffset + cellSize/2.0f + sinf(ang) * r;
+                            DrawCircle((int)px, (int)py, 3.0f, (Color){150, 60, 255, blackA});
+                        }
+                    }
                 }
             }
         }
@@ -2495,6 +2642,7 @@ int main() {
         bool icePickDisabled = !humanTurnNow || !onIceUI || state.human.stamina < icePickCost;
         bool pistolDisabled  = !humanTurnNow || staminaZero || state.human.pistol_ammo <= 0;
         bool shotgunDisabled = !humanTurnNow || staminaZero || state.human.shotgun_ammo <= 0;
+        bool warpBoltDisabled = !humanTurnNow || staminaZero || state.human.warp_ammo <= 0;
         bool grenadeDisabled = !humanTurnNow || staminaZero || state.human.grenades <= 0;
         bool molotovDisabled = !humanTurnNow || staminaZero || state.human.molotovs <= 0;
         bool mineDisabled    = !humanTurnNow || staminaZero || state.human.mines <= 0 ||
@@ -2515,6 +2663,9 @@ int main() {
 
         DrawRectangleRec(shotgunBtn, weaponBtnColor(state.input_mode == InputMode::TargetShotgun, shotgunDisabled));
         drawCenteredText(TextFormat("Shotgun (%d)", state.human.shotgun_ammo), shotgunBtn, 17, WHITE);
+
+        DrawRectangleRec(warpBoltBtn, weaponBtnColor(state.input_mode == InputMode::TargetWarpBolt, warpBoltDisabled));
+        drawCenteredText(TextFormat("Warp Bolt (%d)", state.human.warp_ammo), warpBoltBtn, 15, WHITE);
 
         DrawRectangleRec(grenadeBtn, weaponBtnColor(state.input_mode == InputMode::TargetGrenade, grenadeDisabled));
         drawCenteredText(TextFormat("Grenade (%d)", state.human.grenades), grenadeBtn, 16, WHITE);
@@ -2601,7 +2752,7 @@ int main() {
         // ── Combat log panel — fills remaining space exactly to window bottom ──
         {
             Rectangle logBox = { panelX, belowColumnsY + 10,
-                                  panelW, (boardOffset + state.height * cellSize) - (belowColumnsY + 10) };
+                                  panelW, (boardOffset + VIEW_CELLS * cellSize) - (belowColumnsY + 10) };
             DrawRectangleRec(logBox, (Color){15,15,15,230});
 
             static float logScroll = 0.0f;

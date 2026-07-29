@@ -16,6 +16,7 @@
 #include <iostream>
 #include <queue>
 #include <unordered_map>
+#include <cctype>
 
 GameState::GameState() : rng(std::random_device{}()) {
     active_config.custom_grid.assign(active_config.map_width, std::vector<Terrain>(active_config.map_height, Terrain::Dirt));
@@ -239,15 +240,26 @@ void GameState::apply_quick_difficulty(int level) {
     }
 }
 
+// Minimum set of fields expected in a same-version .zom file for it to be
+// considered "well-formed" (missing any of these triggers a warning popup).
+static const std::vector<std::string> MINIMUM_EXPECTED_ZOM_FIELDS = {
+    "MAP_W", "MAP_H", "HUMAN_HP", "INITIAL_STAMINA",
+    "PISTOL_AMMO", "SHOTGUN_AMMO", "GRENADES", "MINES", "MOLOTOVS",
+    "TURN_LIMIT", "ZOM_NORMAL", "ZOM_FAST", "ZOM_EXPLODING", "ZOM_VAMPIRE", "ZOM_SICK",
+    "RATIO_WALL", "RATIO_WATER", "RATIO_FOREST", "RATIO_DIRT", "RATIO_ICE"
+};
+
 bool GameState::export_challenge_file(const std::string& path) {
     std::ofstream outFile(path);
     if (!outFile.is_open()) return false;
+    outFile << "VERSION "         << GameConstants::GAME_VERSION << "\n";
     outFile << "MAP_W "           << active_config.map_width << "\n";
     outFile << "MAP_H "           << active_config.map_height << "\n";
     outFile << "HUMAN_HP "        << active_config.human_hp << "\n";
     outFile << "INITIAL_STAMINA " << active_config.initial_stamina << "\n";
     outFile << "PISTOL_AMMO "     << active_config.pistol_ammo << "\n";
     outFile << "SHOTGUN_AMMO "    << active_config.shotgun_ammo << "\n";
+    outFile << "WARP_AMMO "       << active_config.warp_charges << "\n";
     outFile << "GRENADES "        << active_config.grenades << "\n";
     outFile << "MINES "           << active_config.mines << "\n";
     outFile << "MOLOTOVS "        << active_config.molotovs << "\n";
@@ -294,12 +306,85 @@ bool GameState::export_challenge_file(const std::string& path) {
     return true;
 }
 
+GameState::ImportResult GameState::analyze_challenge_file(const std::string& path) {
+    ImportResult res;
+    std::ifstream inFile(path);
+    if (!inFile.is_open()) return res;
+    res.file_opened = true;
+
+    std::vector<std::string> found_keys;
+    std::string key;
+    while (inFile >> key) {
+        if (key == "VERSION") {
+            std::string ver;
+            inFile >> ver;
+            res.has_version = true;
+            res.file_version = ver;
+            found_keys.push_back(key);
+            continue;
+        }
+        if (key == "GRID_DATA") {
+            found_keys.push_back(key);
+            // Skip the grid block: map_width * map_height ints, but we don't
+            // know dims reliably here without full parse — just consume rest of line-based ints
+            // by reading until we hit a known next key token would be fragile.
+            // Since GRID_DATA is only written together with CUSTOM_MAP=1 and all
+            // numeric keys precede it, safe to just skip numeric tokens until
+            // a non-numeric token (next key) appears.
+            std::streampos before;
+            std::string peek;
+            while (true) {
+                before = inFile.tellg();
+                if (!(inFile >> peek)) break;
+                bool is_num = !peek.empty() && (std::isdigit((unsigned char)peek[0]) || peek[0]=='-');
+                if (!is_num) { inFile.seekg(before); break; }
+            }
+            continue;
+        }
+        if (key == "ZOMBIE_SPAWNS") {
+            found_keys.push_back(key);
+            int count = 0;
+            inFile >> count;
+            for (int i = 0; i < count; ++i) {
+                int a,b,c; inFile >> a >> b >> c;
+            }
+            continue;
+        }
+        // Generic "KEY value" pair
+        found_keys.push_back(key);
+        int dummy;
+        inFile >> dummy;
+    }
+    inFile.close();
+
+    res.version_match = res.has_version && (res.file_version == GameConstants::GAME_VERSION);
+
+    if (res.version_match) {
+        for (const auto& expected : MINIMUM_EXPECTED_ZOM_FIELDS) {
+            if (std::find(found_keys.begin(), found_keys.end(), expected) == found_keys.end()) {
+                res.missing_fields.push_back(expected);
+            }
+        }
+    }
+    return res;
+}
+
 bool GameState::import_challenge_file(const std::string& path) {
     std::ifstream inFile(path);
     if (!inFile.is_open()) return false;
+
+    // Reset to defaults first — any field missing in the file will keep its
+    // GameConfig default value rather than a stale leftover from before.
+    active_config = GameConfig{};
+
     std::string key; int val;
     active_config.custom_zombie_spawns.clear();
     while (inFile >> key) {
+        if (key == "VERSION") {
+            std::string ver;
+            inFile >> ver; // consumed, not used here (already checked via analyze_challenge_file)
+            continue;
+        }
         if (key == "GRID_DATA") {
             active_config.custom_grid.assign(active_config.map_width, std::vector<Terrain>(active_config.map_height, Terrain::Dirt));
             for (int y = 0; y < active_config.map_height; ++y) {
@@ -328,6 +413,7 @@ bool GameState::import_challenge_file(const std::string& path) {
         else if (key == "INITIAL_STAMINA") active_config.initial_stamina = val;
         else if (key == "PISTOL_AMMO")  active_config.pistol_ammo = val;
         else if (key == "SHOTGUN_AMMO") active_config.shotgun_ammo = val;
+        else if (key == "WARP_AMMO")    active_config.warp_charges = val;
         else if (key == "GRENADES")     active_config.grenades = val;
         else if (key == "MINES")        active_config.mines = val;
         else if (key == "MOLOTOVS")     active_config.molotovs = val;
@@ -394,6 +480,7 @@ void GameState::init_game() {
     human.grenades = active_config.grenades;
     human.mines = active_config.mines;
     human.molotovs = active_config.molotovs;
+    human.warp_ammo = active_config.warp_charges;
     human.is_burning = false;
     human.is_paralyzed = false;
     human.is_frozen = false;
@@ -2756,9 +2843,107 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
             melt_adjacent_ice(hit_pos.x, hit_pos.y);
         }
         check_fire_interactions();
+    } else if (input_mode == InputMode::TargetWarpBolt) {
+        // handled separately via handle_warp_bolt (direction-based, not click-based)
+        return;
     }
     input_mode = InputMode::MoveMode; 
     check_victory_conditions(); 
+}
+
+
+void GameState::handle_warp_bolt(int dx, int dy) {
+    if (human.warp_ammo <= 0) { input_mode = InputMode::MoveMode; return; }
+    if (dx == 0 && dy == 0) return;
+
+    kills_this_turn = 0;
+    pending_multikill_banner.clear();
+    for (auto& z : zombies) if (z->hp > 0) z->kill_counted = false;
+
+    human.warp_ammo--;
+    human.stamina -= GameConstants::Weapons::WARP_BOLT_STAMINA_COST;
+    sfx("warp_bolt");
+
+    Position origin = human.pos;
+    Position dest = origin;
+    for (int step = 1; ; ++step) {
+        int nx = origin.x + dx * step;
+        int ny = origin.y + dy * step;
+        if (nx < 0 || nx >= width || ny < 0 || ny >= height) break;
+        if (grid[nx][ny] == Terrain::Wall) break;
+        dest = {nx, ny};
+    }
+
+    add_log(tr("[WARP] Human fires a Warp Bolt into the void...",
+               "[WARP] Human ban mot vien dan xuyen khong gian..."),
+            ImVec4(0.6f, 0.3f, 1.0f, 1.0f));
+
+    active_fx.type = FXType::WarpBolt;
+    active_fx.timer = 2.4f;
+    active_fx.max_duration = 2.4f;
+    active_fx.cx = origin.x; active_fx.cy = origin.y;
+    active_fx.blast_cells = {origin, dest};
+    active_fx.start_p = getCellCenter(origin.x, origin.y, 40.0f, 20.0f);
+    active_fx.end_p   = getCellCenter(dest.x,   dest.y,   40.0f, 20.0f);
+
+    if (dest == origin) {
+        // Self-collapse: instant death
+        add_log(tr("[WARP] The rift collapses on itself! Human is torn apart by the singularity!",
+                   "[WARP] Ho khong gian sup do tai cho! Human bi ho den nuot chung!"),
+                ImVec4(1.0f, 0.1f, 0.1f, 1.0f));
+        human.hp = 0;
+        game_over = true;
+        input_mode = InputMode::MoveMode;
+        return;
+    }
+
+    // Swap terrain
+    std::swap(grid[origin.x][origin.y], grid[dest.x][dest.y]);
+
+    // Swap mine/mine_deactivated (vector<bool> requires manual swap, not std::swap)
+    {
+        bool tmp = mine_grid[origin.x][origin.y];
+        mine_grid[origin.x][origin.y] = mine_grid[dest.x][dest.y];
+        mine_grid[dest.x][dest.y] = tmp;
+
+        bool tmp2 = mine_deactivated[origin.x][origin.y];
+        mine_deactivated[origin.x][origin.y] = mine_deactivated[dest.x][dest.y];
+        mine_deactivated[dest.x][dest.y] = tmp2;
+    }
+
+    // Swap Human position
+    human.pos = dest;
+
+    // Swap zombies located at either cell
+    for (auto& z : zombies) {
+        if (z->hp <= 0) continue;
+        if (z->pos == origin) z->pos = dest;
+        else if (z->pos == dest) z->pos = origin;
+    }
+
+    // Swap grenades
+    for (auto& g : active_grenades) {
+        if (!g.active) continue;
+        if (g.pos == origin) g.pos = dest;
+        else if (g.pos == dest) g.pos = origin;
+    }
+
+    // Swap loot drops
+    for (auto& ld : loot_drops) {
+        if (ld.pos == origin) ld.pos = dest;
+        else if (ld.pos == dest) ld.pos = origin;
+    }
+
+    add_log(tr("[WARP] Singularity collapses! (" + std::to_string(origin.x+1) + "," + std::to_string(origin.y+1) +
+               ") <-> (" + std::to_string(dest.x+1) + "," + std::to_string(dest.y+1) + ") swapped instantly!",
+               "[WARP] Ho khong gian sup do! (" + std::to_string(origin.x+1) + "," + std::to_string(origin.y+1) +
+               ") <-> (" + std::to_string(dest.x+1) + "," + std::to_string(dest.y+1) + ") da hoan doi!"),
+            ImVec4(0.6f, 0.3f, 1.0f, 1.0f));
+
+    check_fire_interactions();
+    check_mine_interactions();
+    input_mode = InputMode::MoveMode;
+    check_victory_conditions();
 }
 
 void GameState::start_zombie_phase() { 
@@ -3345,26 +3530,28 @@ void GameState::spawn_loot_for_newly_dead() {
 
 void GameState::spawn_loot_at(Position pos) {
     // Xác suất loot: 75% junk, 25% item hữu ích
-    std::uniform_int_distribution<int> roll(0, 99);
+    std::uniform_int_distribution<int> roll(0, 999);
     int r = roll(rng);
 
     LootType type;
-    if (r < 75) {
-        type = LootType::Junk;
-    } else if (r < 80) {
-        type = LootType::PistolAmmo;   // 5%
-    } else if (r < 85) {
-        type = LootType::StaminaPotion;// 5%
-    } else if (r < 89) {
-        type = LootType::HealthPotion; // 4%
-    } else if (r < 93) {
-        type = LootType::ShotgunAmmo;  // 4%
-    } else if (r < 96) {
-        type = LootType::Grenade;      // 3%
-    } else if (r < 98) {
-        type = LootType::Molotov;      // 2%
+    if (r < 750) {
+        type = LootType::Junk;              // 75%
+    } else if (r < 800) {
+        type = LootType::PistolAmmo;        // 5%
+    } else if (r < 850) {
+        type = LootType::StaminaPotion;     // 5%
+    } else if (r < 890) {
+        type = LootType::HealthPotion;      // 4%
+    } else if (r < 930) {
+        type = LootType::ShotgunAmmo;       // 4%
+    } else if (r < 960) {
+        type = LootType::Grenade;           // 3%
+    } else if (r < 980) {
+        type = LootType::Molotov;           // 2%
+    } else if (r < 995) {
+        type = LootType::Mine;              // 1.5%
     } else {
-        type = LootType::Mine;         // 2%
+        type = LootType::WarpBolt;          // 0.5% — rất hiếm
     }
 
     // Nhiều zombie có thể chết trên cùng một ô — mỗi zombie để lại loot riêng
@@ -3438,6 +3625,12 @@ void GameState::check_loot_pickup() {
                     add_log(tr("[LOOT] Land Mine! +1 mine.", "[LOOT] Min! +1 qua."),
                             ImVec4(0.9f, 0.9f, 0.2f, 1.0f));
                     break;
+                case LootType::WarpBolt:
+                    human.warp_ammo += 1;
+                    sfx("loot_pickup");
+                    add_log(tr("[LOOT] Warp Bolt! A rare rift charge. +1.", "[LOOT] Warp Bolt! Vien dan hiem. +1."),
+                            ImVec4(0.6f, 0.3f, 1.0f, 1.0f));
+                    break;
             }
             it = loot_drops.erase(it);
     }
@@ -3505,8 +3698,14 @@ void GameState::clever_zombie_check_loot_pickup(size_t idx) {
             case LootType::Mine:
                 zom->mines += 1;
                 sfx("zombie_loot");
-                add_log("-> " + zom->name + " finds a mine! +1 mine.",
+                add_log("-> " + zom->name + " finds a Mine! +1 mine.",
                         ImVec4(0.9f, 0.9f, 0.2f, 1.0f));
+                break;
+            case LootType::WarpBolt:
+                zom->warp_ammo += 1;
+                sfx("zombie_loot");
+                add_log("-> " + zom->name + " finds a Warp Bolt! +1.",
+                        ImVec4(0.6f, 0.3f, 1.0f, 1.0f));
                 break;
         }
         it = loot_drops.erase(it);

@@ -305,6 +305,27 @@ static Sound makeIcePick() {
     return bufferToSound(s);
 }
 
+static Sound makeWarpBolt() {
+    std::mt19937 rng(19);
+    float dur = 0.9f; int n = (int)(dur * SAMPLE_RATE);
+    std::vector<float> s(n);
+    float lp = 0.f;
+    for (int i = 0; i < n; ++i) {
+        float t = (float)i / SAMPLE_RATE;
+        float raw = noisef(rng);
+        lp = lp * 0.9f + raw * 0.1f;
+        // Rising then falling pitch sweep — "warping" whoosh
+        float phase = t / dur;
+        float freq = 200.f + 1400.f * sinf(PI * phase);
+        float tone = sinf(2.f * PI * freq * t) * 0.4f;
+        // Reversed-sounding shimmer near the end (collapse)
+        float shimmer = sinf(2.f * PI * freq * 2.3f * t) * (phase > 0.6f ? (phase - 0.6f) / 0.4f : 0.f) * 0.3f;
+        float env = envelope(t, dur, 0.05f, 0.2f);
+        s[i] = (tone + shimmer + lp * 0.15f) * env * 0.85f;
+    }
+    return bufferToSound(s);
+}
+
 static Sound makeLootPickup() {
     std::mt19937 rng(18);
     float dur = 0.18f; int n = (int)(dur * SAMPLE_RATE);
@@ -507,6 +528,7 @@ private:
         sounds["molotov"]       = makeMolotov();
         sounds["rain"]          = makeRain();
         sounds["ice_pick"]      = makeIcePick();
+        sounds["warp_bolt"]     = makeWarpBolt();
         sounds["zombie_death"]  = makeZombieDeath();
         sounds["zombie_loot"]   = makeZombieLoot();
         sounds["loot_pickup"]   = makeLootPickup();

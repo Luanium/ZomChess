@@ -13,6 +13,7 @@ struct Human {
     int grenades = GameConstants::Defaults::HUMAN_DEFAULT_GRENADES;
     int mines = GameConstants::Defaults::HUMAN_DEFAULT_MINES;
     int molotovs = GameConstants::Defaults::HUMAN_DEFAULT_MOLOTOVS; 
+    int warp_ammo = GameConstants::Defaults::HUMAN_DEFAULT_WARP_AMMO;
     
     bool is_burning = false;
     bool is_paralyzed = false;
@@ -41,6 +42,7 @@ public:
     int grenades      = 0;
     int molotovs      = 0;
     int mines         = 0;
+    int warp_ammo     = 0;
     bool extra_turn   = false; // Stamina potion grants one extra full turn
 
     Zombie(Position p, int h, std::string n, ZombieType t) 
@@ -50,7 +52,7 @@ public:
 
     // Returns true if this Clever Zombie holds any weapon ammo
     bool hasWeaponAmmo() const {
-        return pistol_ammo > 0 || shotgun_ammo > 0 || grenades > 0 || molotovs > 0 || mines > 0;
+        return pistol_ammo > 0 || shotgun_ammo > 0 || grenades > 0 || molotovs > 0 || mines > 0 || warp_ammo > 0;
     }
 };
 
