@@ -2085,11 +2085,6 @@ int main() {
         }
 
         if (state.dark_cloud_active && state.active_fx.type != FXType::DarkCloud) {
-            DrawRectangle((int)boardOffset, (int)boardOffset,
-                          (int)(VIEW_CELLS * cellSize), (int)(VIEW_CELLS * cellSize),
-                          (Color){0, 0, 0, 254});
-
-            // Cells lit by fire: fire tile + 8 neighbors + burning entities' tiles
             std::vector<std::vector<bool>> fireLit(state.width, std::vector<bool>(state.height, false));
             const int all8[8][2] = {{1,0},{-1,0},{0,1},{0,-1},{1,1},{1,-1},{-1,1},{-1,-1}};
             for (int x = 0; x < state.width; ++x) {
@@ -2104,84 +2099,16 @@ int main() {
             }
             for (const auto& z : state.zombies) if (z->hp > 0 && z->is_burning) fireLit[z->pos.x][z->pos.y] = true;
             if (state.human.hp > 0 && state.human.is_burning) fireLit[state.human.pos.x][state.human.pos.y] = true;
-
+        
             for (int lx = 0; lx < VIEW_CELLS; ++lx) {
                 for (int ly = 0; ly < VIEW_CELLS; ++ly) {
                     int x = viewX + lx, y = viewY + ly;
                     if (x < 0 || x >= state.width || y < 0 || y >= state.height) continue;
-                    if (!fireLit[x][y]) continue;
-                    DrawRectangle((int)(lx * cellSize + boardOffset), (int)(ly * cellSize + boardOffset),
-                                  (int)(cellSize - 2), (int)(cellSize - 2), getTerrainDisplayColor(state, x, y));
-                    if (state.mine_grid[x][y]) {
-                        DrawCircle((int)(lx * cellSize + boardOffset + cellSize/2), (int)(ly * cellSize + boardOffset + cellSize/2),
-                                   6.0f, (Color){230,40,40,255});
-                    }
-                }
-            }
-            // Redraw zombies standing on lit cells
-            for (size_t zi = 0; zi < state.zombies.size(); ++zi) {
-                const auto& z = state.zombies[zi];
-                if (z->hp <= 0) continue;
-                if (!fireLit[z->pos.x][z->pos.y]) continue;
-                int zlx = z->pos.x - viewX, zly = z->pos.y - viewY;
-                if (zlx < 0 || zlx >= VIEW_CELLS || zly < 0 || zly >= VIEW_CELLS) continue;
-                float zx = zlx * cellSize + boardOffset + 3.0f;
-                float zy = zly * cellSize + boardOffset + 3.0f;
-                DrawRectangle((int)zx, (int)zy, (int)(cellSize - 6.0f), (int)(cellSize - 6.0f), zombieColor(z->type));
-                DrawText(TextFormat("%d", z->hp), (int)zx + 12, (int)zy + 10, 16, WHITE);
-
-                // Active zombie indicator: bright pulsing yellow border on the zombie whose turn it is
-                if (state.phase == TurnPhase::ZombieAnimating && zi == state.active_zombie_idx) {
-                    float pulse = 0.5f + 0.5f * sinf(GetTime() * 12.0f);
-                    unsigned char borderA = (unsigned char)(180 + 75 * pulse);
-                    DrawRectangleLinesEx((Rectangle){zx, zy, cellSize - 6.0f, cellSize - 6.0f}, 2.5f, (Color){255, 255, 60, borderA});
-                }
-
-                // Clever Zombie weapon-ammo indicator: black right-angle triangle, top-right corner
-                if (z->type == ZombieType::Clever && z->hasWeaponAmmo()) {
-                    float triSize = std::max(5.0f, (cellSize - 6.0f) * 0.28f);
-                    float ttx = zx + (cellSize - 6.0f) - triSize;
-                    float tty = zy;
-                    Vector2 t1 = { ttx, tty };              // top-left
-                    Vector2 t2 = { ttx + triSize, tty + triSize }; // bottom-right
-                    Vector2 t3 = { ttx + triSize, tty };     // top-right
-                    DrawTriangle(t1, t2, t3, (Color){0, 0, 0, 220});
-                }
-            }
-            // Always redraw Human on top of the shroud, regardless of fire-lit status
-            if (state.human.hp > 0) {
-                int hlx = state.human.pos.x - viewX, hly = state.human.pos.y - viewY;
-                if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) {
-                    float hx = hlx * cellSize + boardOffset + 3.0f;
-                    float hy = hly * cellSize + boardOffset + 3.0f;
-                    float hw = cellSize - 6.0f;
-
-                    DrawRectangle((int)hx, (int)hy, (int)hw, (int)hw, (Color){235, 240, 245, 255});
-                    {
-                        float t = GetTime();
-                        float hpRatio = (float)state.human.hp / std::max(1, state.active_config.human_hp);
-                        float beatSpeed = 1.0f + (1.0f - std::clamp(hpRatio, 0.0f, 1.0f)) * 5.0f;
-                        float phase = fmodf(t * beatSpeed, 1.0f);
-                        float beat = std::max(std::exp(-phase * 18.0f), std::exp(-fabsf(phase - 0.35f) * 18.0f));
-                        float thickness = beat * 4.0f;
-                        unsigned char g2 = (unsigned char)(60 + (1.0f - beat) * 100);
-                        DrawRectangleLinesEx((Rectangle){hx, hy, hw, hw}, thickness, (Color){255, g2, g2, 255});
-                    }
-
-                    std::string hpStr = TextFormat("%d", state.human.hp);
-                    Vector2 hpSz = MeasureTextEx(gameFont, hpStr.c_str(), 16, 1.0f);
-                    DrawTextEx(gameFont, hpStr.c_str(),
-                               (Vector2){hx + hw/2.0f - hpSz.x/2.0f, hy + hw/2.0f - hpSz.y/2.0f},
-                               16, 1.0f, (Color){20, 30, 40, 255});
-
-                    int safeStam = std::max(0, std::min(10, state.human.stamina));
-                    if (safeStam > 0) {
-                        float dotGap = 5.0f;
-                        float totalW = (safeStam - 1) * dotGap;
-                        float startX = hx + hw/2.0f - totalW/2.0f;
-                        for (int d = 0; d < safeStam; ++d) {
-                            DrawCircle((int)(startX + d * dotGap), (int)(hy + hw - 6), 2.3f, (Color){60, 170, 255, 255});
-                        }
+                    bool is_human_here = (state.human.hp > 0 && state.human.pos.x == x && state.human.pos.y == y);
+                    bool should_darken = !fireLit[x][y] && !is_human_here;
+                    if (should_darken) {
+                        DrawRectangle((int)(lx * cellSize + boardOffset), (int)(ly * cellSize + boardOffset),
+                                      (int)(cellSize - 2), (int)(cellSize - 2), (Color){0, 0, 0, 254});
                     }
                 }
             }
