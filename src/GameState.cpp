@@ -456,6 +456,7 @@ void GameState::init_game() {
     attack_animations.clear();
     active_grenades.clear();
     active_fx = VisualFX{};
+    pending_warp_damage_positions.clear();
     dark_cloud_active = false;
     last_environment_event = "Clear skies";
     game_over = false; 
@@ -2941,6 +2942,16 @@ void GameState::handle_warp_bolt(int dx, int dy) {
                "[WARP] Ho khong gian sup do! (" + std::to_string(origin.x+1) + "," + std::to_string(origin.y+1) +
                ") <-> (" + std::to_string(dest.x+1) + "," + std::to_string(dest.y+1) + ") da hoan doi!"),
             ImVec4(0.6f, 0.3f, 1.0f, 1.0f));
+
+    // Queue rift damage — applied after WarpBolt FX animation finishes
+    // Human is always involved; zombies that were at origin or dest before the swap are too.
+    pending_warp_damage_positions.clear();
+    pending_warp_damage_positions.push_back(human.pos); // human is now at dest
+    for (const auto& z : zombies) {
+        if (z->hp <= 0) continue;
+        if (z->pos == dest || z->pos == origin)
+            pending_warp_damage_positions.push_back(z->pos);
+    }
 
     check_fire_interactions();
     check_mine_interactions();

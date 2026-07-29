@@ -1845,7 +1845,38 @@ int main() {
             }
             if (state.active_fx.type != FXType::None) {
                 state.active_fx.timer -= dtSeconds;
-                if (state.active_fx.timer <= 0.0f) state.active_fx.type = FXType::None;
+                if (state.active_fx.timer <= 0.0f) {
+                    FXType expired = state.active_fx.type;
+                    state.active_fx.type = FXType::None;
+
+                    // Apply deferred warp rift damage once the animation finishes
+                    if (expired == FXType::WarpBolt && !state.pending_warp_damage_positions.empty()) {
+                        for (const auto& p : state.pending_warp_damage_positions) {
+                            if (state.human.hp > 0 && state.human.pos == p) {
+                                state.human.hp = std::max(0, state.human.hp - 1);
+                                state.floating_texts.push_back({p, -1, 1.0f, 1.0f});
+                                state.add_log(state.tr("[WARP] Human is shaken by the rift! -1 HP.",
+                                                       "[WARP] Nguoi bi chan dong boi ho khong gian! -1 HP."),
+                                              ImVec4(0.7f, 0.4f, 1.0f, 1.0f));
+                            }
+                            for (size_t i = 0; i < state.zombies.size(); ++i) {
+                                auto& z = state.zombies[i];
+                                if (z->hp <= 0 || z->pos != p) continue;
+                                z->hp -= 1;
+                                state.floating_texts.push_back({p, -1, 1.0f, 1.0f});
+                                state.add_log(state.tr("[WARP] " + z->name + " is shaken by the rift! -1 HP.",
+                                                       "[WARP] " + z->name + " bi chan dong boi ho khong gian! -1 HP."),
+                                              ImVec4(0.7f, 0.4f, 1.0f, 1.0f));
+                                if (z->hp <= 0 && z->type == ZombieType::Exploding)
+                                    state.queue_explosion(z->pos.x, z->pos.y, true);
+                            }
+                        }
+                        state.pending_warp_damage_positions.clear();
+                        state.check_fire_interactions();
+                        state.check_mine_interactions();
+                        state.check_victory_conditions();
+                    }
+                }
             }
             if (state.active_fx.type == FXType::None && !state.explosion_queue.empty()) {
                 auto ev = state.explosion_queue.front();

@@ -58,6 +58,10 @@ public:
     std::vector<FloatingText> floating_texts;
     IceSlideAnimation ice_slide_animation;
     std::vector<WindPushAnim> wind_push_animations;
+
+    // Warp bolt post-animation damage: entities at these positions take 1 HP after FX ends
+    // Populated by handle_warp_bolt, drained by the game loop once WarpBolt FX expires.
+    std::vector<Position> pending_warp_damage_positions;
     std::vector<TerrainTransitionAnimation> terrain_transitions;
 
     std::mt19937 rng;
