@@ -146,6 +146,8 @@ struct VisualFX {
     std::string banner_text = "";
     float overlay_intensity = 0.0f;  // For heatwave/blizzard overlay
     int lightning_seed = 0;          // Fixed seed for this strike's zigzag shape
+    Position warp_origin_before{0,0}; // vị trí gốc trước khi swap (visual only)
+    Position warp_dest_before{0,0};   // vị trí đích trước khi swap (visual only)
 };
 
 // System for dynamic floating damage/heal numbers

@@ -116,6 +116,21 @@ static bool getWindAnimGridPos(const GameState& state, bool isHuman, size_t idx,
     return false;
 }
 
+// During WarpBolt FX's early phase, visually keep entities at their pre-swap
+// positions so the swap only "appears" to happen once the singularity collapses.
+static Position getWarpDisplayPos(const GameState& state, Position actualPos) {
+    if (state.active_fx.type != FXType::WarpBolt) return actualPos;
+    float t = 1.0f - (state.active_fx.timer / state.active_fx.max_duration); // 0 -> 1
+    const float SWAP_POINT = 0.5f; // matches DARK_PEAK in the FX render code
+    if (t >= SWAP_POINT) return actualPos; // after swap point: show real (already-swapped) position
+
+    Position origin = state.active_fx.warp_origin_before;
+    Position dest = state.active_fx.warp_dest_before;
+    if (actualPos == origin) return dest;
+    if (actualPos == dest) return origin;
+    return actualPos;
+}
+
 // ── Shared checkbox drawer: bigger box, checkmark style (2 crossing lines) instead of solid fill ──
 // Returns true if the box was clicked this frame (caller still owns the toggle logic).
 static bool drawCheckbox(Vector2 mouse, bool clicked, float x, float y, bool checked, const char* label, int fontSize = 15) {
@@ -1676,6 +1691,17 @@ int main() {
 
         if (state.current_scene == GameScene::Playing &&
             !state.game_over && !state.game_won &&
+            !showGuide && !showConfirmReturnHub && !showConfirmExitGame &&
+            mouseClicked) {
+            if (CheckCollisionPointRec(mouse, guideBtn)) {
+                showGuide = true;
+            } else if (CheckCollisionPointRec(mouse, returnHubTopBtn)) {
+                showConfirmReturnHub = true;
+            }
+        }
+
+        if (state.current_scene == GameScene::Playing &&
+            !state.game_over && !state.game_won &&
             state.phase == TurnPhase::HumanTurn &&
             !state.human.is_paralyzed &&
             !showGuide && !showConfirmReturnHub && !showConfirmExitGame &&
@@ -1719,12 +1745,8 @@ int main() {
                 if (onIceNow && state.human.stamina >= cost) {
                     state.use_ice_pick();
                 }
-            } else if (CheckCollisionPointRec(mouse, guideBtn)) {
-                showGuide = true;
             } else if (CheckCollisionPointRec(mouse, endTurnBtn)) {
                 endTurnWithBanner();
-            } else if (CheckCollisionPointRec(mouse, returnHubTopBtn)) {
-                showConfirmReturnHub = true;
             }
         }
 
@@ -1865,8 +1887,18 @@ int main() {
                 state.pending_multikill_banner.clear();
             }
 
-            state.update_zombie_logic(dtSeconds);
-            state.update_environment_logic(dtSeconds);
+            if (state.phase == TurnPhase::HumanTurn && !state.game_over && !state.game_won &&
+                state.human.is_paralyzed) {
+                state.add_log(state.tr("[SHOCK] Human is paralyzed and cannot act! Turn ends automatically.",
+                                       "[SOC] Human bi te liet va khong the hanh dong! Tu dong ket thuc luot."),
+                              ImVec4(0.45f, 0.9f, 1.0f, 1.0f));
+                endTurnWithBanner();
+            }
+
+            if (!showConfirmReturnHub && !showConfirmExitGame) {
+                state.update_zombie_logic(dtSeconds);
+                state.update_environment_logic(dtSeconds);
+            }
         }
 
         // ══════════════════════════════════════════════════════════════
@@ -1937,6 +1969,7 @@ int main() {
                 state.ice_slide_animation.current_step < (int)state.ice_slide_animation.path.size()) {
                 drawPos = state.ice_slide_animation.path[state.ice_slide_animation.current_step];
             }
+            drawPos = getWarpDisplayPos(state, drawPos);
             float animGX, animGY;
             bool windAnim = getWindAnimGridPos(state, false, zi, false, 0, false, 0, animGX, animGY);
             int zlx, zly;
@@ -1988,6 +2021,7 @@ int main() {
                 state.ice_slide_animation.current_step < (int)state.ice_slide_animation.path.size()) {
                 drawPos = state.ice_slide_animation.path[state.ice_slide_animation.current_step];
             }
+            drawPos = getWarpDisplayPos(state, drawPos);
             float animGX, animGY;
             bool windAnim = getWindAnimGridPos(state, true, 0, false, 0, false, 0, animGX, animGY);
             int hlx, hly; float hx, hy;
@@ -2001,8 +2035,6 @@ int main() {
                 hy = hly * cellSize + boardOffset + 3.0f;
             }
             if (hlx >= 0 && hlx < VIEW_CELLS && hly >= 0 && hly < VIEW_CELLS) {
-                float hx = hlx * cellSize + boardOffset + 3.0f;
-                float hy = hly * cellSize + boardOffset + 3.0f;
                 float hw = cellSize - 6.0f;
 
                 // Base square + colored border for visual distinction from zombies

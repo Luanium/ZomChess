@@ -2885,6 +2885,8 @@ void GameState::handle_warp_bolt(int dx, int dy) {
     active_fx.blast_cells = {origin, dest};
     active_fx.start_p = getCellCenter(origin.x, origin.y, 40.0f, 20.0f);
     active_fx.end_p   = getCellCenter(dest.x,   dest.y,   40.0f, 20.0f);
+    active_fx.warp_origin_before = origin;
+    active_fx.warp_dest_before = dest;
 
     if (dest == origin) {
         // Self-collapse: instant death
