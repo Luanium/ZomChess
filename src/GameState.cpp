@@ -1431,146 +1431,186 @@ void GameState::apply_lightning_strike() {
     }
     if (cells.empty()) return;
 
-    std::discrete_distribution<int> pick(weights.begin(), weights.end());
-    Position strike = cells[pick(rng)];
-    std::vector<Position> conductive_cluster = get_conductive_cluster(strike);
+    if (cells.empty()) return;
+
+    // Roll number of strikes: start with 1 guaranteed, each additional strike
+    // has a decaying chance to also occur, capped by available cells.
+    const float EXTRA_STRIKE_CHANCE = 0.75f;
+    std::uniform_real_distribution<float> strike_roll(0.0f, 1.0f);
+    int max_possible_strikes = (int)cells.size();
+    int num_strikes = 1;
+    float chance = EXTRA_STRIKE_CHANCE;
+    while (num_strikes < max_possible_strikes && strike_roll(rng) < chance) {
+        num_strikes++;
+        chance *= EXTRA_STRIKE_CHANCE;
+    }
+
+    // Pick num_strikes distinct cells using the weighted distribution
+    std::vector<Position> strikes;
+    std::vector<Position> pool_cells = cells;
+    std::vector<double> pool_weights = weights;
+    for (int s = 0; s < num_strikes && !pool_cells.empty(); ++s) {
+        std::discrete_distribution<int> pick(pool_weights.begin(), pool_weights.end());
+        int chosen_idx = pick(rng);
+        strikes.push_back(pool_cells[chosen_idx]);
+        pool_cells.erase(pool_cells.begin() + chosen_idx);
+        pool_weights.erase(pool_weights.begin() + chosen_idx);
+    }
+
     active_fx.type = FXType::Lightning;
     active_fx.timer = 3.6f;
     active_fx.max_duration = 3.6f;
-    active_fx.cx = strike.x;
-    active_fx.cy = strike.y;
-    active_fx.blast_cells = conductive_cluster;
+    active_fx.cx = strikes[0].x;
+    active_fx.cy = strikes[0].y;
     active_fx.lightning_seed = (int)rng();
+    active_fx.lightning_strikes = strikes;
+    active_fx.lightning_seeds.clear();
+    for (size_t s = 0; s < strikes.size(); ++s) active_fx.lightning_seeds.push_back((int)rng());
 
-    add_log("[ENV] Lightning strikes (" + std::to_string(strike.x + 1) + ", " + std::to_string(strike.y + 1) + ")!", ImVec4(1.0f, 1.0f, 0.35f, 1.0f));
-
-    // Hủy loot tại ô bị sét đánh trực tiếp
-    destroy_loot_at_cells({strike});
-
-    // Kích nổ mìn nếu sét đánh trúng
-    if (mine_grid[strike.x][strike.y]) {
-        mine_grid[strike.x][strike.y] = false;
-        add_log("[ENV] Lightning struck a mine! Detonation!", ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
-        queue_explosion(strike.x, strike.y);
+    active_fx.blast_cells.clear();
+    for (const auto& strike : strikes) {
+        std::vector<Position> conductive_cluster = get_conductive_cluster(strike);
+        for (const auto& c : conductive_cluster) active_fx.blast_cells.push_back(c);
     }
 
-    // Melt ice at strike location
-    if (grid[strike.x][strike.y] == Terrain::Ice) {
-        grid[strike.x][strike.y] = Terrain::Water;
-        terrain_transitions.push_back({strike, Terrain::Ice, Terrain::Water, 0.0f, 0.8f});
-        thaw_loot_and_grenades_at({strike});
-        
-        // Check if there's a deactivated mine on this ice cell
-        if (mine_grid[strike.x][strike.y] && mine_deactivated[strike.x][strike.y]) {
-            mine_deactivated[strike.x][strike.y] = false;
-            add_log(tr("[MINE] Mine at (" + std::to_string(strike.x + 1) + ", " + std::to_string(strike.y + 1) + ") reactivated by lightning melting ice!",
-                       "[MIN] Mìn o (" + std::to_string(strike.x + 1) + ", " + std::to_string(strike.y + 1) + ") hoat dong lai do set!"),
-                    ImVec4(1.0f, 0.7f, 0.2f, 1.0f));
-        } else {
-            reactivate_mines_at({strike});
+    if (strikes.size() == 1) {
+        add_log("[ENV] Lightning strikes (" + std::to_string(strikes[0].x + 1) + ", " + std::to_string(strikes[0].y + 1) + ")!", ImVec4(1.0f, 1.0f, 0.35f, 1.0f));
+    } else {
+        add_log("[ENV] Lightning storm! " + std::to_string(strikes.size()) + " strikes hit the battlefield!", ImVec4(1.0f, 1.0f, 0.35f, 1.0f));
+    }
+
+    for (const auto& strike : strikes) {
+        std::vector<Position> conductive_cluster = get_conductive_cluster(strike);
+
+        // Hủy loot tại ô bị sét đánh trực tiếp
+        destroy_loot_at_cells({strike});
+
+        // Kích nổ mìn nếu sét đánh trúng
+        if (mine_grid[strike.x][strike.y]) {
+            mine_grid[strike.x][strike.y] = false;
+            add_log("[ENV] Lightning struck a mine! Detonation!", ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
+            queue_explosion(strike.x, strike.y);
         }
-        
-        add_log(tr("[ENV] Lightning melted ice at (" + std::to_string(strike.x + 1) + ", " + std::to_string(strike.y + 1) + ")!",
-                   "[MOI] Set danh tan bang o (" + std::to_string(strike.x + 1) + ", " + std::to_string(strike.y + 1) + ")!"), ImVec4(0.6f, 0.9f, 1.0f, 1.0f));
-        
-        // Unfreeze entity at the melted ice cell
-        if (human.hp > 0 && human.pos == strike && human.is_frozen) {
-            human.is_frozen = false;
-            add_log(tr("[ICE] Lightning shattered the ice! Human unfrozen.",
-                       "[BANG] Set danh vo bang! Nguoi duoc giai bang."), ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
-        }
-        for (auto& z : zombies) {
-            if (z->hp > 0 && z->pos == strike && z->is_frozen) {
-                z->is_frozen = false;
-                add_log(tr("[ICE] Lightning shattered the ice! " + z->name + " unfrozen.",
-                           "[BANG] Set danh vo bang! " + z->name + " duoc giai bang."), ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+
+        // Melt ice at strike location
+        if (grid[strike.x][strike.y] == Terrain::Ice) {
+            grid[strike.x][strike.y] = Terrain::Water;
+            terrain_transitions.push_back({strike, Terrain::Ice, Terrain::Water, 0.0f, 0.8f});
+            thaw_loot_and_grenades_at({strike});
+
+            // Check if there's a deactivated mine on this ice cell
+            if (mine_grid[strike.x][strike.y] && mine_deactivated[strike.x][strike.y]) {
+                mine_deactivated[strike.x][strike.y] = false;
+                add_log(tr("[MINE] Mine at (" + std::to_string(strike.x + 1) + ", " + std::to_string(strike.y + 1) + ") reactivated by lightning melting ice!",
+                           "[MIN] Mìn o (" + std::to_string(strike.x + 1) + ", " + std::to_string(strike.y + 1) + ") hoat dong lai do set!"),
+                        ImVec4(1.0f, 0.7f, 0.2f, 1.0f));
+            } else {
+                reactivate_mines_at({strike});
+            }
+
+            add_log(tr("[ENV] Lightning melted ice at (" + std::to_string(strike.x + 1) + ", " + std::to_string(strike.y + 1) + ")!",
+                       "[MOI] Set danh tan bang o (" + std::to_string(strike.x + 1) + ", " + std::to_string(strike.y + 1) + ")!"), ImVec4(0.6f, 0.9f, 1.0f, 1.0f));
+
+            // Unfreeze entity at the melted ice cell
+            if (human.hp > 0 && human.pos == strike && human.is_frozen) {
+                human.is_frozen = false;
+                add_log(tr("[ICE] Lightning shattered the ice! Human unfrozen.",
+                           "[BANG] Set danh vo bang! Nguoi duoc giai bang."), ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+            }
+            for (auto& z : zombies) {
+                if (z->hp > 0 && z->pos == strike && z->is_frozen) {
+                    z->is_frozen = false;
+                    add_log(tr("[ICE] Lightning shattered the ice! " + z->name + " unfrozen.",
+                               "[BANG] Set danh vo bang! " + z->name + " duoc giai bang."), ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+                }
             }
         }
-    }
 
-    if (grid[strike.x][strike.y] == Terrain::Forest) {
-        add_log("[ENV] Lightning set the forest at (" + std::to_string(strike.x + 1) + ", " + std::to_string(strike.y + 1) + ") on fire!", ImVec4(1.0f, 0.45f, 0.0f, 1.0f));
-        set_cell_on_fire(strike.x, strike.y);
-    }
-
-    if (human.hp > 0 && human.pos == strike) {
-        human.hp = std::max(0, human.hp - GameConstants::Environment::LIGHTNING_HP_DAMAGE);
-        floating_texts.push_back({human.pos, -GameConstants::Environment::LIGHTNING_HP_DAMAGE, 1.0f, 1.0f});
-        add_log("-> Human is struck by lightning! -" + std::to_string(GameConstants::Environment::LIGHTNING_HP_DAMAGE) + " HP.", ImVec4(1.0f, 0.25f, 0.25f, 1.0f));
-        // Direct strike on the struck cell unfreezes the entity
-        if (human.is_frozen) {
-            human.is_frozen = false;
-            add_log(tr("[ICE] Lightning shattered the ice! Human unfrozen.",
-                       "[BANG] Set danh vo bang! Nguoi duoc giai bang."), ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+        if (grid[strike.x][strike.y] == Terrain::Forest) {
+            add_log("[ENV] Lightning set the forest at (" + std::to_string(strike.x + 1) + ", " + std::to_string(strike.y + 1) + ") on fire!", ImVec4(1.0f, 0.45f, 0.0f, 1.0f));
+            set_cell_on_fire(strike.x, strike.y);
         }
-    }
-    for (auto& z : zombies) {
-        if (z->hp > 0 && z->pos == strike) {
-            z->hp -= GameConstants::Environment::LIGHTNING_HP_DAMAGE;
-            floating_texts.push_back({z->pos, -GameConstants::Environment::LIGHTNING_HP_DAMAGE, 1.0f, 1.0f});
-            add_log("-> " + z->name + " is struck by lightning! -" + std::to_string(GameConstants::Environment::LIGHTNING_HP_DAMAGE) + " HP.", ImVec4(1.0f, 0.75f, 0.2f, 1.0f));
+
+        if (human.hp > 0 && human.pos == strike) {
+            human.hp = std::max(0, human.hp - GameConstants::Environment::LIGHTNING_HP_DAMAGE);
+            floating_texts.push_back({human.pos, -GameConstants::Environment::LIGHTNING_HP_DAMAGE, 1.0f, 1.0f});
+            add_log("-> Human is struck by lightning! -" + std::to_string(GameConstants::Environment::LIGHTNING_HP_DAMAGE) + " HP.", ImVec4(1.0f, 0.25f, 0.25f, 1.0f));
             // Direct strike on the struck cell unfreezes the entity
-            if (z->is_frozen) {
-                z->is_frozen = false;
-                add_log(tr("[ICE] Lightning shattered the ice! " + z->name + " unfrozen.",
-                           "[BANG] Set danh vo bang! " + z->name + " duoc giai bang."), ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+            if (human.is_frozen) {
+                human.is_frozen = false;
+                add_log(tr("[ICE] Lightning shattered the ice! Human unfrozen.",
+                           "[BANG] Set danh vo bang! Nguoi duoc giai bang."), ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
             }
-            if (z->hp <= 0 && z->type == ZombieType::Exploding) queue_explosion(z->pos.x, z->pos.y, true);
-        }
-    }
-
-    // Step 1: Paralyze entities standing ON conductive (Water/Ice) cells in the cluster
-    int paralyzed_count = 0;
-    for (const auto& p : conductive_cluster) {
-        if (human.hp > 0 && human.pos == p && !human.is_paralyzed) {
-            human.is_paralyzed = true;
-            paralyzed_count++;
         }
         for (auto& z : zombies) {
-            if (z->hp > 0 && z->pos == p && !z->is_paralyzed) {
-                z->is_paralyzed = true;
-                paralyzed_count++;
+            if (z->hp > 0 && z->pos == strike) {
+                z->hp -= GameConstants::Environment::LIGHTNING_HP_DAMAGE;
+                floating_texts.push_back({z->pos, -GameConstants::Environment::LIGHTNING_HP_DAMAGE, 1.0f, 1.0f});
+                add_log("-> " + z->name + " is struck by lightning! -" + std::to_string(GameConstants::Environment::LIGHTNING_HP_DAMAGE) + " HP.", ImVec4(1.0f, 0.75f, 0.2f, 1.0f));
+                // Direct strike on the struck cell unfreezes the entity
+                if (z->is_frozen) {
+                    z->is_frozen = false;
+                    add_log(tr("[ICE] Lightning shattered the ice! " + z->name + " unfrozen.",
+                               "[BANG] Set danh vo bang! " + z->name + " duoc giai bang."), ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+                }
+                if (z->hp <= 0 && z->type == ZombieType::Exploding) queue_explosion(z->pos.x, z->pos.y, true);
             }
         }
-    }
 
-    // Step 2: Contact spread — entity standing orthogonally adjacent to a paralyzed
-    // entity on Water/Ice also gets shocked (simulates touching a live body).
-    // Only spreads one hop; entities on Dirt/Forest adjacent to empty Water/Ice are safe.
-    const int adj4[4][2] = {{1,0},{-1,0},{0,1},{0,-1}};
-    std::vector<Position> shocked_positions;
-    for (const auto& p : conductive_cluster) {
-        if (human.hp > 0 && human.pos == p && human.is_paralyzed)
-            shocked_positions.push_back(human.pos);
-        for (const auto& z : zombies)
-            if (z->hp > 0 && z->pos == p && z->is_paralyzed)
-                shocked_positions.push_back(z->pos);
-    }
-    for (const auto& sp : shocked_positions) {
-        for (const auto& d : adj4) {
-            Position nb{sp.x + d[0], sp.y + d[1]};
-            if (nb.x < 0 || nb.x >= width || nb.y < 0 || nb.y >= height) continue;
-            // Entities already on conductive tiles are handled in step 1
-            if (grid[nb.x][nb.y] == Terrain::Water || grid[nb.x][nb.y] == Terrain::Ice) continue;
-            if (human.hp > 0 && human.pos == nb && !human.is_paralyzed) {
+        // Step 1: Paralyze entities standing ON conductive (Water/Ice) cells in the cluster
+        int paralyzed_count = 0;
+        for (const auto& p : conductive_cluster) {
+            if (human.hp > 0 && human.pos == p && !human.is_paralyzed) {
                 human.is_paralyzed = true;
                 paralyzed_count++;
             }
             for (auto& z : zombies) {
-                if (z->hp > 0 && z->pos == nb && !z->is_paralyzed) {
+                if (z->hp > 0 && z->pos == p && !z->is_paralyzed) {
                     z->is_paralyzed = true;
                     paralyzed_count++;
                 }
             }
         }
+
+        // Step 2: Contact spread — entity standing orthogonally adjacent to a paralyzed
+        // entity on Water/Ice also gets shocked (simulates touching a live body).
+        // Only spreads one hop; entities on Dirt/Forest adjacent to empty Water/Ice are safe.
+        const int adj4[4][2] = {{1,0},{-1,0},{0,1},{0,-1}};
+        std::vector<Position> shocked_positions;
+        for (const auto& p : conductive_cluster) {
+            if (human.hp > 0 && human.pos == p && human.is_paralyzed)
+                shocked_positions.push_back(human.pos);
+            for (const auto& z : zombies)
+                if (z->hp > 0 && z->pos == p && z->is_paralyzed)
+                    shocked_positions.push_back(z->pos);
+        }
+        for (const auto& sp : shocked_positions) {
+            for (const auto& d : adj4) {
+                Position nb{sp.x + d[0], sp.y + d[1]};
+                if (nb.x < 0 || nb.x >= width || nb.y < 0 || nb.y >= height) continue;
+                // Entities already on conductive tiles are handled in step 1
+                if (grid[nb.x][nb.y] == Terrain::Water || grid[nb.x][nb.y] == Terrain::Ice) continue;
+                if (human.hp > 0 && human.pos == nb && !human.is_paralyzed) {
+                    human.is_paralyzed = true;
+                    paralyzed_count++;
+                }
+                for (auto& z : zombies) {
+                    if (z->hp > 0 && z->pos == nb && !z->is_paralyzed) {
+                        z->is_paralyzed = true;
+                        paralyzed_count++;
+                    }
+                }
+            }
+        }
+
+        if (!conductive_cluster.empty() || paralyzed_count > 0) {
+            sfx("electricity");
+            add_log("-> Electricity spreads through " + std::to_string(conductive_cluster.size()) +
+                    " conductive cells; " + std::to_string(paralyzed_count) +
+                    " entity/entities paralyzed.", ImVec4(0.45f, 0.9f, 1.0f, 1.0f));
+        }
     }
 
-    if (!conductive_cluster.empty() || paralyzed_count > 0) {
-        sfx("electricity");
-        add_log("-> Electricity spreads through " + std::to_string(conductive_cluster.size()) +
-                " conductive cells; " + std::to_string(paralyzed_count) +
-                " entity/entities paralyzed.", ImVec4(0.45f, 0.9f, 1.0f, 1.0f));
-    }
     check_victory_conditions();
 }
 

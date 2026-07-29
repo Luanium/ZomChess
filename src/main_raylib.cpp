@@ -9,6 +9,8 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <map>
+#include <set>
 #include <filesystem>
 #include <cstring>
 namespace fs = std::filesystem;
@@ -1964,6 +1966,14 @@ int main() {
             DrawText(TextFormat("%d", mapY + 1), (int)(boardOffset - 16), (int)(ly * cellSize + boardOffset + cellSize * 0.28f), 12, (Color){180,190,205,255});
         }
 
+        // Count loot drops per tile (using canonical grid position, not wind-animated position)
+        std::map<std::pair<int,int>, int> lootCountPerTile;
+        for (const auto& ld : state.loot_drops)
+            lootCountPerTile[{ld.pos.x, ld.pos.y}]++;
+
+        // Track which tiles we've already drawn so stacked drops only render once
+        std::set<std::pair<int,int>> lootTilesDrawn;
+
         for (size_t li = 0; li < state.loot_drops.size(); ++li) {
             const auto& ld = state.loot_drops[li];
             float animGX, animGY;
@@ -1972,10 +1982,27 @@ int main() {
             float gy = windAnim ? animGY : (float)ld.pos.y;
             int llx = (int)std::floor(gx) - viewX, lly = (int)std::floor(gy) - viewY;
             if (llx < 0 || llx >= VIEW_CELLS || lly < 0 || lly >= VIEW_CELLS) continue;
+
+            // Only draw one icon per tile — skip duplicates
+            auto tileKey = std::make_pair(ld.pos.x, ld.pos.y);
+            if (lootTilesDrawn.count(tileKey)) continue;
+            lootTilesDrawn.insert(tileKey);
+
             int lx = (int)((gx - viewX) * cellSize + boardOffset);
             int ly = (int)((gy - viewY) * cellSize + boardOffset);
             DrawRectangle(lx + 4, ly + 4, (int)(cellSize - 8), (int)(cellSize - 8), (Color){80, 60, 20, 200});
             DrawText("?", lx + (int)(cellSize / 2) - 5, ly + (int)(cellSize / 2) - 10, 20, (Color){255, 220, 60, 255});
+
+            // Draw stack count badge in the bottom-right corner when more than one drop
+            int count = lootCountPerTile[tileKey];
+            if (count > 1) {
+                const char* countStr = TextFormat("%d", count);
+                int badgeSize = 14;
+                int bx = lx + (int)(cellSize - 8) - badgeSize + 2;
+                int by = ly + (int)(cellSize - 8) - badgeSize + 2;
+                DrawRectangle(bx - 1, by - 1, badgeSize + 2, badgeSize + 2, (Color){20, 20, 20, 220});
+                DrawText(countStr, bx + 1, by, badgeSize - 2, (Color){255, 220, 60, 255});
+            }
         }
 
         for (size_t gi = 0; gi < state.active_grenades.size(); ++gi) {
@@ -2268,14 +2295,20 @@ int main() {
                     DrawRectangle((int)(bx * cellSize + boardOffset + 2), (int)(by * cellSize + boardOffset + 2),
                                   (int)(cellSize - 4), (int)(cellSize - 4), (Color){80, 220, 255, (unsigned char)(progress * 130)});
                 }
-                int clx = state.active_fx.cx - viewX, cly = state.active_fx.cy - viewY;
-                if (clx >= 0 && clx < VIEW_CELLS && cly >= 0 && cly < VIEW_CELLS) {
+                // Draw all lightning bolts simultaneously
+                for (size_t si = 0; si < state.active_fx.lightning_strikes.size(); ++si) {
+                    const Position& strike = state.active_fx.lightning_strikes[si];
+                    int clx = strike.x - viewX, cly = strike.y - viewY;
+                    if (clx < 0 || clx >= VIEW_CELLS || cly < 0 || cly >= VIEW_CELLS) continue;
+
                     float targetX = clx * cellSize + boardOffset + cellSize / 2.0f;
                     float targetY = cly * cellSize + boardOffset + cellSize / 2.0f;
                     float startY = boardOffset;
 
-                    // Deterministic noise from the fixed seed — shape never changes during the strike
-                    unsigned int seed = (unsigned int)state.active_fx.lightning_seed;
+                    // Deterministic noise from the per-strike seed — shape never changes during the strike
+                    unsigned int seed = (si < state.active_fx.lightning_seeds.size())
+                        ? (unsigned int)state.active_fx.lightning_seeds[si]
+                        : (unsigned int)state.active_fx.lightning_seed;
                     auto noiseAt = [&](int a, int b) -> float {
                         unsigned int h = seed * 2654435761u + a * 73856093u + b * 19349663u;
                         h = (h ^ (h >> 13)) * 1274126177u;
@@ -2312,7 +2345,7 @@ int main() {
                         Vector2 base = trunk[i];
                         float by2 = base.y + (trunk[i+1].y - base.y) * 0.5f;
                         for (int side = -1; side <= 1; side += 2) {
-                            float bn = noiseAt(i + 10, side) ;
+                            float bn = noiseAt(i + 10, side);
                             float branchLen = 16.0f - i * 3.0f;
                             Vector2 tip = { base.x + side * (10.0f + std::abs(bn) * 14.0f), by2 + branchLen * 0.5f };
                             float bthick = 2.5f - i * 0.5f;
