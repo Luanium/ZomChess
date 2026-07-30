@@ -13,6 +13,7 @@
 #include <set>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <cstring>
 namespace fs = std::filesystem;
 
@@ -473,8 +474,10 @@ int main() {
     float ioMessageTimer = 0.0f;
     bool hasImportedConfig = false;
     bool showImportWarnPopup = false;
-    std::string importWarnMessage;
+    bool importWarnJustOpened = false;  // suppress the click that opened the popup
     std::string pendingImportPath;
+    GameState::ImportResult pendingImportAnalysis;
+    float importWarnScroll = 0.0f;
 
     // ── Custom difficulty sliders (right column) ──
     float sliderX = 400.0f;
@@ -734,7 +737,67 @@ int main() {
                         GameConstants::Difficulty::SliderBounds::INITIAL_STAMINA_MAX, sliderX, colAW, ay, (Color){220,180,60,255}); ay += 42;
             drawSliderW("Turn Limit", &state.active_config.turn_limit,
                         GameConstants::Difficulty::SliderBounds::TURN_LIMIT_MIN,
-                        GameConstants::Difficulty::SliderBounds::TURN_LIMIT_MAX, sliderX, colAW, ay, (Color){220,180,60,255}); ay += 50;
+                        GameConstants::Difficulty::SliderBounds::TURN_LIMIT_MAX, sliderX, colAW, ay, (Color){220,180,60,255}); ay += 42;
+
+            // ── Human Spawn Position ─────────────────────────────────────────
+            // Clamp stored coords to current map bounds whenever the map size changes
+            state.active_config.custom_human_pos.x = std::max(0, std::min(state.active_config.map_width  - 1, state.active_config.custom_human_pos.x));
+            state.active_config.custom_human_pos.y = std::max(0, std::min(state.active_config.map_height - 1, state.active_config.custom_human_pos.y));
+
+            // Disable manual position when custom map is active (Map Editor owns it)
+            bool humanPosLocked = state.active_config.custom_map_mode;
+
+            // "Manual" checkbox — greyed out when locked
+            bool humanPosClick = drawCheckbox(mouse, mouseClicked && !humanPosLocked,
+                                              sliderX, ay,
+                                              state.active_config.custom_human_pos_set && !humanPosLocked,
+                                              humanPosLocked ? "Manual Spawn Position (set in Map Editor)"
+                                                             : "Manual Spawn Position");
+            if (humanPosClick)
+                state.active_config.custom_human_pos_set = !state.active_config.custom_human_pos_set;
+            ay += 28;
+
+            if (state.active_config.custom_human_pos_set && !humanPosLocked) {
+                // +/- number boxes for X and Y (1-indexed for display)
+                const float BOX_W = 28.0f, BOX_H = 24.0f, BTN_W = 22.0f;
+                const float SPACING = 14.0f;
+                Color dimGray  = {50, 50, 54, 255};
+                Color btnColor = {70, 90, 70, 255};
+                Color lblColor = {200, 220, 200, 255};
+
+                auto drawNumBox = [&](const char* label, int* val, int minV, int maxV, float x, float y) {
+                    // label
+                    DrawText(label, (int)x, (int)(y + 5), 14, lblColor);
+                    float cx = x + MeasureText(label, 14) + 8.0f;
+                    // minus button
+                    Rectangle minusBtn = {cx, y, BTN_W, BOX_H};
+                    DrawRectangleRec(minusBtn, btnColor);
+                    drawCenteredText("-", minusBtn, 16, WHITE);
+                    // value box
+                    Rectangle valBox = {cx + BTN_W + 2, y, BOX_W + 8, BOX_H};
+                    DrawRectangleRec(valBox, dimGray);
+                    DrawRectangleLinesEx(valBox, 1, {90, 90, 90, 255});
+                    drawCenteredText(TextFormat("%d", *val + 1), valBox, 14, WHITE); // +1 for 1-indexed display
+                    // plus button
+                    Rectangle plusBtn = {cx + BTN_W + 2 + BOX_W + 8 + 2, y, BTN_W, BOX_H};
+                    DrawRectangleRec(plusBtn, btnColor);
+                    drawCenteredText("+", plusBtn, 16, WHITE);
+
+                    if (mouseClicked) {
+                        if (CheckCollisionPointRec(mouse, minusBtn) && *val > minV) (*val)--;
+                        if (CheckCollisionPointRec(mouse, plusBtn)  && *val < maxV) (*val)++;
+                    }
+                };
+
+                float bx = sliderX + 12.0f;
+                drawNumBox("X:", &state.active_config.custom_human_pos.x,
+                           0, state.active_config.map_width  - 1, bx, ay);
+                bx += MeasureText("X:", 14) + 8.0f + BTN_W + 2 + BOX_W + 8 + 2 + BTN_W + SPACING + 20.0f;
+                drawNumBox("Y:", &state.active_config.custom_human_pos.y,
+                           0, state.active_config.map_height - 1, bx, ay);
+                ay += 30;
+            }
+            ay += 8; // gap before Weapons
 
             DrawText("Weapons", (int)sliderX, (int)ay, 17, (Color){130,220,255,255}); ay += 24;
             drawSliderW("Pistol Ammo", &state.active_config.pistol_ammo,
@@ -1196,11 +1259,22 @@ int main() {
                             fb.is_open = false;
                         }
                     } else if (!fb.selected_path.empty()) {
-                        bool ok = state.import_challenge_file(fb.selected_path);
-                        ioMessage = ok ? ("Imported " + fs::path(fb.selected_path).filename().string()) : "Import failed!";
-                        ioMessageTimer = 3.0f;
-                        hasImportedConfig = ok;
-                        fb.is_open = false;
+                        // Analyse before importing — always show compatibility info
+                        GameState::ImportResult analysis = state.analyze_challenge_file(fb.selected_path);
+                        if (!analysis.file_opened) {
+                            ioMessage = "Import failed: cannot open file.";
+                            ioMessageTimer = 3.0f;
+                            fb.is_open = false;
+                        } else {
+                            // Always show the compatibility popup so the player
+                            // explicitly confirms before any import takes effect.
+                            pendingImportPath = fb.selected_path;
+                            pendingImportAnalysis = analysis;
+                            importWarnScroll = 0.0f;
+                            showImportWarnPopup = true;
+                            importWarnJustOpened = true;  // skip this frame's click
+                            fb.is_open = false;
+                        }
                     }
                 }
             };
@@ -1231,34 +1305,181 @@ int main() {
             }
 
             if (showImportWarnPopup) {
-                DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), (Color){0, 0, 0, 150});
-                Rectangle popup = { GetScreenWidth()/2.0f - 280, GetScreenHeight()/2.0f - 130, 560, 260 };
-                DrawRectangleRec(popup, (Color){35, 36, 40, 255});
-                DrawRectangleLinesEx(popup, 2, (Color){200, 160, 40, 255});
-                DrawText("Import Compatibility Warning", (int)popup.x + 20, (int)popup.y + 15, 18, (Color){255, 210, 80, 255});
+                DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), (Color){0, 0, 0, 160});
 
-                // Multi-line message rendering
-                {
-                    float ly = popup.y + 50;
-                    size_t start = 0;
-                    while (start <= importWarnMessage.size()) {
-                        size_t nl = importWarnMessage.find('\n', start);
-                        std::string line = importWarnMessage.substr(start, nl == std::string::npos ? std::string::npos : nl - start);
-                        DrawText(line.c_str(), (int)popup.x + 20, (int)ly, 15, RAYWHITE);
-                        ly += 22;
-                        if (nl == std::string::npos) break;
-                        start = nl + 1;
+                const float PW = 660.0f, PH = 480.0f;
+                Rectangle popup = {
+                    GetScreenWidth()  / 2.0f - PW / 2.0f,
+                    GetScreenHeight() / 2.0f - PH / 2.0f,
+                    PW, PH
+                };
+                DrawRectangleRec(popup, (Color){28, 29, 32, 255});
+                DrawRectangleLinesEx(popup, 2, (Color){200, 160, 40, 255});
+
+                // ── Title ────────────────────────────────────────────────────
+                DrawText("Import Compatibility Check",
+                         (int)(popup.x + 20), (int)(popup.y + 14), 19, (Color){255, 210, 80, 255});
+
+                // File version line
+                std::string verLine;
+                if (pendingImportAnalysis.has_version)
+                    verLine = "File version: " + pendingImportAnalysis.file_version +
+                              (pendingImportAnalysis.version_match ? "  (matches current)" : "  (DIFFERENT from current)");
+                else
+                    verLine = "File version: not found";
+                Color verColor = pendingImportAnalysis.version_match
+                    ? (Color){130, 220, 130, 255} : (Color){255, 130, 80, 255};
+                DrawText(verLine.c_str(), (int)(popup.x + 20), (int)(popup.y + 42), 14, verColor);
+
+                // ── Scrollable content area ──────────────────────────────────
+                const float SCROLL_W = 8.0f;
+                const float BTN_AREA = 58.0f;
+                const int   FONT_SZ  = 14;
+                Rectangle contentBox = {
+                    popup.x + 12,
+                    popup.y + 66,
+                    PW - 24 - SCROLL_W - 4,
+                    PH - 66 - BTN_AREA
+                };
+                DrawRectangleRec(contentBox, (Color){15, 15, 18, 200});
+
+                // ── Build content lines with word-wrap ───────────────────────
+                struct WarnLine { std::string text; Color color; bool isBlank; };
+                std::vector<WarnLine> lines;
+
+                // Word-wrap a single string into multiple WarnLine entries.
+                // `indent` is prepended to continuation lines (for bullet items).
+                const float TEXT_MAX_W = contentBox.width - 16.0f; // usable width inside padding
+                auto pushWrapped = [&](const std::string& text, Color col, const std::string& indent = "") {
+                    if (text.empty()) { lines.push_back({"", col, true}); return; }
+                    std::string remaining = text;
+                    bool first = true;
+                    while (!remaining.empty()) {
+                        std::string prefix = first ? "" : indent;
+                        // Find how many characters fit on this line
+                        std::string candidate = prefix;
+                        size_t lastSpace = std::string::npos;
+                        size_t i = 0;
+                        // Walk word by word
+                        std::istringstream ss(remaining);
+                        std::string word;
+                        std::string built = prefix;
+                        std::string accepted = prefix;
+                        bool any = false;
+                        while (ss >> word) {
+                            std::string trial = any ? (built + " " + word) : (built + word);
+                            if (MeasureText(trial.c_str(), FONT_SZ) <= (int)TEXT_MAX_W) {
+                                built = trial;
+                                accepted = built;
+                                any = true;
+                                // advance remaining past this word
+                            } else {
+                                break;
+                            }
+                        }
+                        // If nothing fit even one word, force-break the word
+                        if (!any) {
+                            // force at least one char
+                            std::string forced = prefix;
+                            for (char c : remaining) {
+                                std::string t = forced + c;
+                                if (MeasureText(t.c_str(), FONT_SZ) > (int)TEXT_MAX_W && forced.size() > prefix.size()) break;
+                                forced = t;
+                            }
+                            accepted = forced;
+                        }
+                        lines.push_back({accepted, col, false});
+                        // Strip accepted content from remaining (minus the prefix)
+                        std::string stripped = accepted.substr(prefix.size());
+                        size_t pos = remaining.find(stripped);
+                        if (pos != std::string::npos)
+                            remaining = remaining.substr(pos + stripped.size());
+                        else
+                            remaining.clear();
+                        // trim leading space
+                        while (!remaining.empty() && remaining[0] == ' ') remaining.erase(0, 1);
+                        first = false;
                     }
+                };
+
+                auto pushSection = [&](const std::string& header, Color hcol,
+                                       const std::vector<std::string>& items, Color icol,
+                                       const std::string& bulletPrefix) {
+                    pushWrapped(header, hcol);
+                    for (const auto& item : items)
+                        pushWrapped(bulletPrefix + item, icol, "      "); // continuation indent
+                    lines.push_back({"", RAYWHITE, true});
+                };
+
+                if (!pendingImportAnalysis.missing_fields.empty())
+                    pushSection("Expected fields NOT found in file (defaults will be used):",
+                                (Color){255, 190, 60, 255},
+                                pendingImportAnalysis.missing_fields,
+                                (Color){255, 220, 140, 255}, "  - ");
+
+                if (!pendingImportAnalysis.unknown_fields.empty())
+                    pushSection("Unknown fields in file (will be ignored):",
+                                (Color){160, 160, 255, 255},
+                                pendingImportAnalysis.unknown_fields,
+                                (Color){190, 190, 220, 255}, "  - ");
+
+                if (!pendingImportAnalysis.sanity_warnings.empty())
+                    pushSection("Value sanity errors (defaults will be used):",
+                                (Color){255, 100, 100, 255},
+                                pendingImportAnalysis.sanity_warnings,
+                                (Color){255, 160, 160, 255}, "  ! ");
+
+                if (pendingImportAnalysis.missing_fields.empty() &&
+                    pendingImportAnalysis.unknown_fields.empty() &&
+                    pendingImportAnalysis.sanity_warnings.empty()) {
+                    pushWrapped("No compatibility issues found.", (Color){130, 220, 130, 255});
+                    lines.push_back({"", RAYWHITE, true});
                 }
 
-                Rectangle yesBtn = { popup.x + 60,  popup.y + popup.height - 55, 200, 40 };
-                Rectangle noBtn  = { popup.x + 300, popup.y + popup.height - 55, 200, 40 };
-                DrawRectangleRec(yesBtn, (Color){160, 100, 20, 255});
+                pushWrapped("Missing fields and invalid ratios will use default values.", (Color){200, 200, 200, 255});
+                pushWrapped("Proceed with import?", RAYWHITE);
+
+                // ── Scroll & render ──────────────────────────────────────────
+                const float LINE_H  = (float)(FONT_SZ + 5);
+                float contentH  = lines.size() * LINE_H + 8.0f;
+                float maxScroll = std::max(0.0f, contentH - contentBox.height);
+
+                if (CheckCollisionPointRec(mouse, contentBox))
+                    importWarnScroll -= GetMouseWheelMove() * LINE_H * 2;
+                importWarnScroll = std::max(0.0f, std::min(importWarnScroll, maxScroll));
+
+                BeginScissorMode((int)contentBox.x, (int)contentBox.y,
+                                 (int)contentBox.width, (int)contentBox.height);
+                float ly = contentBox.y + 6.0f - importWarnScroll;
+                for (const auto& wl : lines) {
+                    if (!wl.isBlank && ly + LINE_H > contentBox.y && ly < contentBox.y + contentBox.height)
+                        DrawText(wl.text.c_str(), (int)(contentBox.x + 8), (int)ly, FONT_SZ, wl.color);
+                    ly += LINE_H;
+                }
+                EndScissorMode();
+
+                // Scrollbar (always shown when content overflows)
+                if (maxScroll > 0) {
+                    float trackX = contentBox.x + contentBox.width + 2;
+                    float barH   = std::max(16.0f, contentBox.height * (contentBox.height / contentH));
+                    float barY   = contentBox.y + (importWarnScroll / maxScroll) * (contentBox.height - barH);
+                    DrawRectangle((int)trackX, (int)contentBox.y, (int)SCROLL_W, (int)contentBox.height,
+                                  (Color){30, 30, 30, 200});
+                    DrawRectangle((int)trackX, (int)barY, (int)SCROLL_W, (int)barH,
+                                  (Color){140, 140, 140, 220});
+                }
+
+                // ── Buttons ──────────────────────────────────────────────────
+                Rectangle yesBtn = { popup.x + 50,            popup.y + PH - 50, 220, 36 };
+                Rectangle noBtn  = { popup.x + PW - 50 - 220, popup.y + PH - 50, 220, 36 };
+                DrawRectangleRec(yesBtn, (Color){140, 90, 15, 255});
                 drawCenteredText("Yes, Import Anyway", yesBtn, 15, WHITE);
                 DrawRectangleRec(noBtn, (Color){60, 60, 60, 255});
                 drawCenteredText("Cancel", noBtn, 15, WHITE);
 
-                if (mouseClicked && CheckCollisionPointRec(mouse, yesBtn)) {
+                if (importWarnJustOpened) {
+                    importWarnJustOpened = false;
+                } else if (mouseClicked && CheckCollisionPointRec(mouse, yesBtn)) {
                     bool ok = state.import_challenge_file(pendingImportPath);
                     ioMessage = ok ? ("Imported " + fs::path(pendingImportPath).filename().string()) : "Import failed!";
                     ioMessageTimer = 3.0f;

@@ -166,7 +166,9 @@ public:
         bool has_version = false;      // file có field VERSION không
         std::string file_version;      // version ghi trong file (rỗng nếu không có)
         bool version_match = false;    // file_version == GameConstants::GAME_VERSION
-        std::vector<std::string> missing_fields; // các field mong đợi bị thiếu (chỉ tính khi version match)
+        std::vector<std::string> missing_fields;   // expected keys absent from the file
+        std::vector<std::string> unknown_fields;   // keys in the file the importer doesn't recognise
+        std::vector<std::string> sanity_warnings;  // value-level problems (bad sums etc.) — defaults will be used
     };
 
     bool export_challenge_file(const std::string& path);

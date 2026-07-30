@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <queue>
 #include <unordered_map>
 #include <cctype>
@@ -240,13 +241,24 @@ void GameState::apply_quick_difficulty(int level) {
     }
 }
 
-// Minimum set of fields expected in a same-version .zom file for it to be
-// considered "well-formed" (missing any of these triggers a warning popup).
-static const std::vector<std::string> MINIMUM_EXPECTED_ZOM_FIELDS = {
-    "MAP_W", "MAP_H", "HUMAN_HP", "INITIAL_STAMINA",
-    "PISTOL_AMMO", "SHOTGUN_AMMO", "GRENADES", "MINES", "MOLOTOVS",
-    "TURN_LIMIT", "ZOM_NORMAL", "ZOM_FAST", "ZOM_EXPLODING", "ZOM_VAMPIRE", "ZOM_SICK",
-    "RATIO_WALL", "RATIO_WATER", "RATIO_FOREST", "RATIO_DIRT", "RATIO_ICE"
+// Canonical set of scalar KEY fields written by export_challenge_file.
+// This is the single source of truth used for both:
+//   - "missing" detection (expected but absent from the file)
+//   - "unknown" detection (present in the file but not in this list)
+// GRID_DATA and ZOMBIE_SPAWNS are structural block keys handled separately.
+static const std::vector<std::string> ALL_EXPECTED_ZOM_FIELDS = {
+    "VERSION",
+    "MAP_W", "MAP_H",
+    "HUMAN_HP", "INITIAL_STAMINA",
+    "PISTOL_AMMO", "SHOTGUN_AMMO", "WARP_AMMO",
+    "GRENADES", "MINES", "MOLOTOVS",
+    "TURN_LIMIT",
+    "ZOM_NORMAL", "ZOM_FAST", "ZOM_EXPLODING", "ZOM_VAMPIRE", "ZOM_SICK",
+    "SHIELD", "CUSTOM_MAP", "ENABLE_ENV", "FIXED_STAMINA",
+    "RATIO_WALL", "RATIO_WATER", "RATIO_FOREST", "RATIO_DIRT", "RATIO_ICE",
+    "CUST_HUMAN_X", "CUST_HUMAN_Y", "CUST_HUMAN_SET",
+    "ENV_PROB_CLEAR", "ENV_PROB_WIND", "ENV_PROB_RAIN", "ENV_PROB_CLOUDS",
+    "ENV_PROB_LIGHT", "ENV_PROB_HEAT", "ENV_PROB_BLIZ"
 };
 
 bool GameState::export_challenge_file(const std::string& path) {
@@ -312,12 +324,16 @@ GameState::ImportResult GameState::analyze_challenge_file(const std::string& pat
     if (!inFile.is_open()) return res;
     res.file_opened = true;
 
+    // Structural block keys — handled with custom parsing, not as scalar KEY+value pairs.
+    static const std::vector<std::string> STRUCTURAL_KEYS = { "GRID_DATA", "ZOMBIE_SPAWNS" };
+
+    // ── Pass 1: collect all keys and values ──────────────────────────────────
     std::vector<std::string> found_keys;
+    std::map<std::string, int> kv; // scalar int values keyed by name
     std::string key;
     while (inFile >> key) {
         if (key == "VERSION") {
-            std::string ver;
-            inFile >> ver;
+            std::string ver; inFile >> ver;
             res.has_version = true;
             res.file_version = ver;
             found_keys.push_back(key);
@@ -325,14 +341,7 @@ GameState::ImportResult GameState::analyze_challenge_file(const std::string& pat
         }
         if (key == "GRID_DATA") {
             found_keys.push_back(key);
-            // Skip the grid block: map_width * map_height ints, but we don't
-            // know dims reliably here without full parse — just consume rest of line-based ints
-            // by reading until we hit a known next key token would be fragile.
-            // Since GRID_DATA is only written together with CUSTOM_MAP=1 and all
-            // numeric keys precede it, safe to just skip numeric tokens until
-            // a non-numeric token (next key) appears.
-            std::streampos before;
-            std::string peek;
+            std::streampos before; std::string peek;
             while (true) {
                 before = inFile.tellg();
                 if (!(inFile >> peek)) break;
@@ -343,29 +352,162 @@ GameState::ImportResult GameState::analyze_challenge_file(const std::string& pat
         }
         if (key == "ZOMBIE_SPAWNS") {
             found_keys.push_back(key);
-            int count = 0;
-            inFile >> count;
-            for (int i = 0; i < count; ++i) {
-                int a,b,c; inFile >> a >> b >> c;
-            }
+            int count = 0; inFile >> count;
+            for (int i = 0; i < count; ++i) { int a,b,c; inFile >> a >> b >> c; }
             continue;
         }
-        // Generic "KEY value" pair
+        int v = 0; inFile >> v;
         found_keys.push_back(key);
-        int dummy;
-        inFile >> dummy;
+        kv[key] = v;
     }
     inFile.close();
 
     res.version_match = res.has_version && (res.file_version == GameConstants::GAME_VERSION);
 
-    if (res.version_match) {
-        for (const auto& expected : MINIMUM_EXPECTED_ZOM_FIELDS) {
-            if (std::find(found_keys.begin(), found_keys.end(), expected) == found_keys.end()) {
-                res.missing_fields.push_back(expected);
+    // ── Pass 2: missing / unknown key checks ─────────────────────────────────
+    for (const auto& expected : ALL_EXPECTED_ZOM_FIELDS) {
+        if (std::find(found_keys.begin(), found_keys.end(), expected) == found_keys.end())
+            res.missing_fields.push_back(expected);
+    }
+    for (const auto& found : found_keys) {
+        bool isExpected   = std::find(ALL_EXPECTED_ZOM_FIELDS.begin(),  ALL_EXPECTED_ZOM_FIELDS.end(),  found) != ALL_EXPECTED_ZOM_FIELDS.end();
+        bool isStructural = std::find(STRUCTURAL_KEYS.begin(), STRUCTURAL_KEYS.end(), found) != STRUCTURAL_KEYS.end();
+        if (!isExpected && !isStructural)
+            res.unknown_fields.push_back(found);
+    }
+
+    // ── Pass 3: value sanity checks ──────────────────────────────────────────
+    // Helper: use default when key is absent (mirrors what import_challenge_file does)
+    GameConfig D{}; // default-constructed config = default values
+    auto get = [&](const std::string& k, int def) -> int {
+        auto it = kv.find(k); return (it != kv.end()) ? it->second : def;
+    };
+    auto has = [&](const std::string& k) { return kv.count(k) > 0; };
+
+    // Map dimensions
+    int mw = get("MAP_W",  D.map_width);
+    int mh = get("MAP_H",  D.map_height);
+    if (mw < GameConstants::MapGen::MAP_WIDTH_MIN  || mw > GameConstants::MapGen::MAP_WIDTH_MAX)
+        res.sanity_warnings.push_back("MAP_W=" + std::to_string(mw) +
+            " out of range [" + std::to_string(GameConstants::MapGen::MAP_WIDTH_MIN)  + "," +
+            std::to_string(GameConstants::MapGen::MAP_WIDTH_MAX)  + "] — default used");
+    if (mh < GameConstants::MapGen::MAP_HEIGHT_MIN || mh > GameConstants::MapGen::MAP_HEIGHT_MAX)
+        res.sanity_warnings.push_back("MAP_H=" + std::to_string(mh) +
+            " out of range [" + std::to_string(GameConstants::MapGen::MAP_HEIGHT_MIN) + "," +
+            std::to_string(GameConstants::MapGen::MAP_HEIGHT_MAX) + "] — default used");
+
+    // Clamp map dims to valid range for downstream checks that depend on them
+    int vmw = std::max(GameConstants::MapGen::MAP_WIDTH_MIN,  std::min(GameConstants::MapGen::MAP_WIDTH_MAX,  mw));
+    int vmh = std::max(GameConstants::MapGen::MAP_HEIGHT_MIN, std::min(GameConstants::MapGen::MAP_HEIGHT_MAX, mh));
+
+    // Human HP (>= 1)
+    int hp = get("HUMAN_HP", D.human_hp);
+    if (hp < GameConstants::Difficulty::SliderBounds::HUMAN_HP_MIN ||
+        hp > GameConstants::Difficulty::SliderBounds::HUMAN_HP_MAX)
+        res.sanity_warnings.push_back("HUMAN_HP=" + std::to_string(hp) +
+            " out of range [" + std::to_string(GameConstants::Difficulty::SliderBounds::HUMAN_HP_MIN) + "," +
+            std::to_string(GameConstants::Difficulty::SliderBounds::HUMAN_HP_MAX) + "] — default used");
+
+    // Initial Stamina (1–6)
+    int stamina = get("INITIAL_STAMINA", D.initial_stamina);
+    if (stamina < GameConstants::Difficulty::SliderBounds::INITIAL_STAMINA_MIN ||
+        stamina > GameConstants::Difficulty::SliderBounds::INITIAL_STAMINA_MAX)
+        res.sanity_warnings.push_back("INITIAL_STAMINA=" + std::to_string(stamina) +
+            " out of range [" + std::to_string(GameConstants::Difficulty::SliderBounds::INITIAL_STAMINA_MIN) + "," +
+            std::to_string(GameConstants::Difficulty::SliderBounds::INITIAL_STAMINA_MAX) + "] — default used");
+
+    // Turn limit (>= 1)
+    int tl = get("TURN_LIMIT", D.turn_limit);
+    if (tl < GameConstants::Difficulty::SliderBounds::TURN_LIMIT_MIN ||
+        tl > GameConstants::Difficulty::SliderBounds::TURN_LIMIT_MAX)
+        res.sanity_warnings.push_back("TURN_LIMIT=" + std::to_string(tl) +
+            " out of range [" + std::to_string(GameConstants::Difficulty::SliderBounds::TURN_LIMIT_MIN) + "," +
+            std::to_string(GameConstants::Difficulty::SliderBounds::TURN_LIMIT_MAX) + "] — default used");
+
+    // Weapon counts (>= 0)
+    auto checkWeapon = [&](const char* k, int def, int minV, int maxV) {
+        int v = get(k, def);
+        if (v < minV || v > maxV)
+            res.sanity_warnings.push_back(std::string(k) + "=" + std::to_string(v) +
+                " out of range [" + std::to_string(minV) + "," + std::to_string(maxV) + "] — default used");
+    };
+    checkWeapon("PISTOL_AMMO",  D.pistol_ammo,   GameConstants::Difficulty::SliderBounds::PISTOL_AMMO_MIN,  GameConstants::Difficulty::SliderBounds::PISTOL_AMMO_MAX);
+    checkWeapon("SHOTGUN_AMMO", D.shotgun_ammo,  GameConstants::Difficulty::SliderBounds::SHOTGUN_AMMO_MIN, GameConstants::Difficulty::SliderBounds::SHOTGUN_AMMO_MAX);
+    checkWeapon("WARP_AMMO",    D.warp_charges,  GameConstants::Difficulty::SliderBounds::WARP_CHARGES_MIN, GameConstants::Difficulty::SliderBounds::WARP_CHARGES_MAX);
+    checkWeapon("GRENADES",     D.grenades,      GameConstants::Difficulty::SliderBounds::GRENADES_MIN,     GameConstants::Difficulty::SliderBounds::GRENADES_MAX);
+    checkWeapon("MOLOTOVS",     D.molotovs,      GameConstants::Difficulty::SliderBounds::MOLOTOVS_MIN,     GameConstants::Difficulty::SliderBounds::MOLOTOVS_MAX);
+    checkWeapon("MINES",        D.mines,         GameConstants::Difficulty::SliderBounds::MINES_MIN,        GameConstants::Difficulty::SliderBounds::MINES_MAX);
+
+    // Zombie counts (>= 0)
+    auto checkZombie = [&](const char* k, int def, int maxV) {
+        int v = get(k, def);
+        if (v < 0 || v > maxV)
+            res.sanity_warnings.push_back(std::string(k) + "=" + std::to_string(v) +
+                " out of range [0," + std::to_string(maxV) + "] — default used");
+    };
+    checkZombie("ZOM_NORMAL",    D.count_normal,    GameConstants::Difficulty::SliderBounds::COUNT_CLEVER_MAX);
+    checkZombie("ZOM_FAST",      D.count_fast,      GameConstants::Difficulty::SliderBounds::COUNT_FAST_MAX);
+    checkZombie("ZOM_EXPLODING", D.count_exploding, GameConstants::Difficulty::SliderBounds::COUNT_EXPLODING_MAX);
+    checkZombie("ZOM_VAMPIRE",   D.count_vampire,   GameConstants::Difficulty::SliderBounds::COUNT_VAMPIRE_MAX);
+    checkZombie("ZOM_SICK",      D.count_sick,      GameConstants::Difficulty::SliderBounds::COUNT_SICK_MAX);
+
+    // Terrain ratios: each must be 0–100, and their effective sum (present values +
+    // defaults for absent keys) must equal 100.
+    {
+        static const char* terrainKeys[] = {"RATIO_WALL","RATIO_WATER","RATIO_FOREST","RATIO_DIRT","RATIO_ICE"};
+        static const int   terrainDefs[] = {D.ratio_wall, D.ratio_water, D.ratio_forest, D.ratio_dirt, D.ratio_ice};
+        bool terrainBad = false;
+        for (int i = 0; i < 5; ++i) {
+            if (has(terrainKeys[i]) && (kv.at(terrainKeys[i]) < 0 || kv.at(terrainKeys[i]) > 100)) {
+                res.sanity_warnings.push_back(std::string(terrainKeys[i]) + "=" +
+                    std::to_string(kv.at(terrainKeys[i])) + " out of range [0,100] — all terrain ratios reset to defaults");
+                terrainBad = true; break;
             }
         }
+        if (!terrainBad) {
+            int sum = 0;
+            for (int i = 0; i < 5; ++i)
+                sum += get(terrainKeys[i], terrainDefs[i]);
+            if (sum != 100)
+                res.sanity_warnings.push_back("Terrain ratios (including defaults for missing keys) sum to " +
+                    std::to_string(sum) + " instead of 100 — all terrain ratios reset to defaults");
+        }
     }
+
+    // Weather probabilities: same treatment.
+    {
+        static const char* weatherKeys[] = {"ENV_PROB_CLEAR","ENV_PROB_WIND","ENV_PROB_RAIN",
+                                            "ENV_PROB_CLOUDS","ENV_PROB_LIGHT","ENV_PROB_HEAT","ENV_PROB_BLIZ"};
+        static const int   weatherDefs[] = {D.env_prob_clear, D.env_prob_wind, D.env_prob_rain,
+                                            D.env_prob_clouds, D.env_prob_lightning, D.env_prob_heatwave, D.env_prob_blizzard};
+        bool weatherBad = false;
+        for (int i = 0; i < 7; ++i) {
+            if (has(weatherKeys[i]) && (kv.at(weatherKeys[i]) < 0 || kv.at(weatherKeys[i]) > 100)) {
+                res.sanity_warnings.push_back(std::string(weatherKeys[i]) + "=" +
+                    std::to_string(kv.at(weatherKeys[i])) + " out of range [0,100] — all weather probs reset to defaults");
+                weatherBad = true; break;
+            }
+        }
+        if (!weatherBad) {
+            int sum = 0;
+            for (int i = 0; i < 7; ++i)
+                sum += get(weatherKeys[i], weatherDefs[i]);
+            if (sum != 100)
+                res.sanity_warnings.push_back("Weather probabilities (including defaults for missing keys) sum to " +
+                    std::to_string(sum) + " instead of 100 — all weather probs reset to defaults");
+        }
+    }
+
+    // Human spawn position (only relevant when CUST_HUMAN_SET=1)
+    if (get("CUST_HUMAN_SET", 0) == 1) {
+        int hx = get("CUST_HUMAN_X", D.custom_human_pos.x);
+        int hy = get("CUST_HUMAN_Y", D.custom_human_pos.y);
+        if (hx < 0 || hx >= vmw || hy < 0 || hy >= vmh)
+            res.sanity_warnings.push_back("CUST_HUMAN_X/Y=(" + std::to_string(hx) + "," + std::to_string(hy) +
+                ") outside map bounds [0," + std::to_string(vmw-1) + "]x[0," + std::to_string(vmh-1) +
+                "] — falling back to random spawn");
+    }
+
     return res;
 }
 
@@ -444,6 +586,98 @@ bool GameState::import_challenge_file(const std::string& path) {
         else if (key == "ENV_PROB_BLIZ")   active_config.env_prob_blizzard = val;
     }
     inFile.close();
+
+    // ── Post-parse sanity: apply the same rules as analyze_challenge_file ────
+    // Any field that fails its check is reset to its default value.
+    GameConfig D{};
+
+    // Map dimensions
+    if (active_config.map_width  < GameConstants::MapGen::MAP_WIDTH_MIN  || active_config.map_width  > GameConstants::MapGen::MAP_WIDTH_MAX)
+        active_config.map_width  = D.map_width;
+    if (active_config.map_height < GameConstants::MapGen::MAP_HEIGHT_MIN || active_config.map_height > GameConstants::MapGen::MAP_HEIGHT_MAX)
+        active_config.map_height = D.map_height;
+
+    // Human HP
+    if (active_config.human_hp < GameConstants::Difficulty::SliderBounds::HUMAN_HP_MIN ||
+        active_config.human_hp > GameConstants::Difficulty::SliderBounds::HUMAN_HP_MAX)
+        active_config.human_hp = D.human_hp;
+
+    // Initial Stamina (1–6)
+    if (active_config.initial_stamina < GameConstants::Difficulty::SliderBounds::INITIAL_STAMINA_MIN ||
+        active_config.initial_stamina > GameConstants::Difficulty::SliderBounds::INITIAL_STAMINA_MAX)
+        active_config.initial_stamina = D.initial_stamina;
+
+    // Turn limit
+    if (active_config.turn_limit < GameConstants::Difficulty::SliderBounds::TURN_LIMIT_MIN ||
+        active_config.turn_limit > GameConstants::Difficulty::SliderBounds::TURN_LIMIT_MAX)
+        active_config.turn_limit = D.turn_limit;
+
+    // Weapon counts
+    auto clampWeapon = [](int& v, int minV, int maxV, int def) { if (v < minV || v > maxV) v = def; };
+    clampWeapon(active_config.pistol_ammo,   GameConstants::Difficulty::SliderBounds::PISTOL_AMMO_MIN,  GameConstants::Difficulty::SliderBounds::PISTOL_AMMO_MAX,  D.pistol_ammo);
+    clampWeapon(active_config.shotgun_ammo,  GameConstants::Difficulty::SliderBounds::SHOTGUN_AMMO_MIN, GameConstants::Difficulty::SliderBounds::SHOTGUN_AMMO_MAX, D.shotgun_ammo);
+    clampWeapon(active_config.warp_charges,  GameConstants::Difficulty::SliderBounds::WARP_CHARGES_MIN, GameConstants::Difficulty::SliderBounds::WARP_CHARGES_MAX, D.warp_charges);
+    clampWeapon(active_config.grenades,      GameConstants::Difficulty::SliderBounds::GRENADES_MIN,     GameConstants::Difficulty::SliderBounds::GRENADES_MAX,     D.grenades);
+    clampWeapon(active_config.molotovs,      GameConstants::Difficulty::SliderBounds::MOLOTOVS_MIN,     GameConstants::Difficulty::SliderBounds::MOLOTOVS_MAX,     D.molotovs);
+    clampWeapon(active_config.mines,         GameConstants::Difficulty::SliderBounds::MINES_MIN,        GameConstants::Difficulty::SliderBounds::MINES_MAX,        D.mines);
+
+    // Zombie counts
+    auto clampZombie = [](int& v, int maxV, int def) { if (v < 0 || v > maxV) v = def; };
+    clampZombie(active_config.count_normal,    GameConstants::Difficulty::SliderBounds::COUNT_CLEVER_MAX,   D.count_normal);
+    clampZombie(active_config.count_fast,      GameConstants::Difficulty::SliderBounds::COUNT_FAST_MAX,     D.count_fast);
+    clampZombie(active_config.count_exploding, GameConstants::Difficulty::SliderBounds::COUNT_EXPLODING_MAX,D.count_exploding);
+    clampZombie(active_config.count_vampire,   GameConstants::Difficulty::SliderBounds::COUNT_VAMPIRE_MAX,  D.count_vampire);
+    clampZombie(active_config.count_sick,      GameConstants::Difficulty::SliderBounds::COUNT_SICK_MAX,     D.count_sick);
+
+    // Terrain ratios: individual range check, then sum check (using actual post-parse values)
+    {
+        int* tv[5] = {&active_config.ratio_wall, &active_config.ratio_water,
+                      &active_config.ratio_forest, &active_config.ratio_dirt, &active_config.ratio_ice};
+        bool bad = false;
+        for (int i = 0; i < 5; ++i) if (*tv[i] < 0 || *tv[i] > 100) { bad = true; break; }
+        if (!bad) {
+            int sum = 0; for (int i = 0; i < 5; ++i) sum += *tv[i];
+            if (sum != 100) bad = true;
+        }
+        if (bad) {
+            active_config.ratio_wall   = D.ratio_wall;
+            active_config.ratio_water  = D.ratio_water;
+            active_config.ratio_forest = D.ratio_forest;
+            active_config.ratio_dirt   = D.ratio_dirt;
+            active_config.ratio_ice    = D.ratio_ice;
+        }
+    }
+
+    // Weather probabilities: same treatment
+    {
+        int* wv[7] = {&active_config.env_prob_clear, &active_config.env_prob_wind,
+                      &active_config.env_prob_rain,  &active_config.env_prob_clouds,
+                      &active_config.env_prob_lightning, &active_config.env_prob_heatwave,
+                      &active_config.env_prob_blizzard};
+        bool bad = false;
+        for (int i = 0; i < 7; ++i) if (*wv[i] < 0 || *wv[i] > 100) { bad = true; break; }
+        if (!bad) {
+            int sum = 0; for (int i = 0; i < 7; ++i) sum += *wv[i];
+            if (sum != 100) bad = true;
+        }
+        if (bad) {
+            active_config.env_prob_clear     = D.env_prob_clear;
+            active_config.env_prob_wind      = D.env_prob_wind;
+            active_config.env_prob_rain      = D.env_prob_rain;
+            active_config.env_prob_clouds    = D.env_prob_clouds;
+            active_config.env_prob_lightning = D.env_prob_lightning;
+            active_config.env_prob_heatwave  = D.env_prob_heatwave;
+            active_config.env_prob_blizzard  = D.env_prob_blizzard;
+        }
+    }
+
+    // Human spawn position: fall back to random if out of (now-validated) map bounds
+    if (active_config.custom_human_pos_set) {
+        if (active_config.custom_human_pos.x < 0 || active_config.custom_human_pos.x >= active_config.map_width ||
+            active_config.custom_human_pos.y < 0 || active_config.custom_human_pos.y >= active_config.map_height)
+            active_config.custom_human_pos_set = false;
+    }
+
     return true;
 }
 
@@ -597,12 +831,21 @@ void GameState::init_game() {
 
         human.pos = {dist_x(rng), dist_y(rng)};
         int spawn_attempts = 0;
-        while ((grid[human.pos.x][human.pos.y] == Terrain::Wall || grid[human.pos.x][human.pos.y] == Terrain::Water) && spawn_attempts < 500) {
+        while (grid[human.pos.x][human.pos.y] == Terrain::Wall && spawn_attempts < 500) {
             human.pos = {dist_x(rng), dist_y(rng)};
             spawn_attempts++;
         }
-        if (grid[human.pos.x][human.pos.y] == Terrain::Wall || grid[human.pos.x][human.pos.y] == Terrain::Water) {
+        if (grid[human.pos.x][human.pos.y] == Terrain::Wall) {
             grid[human.pos.x][human.pos.y] = Terrain::Dirt;
+        }
+
+        // Override with manually pinned position if set
+        if (active_config.custom_human_pos_set) {
+            int px = std::max(0, std::min(width  - 1, active_config.custom_human_pos.x));
+            int py = std::max(0, std::min(height - 1, active_config.custom_human_pos.y));
+            human.pos = {px, py};
+            if (grid[human.pos.x][human.pos.y] == Terrain::Wall)
+                grid[human.pos.x][human.pos.y] = Terrain::Dirt;
         }
     }
 
