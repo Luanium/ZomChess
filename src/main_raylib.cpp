@@ -12,6 +12,7 @@
 #include <map>
 #include <set>
 #include <filesystem>
+#include <fstream>
 #include <cstring>
 namespace fs = std::filesystem;
 
@@ -156,6 +157,17 @@ static void runSplashScreen(Font& gameFont) {
     const float DURATION = 6.0f;
     float elapsed = 0.0f;
 
+    struct Drip { float x, y, speed, len; };
+    std::vector<Drip> drips;
+    for (int i = 0; i < 18; ++i) {
+        Drip d;
+        d.x = (float)GetRandomValue(0, 1400);
+        d.y = (float)GetRandomValue(-600, 0);
+        d.speed = GetRandomValue(30, 90) / 10.0f;
+        d.len = (float)GetRandomValue(40, 140);
+        drips.push_back(d);
+    }
+
     while (elapsed < DURATION) {
         if (WindowShouldClose()) return;
         if (GetKeyPressed() != 0 || IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) break;
@@ -167,75 +179,68 @@ static void runSplashScreen(Font& gameFont) {
         if (elapsed < 0.4f) alpha = elapsed / 0.4f;
         unsigned char a = (unsigned char)(alpha * 255);
 
-        BeginDrawing();
-        ClearBackground((Color){12, 13, 15, 255});
-
         int W = GetScreenWidth();
         int H = GetScreenHeight();
 
-        // ── Background: dim pixel grid (tactical board vibe) ──
-        {
-            int cell = 28;
-            for (int gx = 0; gx * cell < W; ++gx) {
-                for (int gy = 0; gy * cell < H; ++gy) {
-                    bool lit = ((gx + gy) % 7 == 0);
-                    Color c = lit ? (Color){40, 70, 55, a} : (Color){20, 22, 24, a};
-                    DrawRectangle(gx * cell, gy * cell, cell - 1, cell - 1, c);
-                }
-            }
-            // Scanline
-            int scanY = (int)(fmodf(elapsed * 120.0f, (float)H));
-            DrawRectangle(0, scanY, W, 2, (Color){60, 220, 140, (unsigned char)(a * 0.35f)});
-            // Vignette corners
-            DrawRectangleGradientV(0, 0, W, 120, (Color){0,0,0,(unsigned char)(a*0.8f)}, (Color){0,0,0,0});
-            DrawRectangleGradientV(0, H - 120, W, 120, (Color){0,0,0,0}, (Color){0,0,0,(unsigned char)(a*0.8f)});
+        for (auto& d : drips) {
+            d.y += d.speed;
+            if (d.y - d.len > H) { d.y = (float)GetRandomValue(-200, 0); d.x = (float)GetRandomValue(0, W); }
         }
+
+        BeginDrawing();
+        ClearBackground((Color){8, 6, 6, 255});
+
+        // Dark red vignette background
+        DrawRectangleGradientV(0, 0, W, H, (Color){25, 4, 4, a}, (Color){5, 2, 2, a});
+
+        // Blood drips falling from top
+        for (const auto& d : drips) {
+            DrawLineEx((Vector2){d.x, d.y}, (Vector2){d.x, d.y + d.len}, 3.0f, (Color){130, 10, 10, (unsigned char)(a * 0.7f)});
+            DrawCircle((int)d.x, (int)(d.y + d.len), 3.0f, (Color){130, 10, 10, (unsigned char)(a * 0.7f)});
+        }
+
+        // Cracked vignette corners
+        DrawRectangleGradientV(0, 0, W, 150, (Color){0,0,0,(unsigned char)(a*0.9f)}, (Color){0,0,0,0});
+        DrawRectangleGradientV(0, H - 150, W, 150, (Color){0,0,0,0}, (Color){0,0,0,(unsigned char)(a*0.9f)});
 
         const char* title = "ZomChess";
         float titleSize = 150.0f;
         Vector2 tsz = MeasureTextEx(gameFont, title, titleSize, 3.0f);
         float titleX = (W - tsz.x) / 2.0f;
-        float titleY = H * 0.22f;
+        float titleY = H * 0.28f;
 
-        // Blood-red jittery glow layers behind (zombie horror vibe)
-        for (int i = 3; i >= 1; --i) {
-            float jitterX = sinf(elapsed * 9.0f + i) * 2.5f * i;
-            float jitterY = cosf(elapsed * 7.0f + i) * 2.0f * i;
-            unsigned char glowA = (unsigned char)((a / 3) * (4 - i) / 3.0f);
-            DrawTextEx(gameFont, title, (Vector2){titleX + jitterX, titleY + jitterY}, titleSize, 3.0f,
-                       (Color){170, 20, 20, glowA});
+        // Dripping blood glow behind title
+        for (int i = 4; i >= 1; --i) {
+            float jitterY = sinf(elapsed * 5.0f + i) * 1.5f * i;
+            unsigned char glowA = (unsigned char)((a / 4) * (5 - i) / 4.0f);
+            DrawTextEx(gameFont, title, (Vector2){titleX, titleY + jitterY + i * 3.0f}, titleSize, 3.0f,
+                       (Color){120, 5, 5, glowA});
         }
-        // Main title — bright yellow-orange, high contrast against the dark background
-        float pulse = 0.9f + 0.1f * sinf(elapsed * 2.5f);
+
+        float pulse = 0.85f + 0.15f * sinf(elapsed * 2.0f);
         DrawTextEx(gameFont, title, (Vector2){titleX, titleY}, titleSize, 3.0f,
-                   (Color){255, (unsigned char)(200*pulse), (unsigned char)(30*pulse), a});
+                   (Color){200, (unsigned char)(15*pulse), (unsigned char)(15*pulse), a});
+
+        // Blood drip dripping off the title text itself
+        for (int i = 0; i < 6; ++i) {
+            float dx = titleX + tsz.x * (0.1f + 0.15f * i);
+            float dripLen = 20.0f + 15.0f * sinf(elapsed * 1.5f + i * 2.0f);
+            if (dripLen > 0) {
+                DrawLineEx((Vector2){dx, titleY + titleSize * 0.85f}, (Vector2){dx, titleY + titleSize * 0.85f + dripLen}, 2.5f, (Color){150, 10, 10, a});
+            }
+        }
 
         const char* tagline = "EVERY WRONG MOVE LEADS YOU TO DEATH!";
         float tagSize = 28.0f;
         Vector2 tagsz = MeasureTextEx(gameFont, tagline, tagSize, 1.0f);
-        DrawTextEx(gameFont, tagline, (Vector2){(W - tagsz.x) / 2.0f, titleY + titleSize + 20}, tagSize, 1.0f,
-                   (Color){190, 190, 190, a});
-
-        const char* credit = "Created by: Phan Anh Luan";
-        float credSize = 22.0f;
-        Vector2 credsz = MeasureTextEx(gameFont, credit, credSize, 1.0f);
-        DrawTextEx(gameFont, credit, (Vector2){(W - credsz.x) / 2.0f, H * 0.62f}, credSize, 1.0f,
-                   (Color){220, 190, 90, a});
-
-        const char* music = "Music: Kevin MacLeod (incompetech.com) - CC BY 4.0";
-        float musSize = 15.0f;
-        Vector2 mussz = MeasureTextEx(gameFont, music, musSize, 1.0f);
-        DrawTextEx(gameFont, music, (Vector2){(W - mussz.x) / 2.0f, H * 0.62f + 32}, musSize, 1.0f,
-                   (Color){120, 120, 120, a});
-
-        DrawTextEx(gameFont, GameConstants::GAME_VERSION, (Vector2){(float)(W - 70), (float)(H - 30)}, 16.0f, 1.0f,
-                   (Color){90, 90, 90, a});
+        DrawTextEx(gameFont, tagline, (Vector2){(W - tagsz.x) / 2.0f, titleY + titleSize + 35}, tagSize, 1.0f,
+                   (Color){180, 150, 150, a});
 
         float blink = 0.5f + 0.5f * sinf(elapsed * 3.5f);
         const char* prompt = "Press any key to continue...";
         Vector2 psz = MeasureTextEx(gameFont, prompt, 22, 1);
         DrawTextEx(gameFont, prompt, (Vector2){(W - psz.x) / 2.0f, H * 0.82f},
-                   22.0f, 1.0f, (Color){140, 140, 140, (unsigned char)(blink * a)});
+                   22.0f, 1.0f, (Color){140, 100, 100, (unsigned char)(blink * a)});
 
         EndDrawing();
     }
@@ -324,6 +329,57 @@ struct FileBrowser {
     }
 };
 
+// ── Game Guide: data structures and file loader ──────────────────────────────
+
+struct GuideEntry {
+    std::string text;
+    // 0 = section header (#), 1 = subsection header (##), 2 = bullet (-)
+    int level = 0;
+};
+
+struct GuideSection {
+    std::string title;
+    bool expanded = false;
+    std::vector<GuideEntry> entries; // subsection headers + bullets inside this section
+};
+
+// Parses assets/guide.txt into a list of sections.
+// Format:
+//   # Title          -> new section
+//   ## Subtitle      -> subsection header inside current section (level 1)
+//   - text           -> bullet inside current section (level 2)
+//   blank line       -> ignored
+static std::vector<GuideSection> loadGuide(const std::string& path) {
+    std::vector<GuideSection> sections;
+    std::ifstream f(path);
+    if (!f.is_open()) {
+        // Fallback: one section with a single entry explaining the file is missing
+        GuideSection s;
+        s.title = "Guide file not found";
+        s.entries.push_back({"Expected: " + path, 2});
+        sections.push_back(s);
+        return sections;
+    }
+    std::string line;
+    while (std::getline(f, line)) {
+        // strip trailing \r
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (line.empty()) continue;
+        if (line.size() >= 3 && line[0] == '#' && line[1] == '#' && line[2] == ' ') {
+            if (!sections.empty())
+                sections.back().entries.push_back({line.substr(3), 1});
+        } else if (line.size() >= 2 && line[0] == '#' && line[1] == ' ') {
+            GuideSection s;
+            s.title = line.substr(2);
+            sections.push_back(s);
+        } else if (line.size() >= 2 && line[0] == '-' && line[1] == ' ') {
+            if (!sections.empty())
+                sections.back().entries.push_back({line.substr(2), 2});
+        }
+    }
+    return sections;
+}
+
 int main() {
     InitWindow(1400, 654, "ZomChess");
     SetTargetFPS(60);
@@ -380,6 +436,20 @@ int main() {
     Rectangle knifeBtn   = { panelX + colW + 10,    boardOffset + 115, colW, 36 };
     Rectangle icePickBtn = { panelX + (colW+10)*2,  boardOffset + 115, colW, 36 };
     bool showGuide = false;
+    static float guideScroll = 0.0f;
+    // Load guide content from file; sections start collapsed
+    // Resolve guide.txt relative to the executable, with a source-tree fallback
+    // for development (so editing assets/guide.txt in the repo is reflected
+    // immediately without needing to copy the file manually).
+    auto resolveGuidePath = [&]() -> std::string {
+        // 1. Next to the binary (normal installed / build-output location)
+        std::string next_to_bin = std::string(GetApplicationDirectory()) + "assets/guide.txt";
+        if (fs::exists(next_to_bin)) return next_to_bin;
+        // 2. Source tree (working directory when launched from the project root)
+        if (fs::exists("assets/guide.txt")) return "assets/guide.txt";
+        return next_to_bin; // return it anyway so the missing-file message shows a useful path
+    };
+    std::vector<GuideSection> guideSections = loadGuide(resolveGuidePath());
 
     Rectangle pistolBtn  = { panelX,               boardOffset + 160, colW, 36 };
     Rectangle shotgunBtn = { panelX + colW + 10,    boardOffset + 160, colW, 36 };
@@ -396,7 +466,9 @@ int main() {
     Rectangle exportBtn = { 60, 440, 125, 38 };
     Rectangle importBtn = { 195, 440, 125, 38 };
     Rectangle startCustomBtn = { 60, 490, 260, 40 };
-    Rectangle quitGameBtn = { 60, 560, 260, 40 };
+    Rectangle creditsBtn = { 60, 540, 260, 38 };
+    Rectangle quitGameBtn = { 60, 588, 260, 40 };
+    bool showCredits = false;
     std::string ioMessage;
     float ioMessageTimer = 0.0f;
     bool hasImportedConfig = false;
@@ -526,6 +598,9 @@ int main() {
                     state.current_scene = GameScene::Playing;
                     AudioManager::getInstance().playMusic("battle");
                 }
+                if (CheckCollisionPointRec(mouse, creditsBtn)) {
+                    showCredits = true;
+                }
                 if (CheckCollisionPointRec(mouse, quitGameBtn)) {
                     showConfirmExitGame = true;
                 }
@@ -571,6 +646,9 @@ int main() {
 
             DrawRectangleRec(startCustomBtn, hasImportedConfig ? (Color){160,60,180,255} : (Color){60,60,60,255});
             drawCenteredText("Start Imported Game", startCustomBtn, 16, WHITE);
+
+            DrawRectangleRec(creditsBtn, (Color){70,70,110,255});
+            drawCenteredText("Credits", creditsBtn, 16, WHITE);
 
             DrawRectangleRec(quitGameBtn, (Color){140,20,20,255});
             drawCenteredText("Quit Game", quitGameBtn, 16, WHITE);
@@ -1191,6 +1269,25 @@ int main() {
                 }
             }
 
+            if (showCredits) {
+                DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), (Color){0, 0, 0, 150});
+                Rectangle cpopup = { GetScreenWidth()/2.0f - 260, GetScreenHeight()/2.0f - 140, 520, 280 };
+                DrawRectangleRec(cpopup, (Color){35, 36, 40, 255});
+                DrawRectangleLinesEx(cpopup, 2, (Color){100, 100, 100, 255});
+                DrawText("CREDITS", (int)cpopup.x + 20, (int)cpopup.y + 15, 22, (Color){230,210,100,255});
+
+                DrawText("Created by: Phan Anh Luan", (int)cpopup.x + 20, (int)cpopup.y + 60, 18, (Color){255,220,90,255});
+                DrawText("Music: Kevin MacLeod (incompetech.com) - CC BY 4.0", (int)cpopup.x + 20, (int)cpopup.y + 90, 15, (Color){180,180,180,255});
+                DrawText(TextFormat("Version: %s", GameConstants::GAME_VERSION), (int)cpopup.x + 20, (int)cpopup.y + 115, 15, (Color){150,150,150,255});
+
+                Rectangle closeBtn = { cpopup.x + cpopup.width/2 - 80, cpopup.y + cpopup.height - 55, 160, 38 };
+                DrawRectangleRec(closeBtn, (Color){140, 30, 30, 255});
+                drawCenteredText("Close", closeBtn, 16, WHITE);
+                if (mouseClicked && CheckCollisionPointRec(mouse, closeBtn)) {
+                    showCredits = false;
+                }
+            }
+
             EndDrawing();
             continue;
         }
@@ -1697,6 +1794,9 @@ int main() {
             mouseClicked) {
             if (CheckCollisionPointRec(mouse, guideBtn)) {
                 showGuide = true;
+                guideScroll = 0.0f;
+                // Reload from disk so edits to guide.txt are reflected immediately
+                guideSections = loadGuide(resolveGuidePath());
             } else if (CheckCollisionPointRec(mouse, returnHubTopBtn)) {
                 showConfirmReturnHub = true;
             }
@@ -2844,81 +2944,129 @@ int main() {
             }
         }
 
-        // ── Game Guide popup (scrollable) ──
+        // ── Game Guide popup (collapsible sections + scrollable) ──
         if (showGuide) {
-            Rectangle gpopup = { 1400/2.0f - 350, 654/2.0f - 280, 700, 560 };
+            const float POPUP_W = 720.0f, POPUP_H = 580.0f;
+            Rectangle gpopup = { 1400/2.0f - POPUP_W/2, 654/2.0f - POPUP_H/2, POPUP_W, POPUP_H };
             DrawRectangle(0, 0, 1400, 654, (Color){0, 0, 0, 160});
             DrawRectangleRec(gpopup, (Color){28, 29, 32, 255});
             DrawRectangleLinesEx(gpopup, 2, (Color){110, 110, 110, 255});
-            DrawText("ZOMCHESS — GAME GUIDE", (int)gpopup.x + 20, (int)gpopup.y + 15, 24, (Color){240, 230, 90, 255});
+            DrawText("ZOMCHESS — GAME GUIDE", (int)gpopup.x + 20, (int)gpopup.y + 14, 22, (Color){240, 230, 90, 255});
 
-            static const char* guideLines[] = {
-                "TURN STRUCTURE",
-                "- Human acts first, then Zombies, then Environment.",
-                "- Win: eliminate all zombies. Lose: HP = 0 or turn limit exceeded.",
-                "",
-                "STAMINA",
-                "- Rolled 1-6 each turn. Move = 1 (Water = 2). Each weapon use = 1.",
-                "",
-                "WEAPONS",
-                "- Knife: melee, 1 dmg. Pistol: ranged, accuracy drops with distance.",
-                "- Shotgun: 3-tile line, hits all. Grenade: 1-turn fuse, AoE blast.",
-                "- Molotov: throws fire 1-6 tiles. Mine: placed trap, 1-tile blast.",
-                "",
-                "ZOMBIE TYPES",
-                "- Clever: 1 move/turn, picks up loot & uses weapons.",
-                "- Fast: 2 moves/turn. Exploding: detonates on death.",
-                "- Vampire: heals on hit. Sick: infects, reduces stamina next turn.",
-                "",
-                "TERRAIN",
-                "- Dirt: normal. Wall: blocks movement & shots.",
-                "- Water: costs 2 stamina. Forest: blocks line-of-sight.",
-                "- Fire: damages on entry. Ice: may cause sliding.",
-                "",
-                "ENVIRONMENT EVENTS",
-                "- Wind, Rain, Lightning, Heatwave, Blizzard reshape the battlefield.",
-                "",
-                "TIP: Start with EASY to learn the mechanics!",
+            // Scrollable content area (leaves room for title + close button)
+            const float SCROLL_BAR_W = 8.0f;
+            Rectangle guideBox = {
+                gpopup.x + 12,
+                gpopup.y + 48,
+                gpopup.width - 24 - SCROLL_BAR_W - 4,
+                gpopup.height - 100
             };
-            int lineCount = sizeof(guideLines) / sizeof(guideLines[0]);
-
-            Rectangle guideBox = { gpopup.x + 15, gpopup.y + 50, gpopup.width - 30, gpopup.height - 110 };
             DrawRectangleRec(guideBox, (Color){15, 15, 18, 200});
 
-            static float guideScroll = 0.0f;
-            float lineH = 20.0f;
-            float contentH = lineCount * lineH;
-            float maxScroll = contentH - guideBox.height;
-            if (maxScroll < 0) maxScroll = 0;
-            if (CheckCollisionPointRec(mouse, guideBox)) {
-                guideScroll -= GetMouseWheelMove() * 20.0f;
-            }
-            if (guideScroll < 0) guideScroll = 0;
-            if (guideScroll > maxScroll) guideScroll = maxScroll;
+            // ── Measure total content height ────────────────────────────────
+            const float SECTION_H   = 30.0f; // clickable section header row
+            const float SUBSECT_H   = 22.0f; // ## subsection header row
+            const float BULLET_H    = 19.0f; // - bullet row
+            const float SECTION_GAP =  6.0f; // gap below each section block
 
-            BeginScissorMode((int)guideBox.x, (int)guideBox.y, (int)guideBox.width, (int)guideBox.height);
-            float gy = guideBox.y + 8 - guideScroll;
-            for (int i = 0; i < lineCount; ++i) {
-                Color lc = RAYWHITE;
-                std::string s = guideLines[i];
-                if (!s.empty() && s.find(':') == std::string::npos && s[0] != '-') lc = (Color){130, 220, 180, 255};
-                DrawText(guideLines[i], (int)guideBox.x + 10, (int)gy, 15, lc);
-                gy += lineH;
+            auto measureContent = [&]() -> float {
+                float h = 0;
+                for (const auto& sec : guideSections) {
+                    h += SECTION_H;
+                    if (sec.expanded) {
+                        for (const auto& e : sec.entries)
+                            h += (e.level == 1) ? SUBSECT_H : BULLET_H;
+                    }
+                    h += SECTION_GAP;
+                }
+                return h;
+            };
+            float contentH  = measureContent();
+            float maxScroll = std::max(0.0f, contentH - guideBox.height);
+
+            // Scroll with mouse wheel when hovering the content box
+            if (CheckCollisionPointRec(mouse, guideBox))
+                guideScroll -= GetMouseWheelMove() * 24.0f;
+            guideScroll = std::max(0.0f, std::min(guideScroll, maxScroll));
+
+            // ── Draw content inside scissor region ──────────────────────────
+            BeginScissorMode((int)guideBox.x, (int)guideBox.y,
+                             (int)guideBox.width, (int)guideBox.height);
+
+            float cy = guideBox.y + 6.0f - guideScroll;
+
+            for (auto& sec : guideSections) {
+                // ── Section header (clickable toggle) ───────────────────────
+                Rectangle hdrRect = { guideBox.x + 4, cy, guideBox.width - 8, SECTION_H - 2 };
+
+                // Highlight on hover (only process when not obscured)
+                bool hdrVisible = (cy + SECTION_H > guideBox.y) && (cy < guideBox.y + guideBox.height);
+                if (hdrVisible) {
+                    bool hovered = CheckCollisionPointRec(mouse, hdrRect);
+                    DrawRectangleRec(hdrRect, hovered
+                        ? (Color){55, 70, 55, 255}
+                        : (Color){38, 50, 38, 255});
+                    DrawRectangleLinesEx(hdrRect, 1, (Color){80, 130, 80, 180});
+
+                    // Arrow indicator
+                    const char* arrow = sec.expanded ? "v" : ">";
+                    DrawText(arrow, (int)(hdrRect.x + 8), (int)(cy + 7), 15, (Color){130, 220, 130, 255});
+                    DrawText(sec.title.c_str(), (int)(hdrRect.x + 26), (int)(cy + 7), 15, (Color){200, 240, 180, 255});
+
+                    if (mouseClicked && hovered) {
+                        sec.expanded = !sec.expanded;
+                        // Recompute scroll cap after toggling
+                        float newMax = std::max(0.0f, measureContent() - guideBox.height);
+                        guideScroll = std::min(guideScroll, newMax);
+                    }
+                }
+                cy += SECTION_H;
+
+                // ── Entries (only when expanded) ────────────────────────────
+                if (sec.expanded) {
+                    for (const auto& entry : sec.entries) {
+                        bool entryVisible = (cy + BULLET_H > guideBox.y) && (cy < guideBox.y + guideBox.height);
+                        if (entryVisible) {
+                            if (entry.level == 1) {
+                                // Subsection header ──
+                                DrawText(entry.text.c_str(),
+                                         (int)(guideBox.x + 18), (int)(cy + 3),
+                                         14, (Color){130, 200, 240, 255});
+                            } else {
+                                // Bullet ──
+                                DrawText("-", (int)(guideBox.x + 20), (int)(cy + 2), 13, (Color){160, 160, 160, 255});
+                                DrawText(entry.text.c_str(),
+                                         (int)(guideBox.x + 34), (int)(cy + 2),
+                                         13, RAYWHITE);
+                            }
+                        }
+                        cy += (entry.level == 1) ? SUBSECT_H : BULLET_H;
+                    }
+                }
+
+                cy += SECTION_GAP;
             }
+
             EndScissorMode();
 
+            // ── Scrollbar ───────────────────────────────────────────────────
             if (maxScroll > 0) {
-                float barH = guideBox.height * (guideBox.height / contentH);
-                float barY = guideBox.y + (guideScroll / maxScroll) * (guideBox.height - barH);
-                DrawRectangle((int)(guideBox.x + guideBox.width - 6), (int)barY, 5, (int)barH, LIGHTGRAY);
+                float trackX  = guideBox.x + guideBox.width + 2;
+                float trackH  = guideBox.height;
+                float barH    = std::max(20.0f, trackH * (guideBox.height / contentH));
+                float barY    = guideBox.y + (guideScroll / maxScroll) * (trackH - barH);
+                DrawRectangle((int)trackX, (int)guideBox.y, (int)SCROLL_BAR_W, (int)trackH,
+                              (Color){30, 30, 30, 200});
+                DrawRectangle((int)trackX, (int)barY, (int)SCROLL_BAR_W, (int)barH,
+                              (Color){140, 140, 140, 220});
             }
 
-            Rectangle closeBtn = { gpopup.x + gpopup.width/2 - 80, gpopup.y + gpopup.height - 45, 160, 34 };
+            // ── Close button ────────────────────────────────────────────────
+            Rectangle closeBtn = { gpopup.x + gpopup.width/2 - 80, gpopup.y + gpopup.height - 46, 160, 34 };
             DrawRectangleRec(closeBtn, (Color){140, 30, 30, 255});
             drawCenteredText("Close", closeBtn, 16, WHITE);
-            if (mouseClicked && CheckCollisionPointRec(mouse, closeBtn)) {
+            if (mouseClicked && CheckCollisionPointRec(mouse, closeBtn))
                 showGuide = false;
-            }
         }
 
         // ── Confirm: Exit Game popup ──

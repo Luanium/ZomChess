@@ -1,0 +1,125 @@
+# TURN STRUCTURE
+## Overview
+- Human acts first, then Zombies, then the Environment.
+- Win: eliminate all zombies before the turn limit.
+- Lose: your HP reaches 0, or the turn limit is exceeded.
+## Turn Order
+- Human phase: spend Stamina to move and use weapons.
+- Zombie phase: each zombie takes its action automatically.
+- Environment phase: weather events reshape the battlefield.
+
+# STAMINA
+## How It Works
+- At the start of each human turn, Stamina is rolled: 1–6.
+- Moving one tile costs 1 Stamina. Moving onto Water costs 2.
+- Each weapon use costs 1 Stamina.
+- You cannot move or attack if Stamina reaches 0.
+## Stamina Tip
+- Plan your moves before spending — you cannot undo actions.
+- A Stamina Potion (loot drop) restores Stamina to 6.
+
+# WEAPONS
+## Knife
+- Melee weapon. Deals 1 damage to an adjacent zombie.
+- Costs 1 Stamina. No ammo required.
+## Pistol
+- Ranged weapon. Accuracy drops with distance.
+- Costs 1 Stamina. +3 ammo from PistolAmmo loot drops.
+## Shotgun
+- Fires in a 3-tile line, hitting all targets in the path.
+- Costs 1 Stamina. +1 shell from ShotgunAmmo loot drops.
+## Grenade
+- Thrown weapon with a 1-turn fuse. AoE blast on detonation.
+- Costs 1 Stamina. Found as a loot drop.
+## Molotov
+- Thrown 1–6 tiles. Creates a fire zone on landing.
+- Costs 1 Stamina. Found as a loot drop.
+## Mine
+- Placed on the current tile. Detonates when a zombie steps on it.
+- 1-tile blast radius. Found as a loot drop.
+## Warp Bolt
+- Teleports the target zombie to a random empty tile.
+- Rare loot drop. Costs 1 Stamina.
+
+# ZOMBIE TYPES
+## Clever
+- Moves 1 tile per turn. Picks up loot and uses weapons against you.
+- Most dangerous at range once armed.
+## Fast
+- Moves 2 tiles per turn. Closes distance quickly.
+- Prioritize these early.
+## Exploding
+- Detonates on death, dealing AoE damage.
+- Do not kill at point-blank range.
+## Vampire
+- Heals HP whenever it damages you.
+- Requires sustained damage to bring down.
+## Sick
+- Infects you on contact, reducing your Stamina next turn.
+- Keep your distance.
+
+# TERRAIN
+## Dirt
+- Standard tile. No movement penalty.
+## Wall
+- Blocks all movement and line-of-sight for ranged weapons.
+## Water
+- Passable, but costs 2 Stamina to enter.
+- Lightning strikes are more likely on water tiles.
+## Forest
+- Passable. Blocks line-of-sight — you and zombies cannot shoot through it.
+## Fire
+- Damages any unit that enters or starts their turn on it.
+- Created by Molotov, some environment events.
+## Ice
+- Passable. May cause sliding — you could overshoot your intended tile.
+- Loot frozen under ice requires an Ice Pick to retrieve.
+
+# ENVIRONMENT EVENTS
+## Wind
+- Pushes units and loot across the board in the wind direction.
+## Rain
+- Visual effect. May extinguish fire tiles.
+## Lightning
+- Strikes one or more random tiles (water tiles are higher risk).
+- Units hit take damage.
+## Heatwave
+- Gradually damages units on non-water tiles over time.
+## Blizzard
+- Freezes water tiles into Ice. Slows movement across the board.
+
+# STATUS
+## Burned
+## Paralyzed
+## Frozen
+
+# MECHANISMS
+## Knocked back
+## Pushed by Windstorm
+## Stunned
+
+# LOOT DROPS
+## How Loot Works
+- Zombies drop loot when they die. Walk over a loot tile to pick it up.
+- Multiple zombies dying on the same tile stack their drops (shown with a number badge).
+- Loot frozen under Ice requires an Ice Pick to retrieve.
+## Loot Types
+- Junk (75%): useless, but it's something.
+- PistolAmmo (5%): +3 pistol rounds.
+- StaminaPotion (5%): restores Stamina to 6.
+- HealthPotion (4%): +2 HP.
+- ShotgunAmmo (4%): +1 shotgun shell.
+- Grenade (3%): +1 grenade.
+- Molotov (2%): +1 molotov cocktail.
+- Mine (1.5%): +1 land mine.
+- WarpBolt (0.5%): +1 warp charge — very rare.
+
+# TIPS
+## General
+- Start on EASY to learn all the mechanics before bumping the difficulty.
+- Kill Exploding zombies from a distance — their death blast can hurt you.
+- Use Forest tiles for cover against Clever zombies with guns.
+## Advanced
+- Kite Fast zombies around obstacles to waste their extra move.
+- Save Grenades for clustered groups — single-target use is inefficient.
+- Stack kills on one turn to maximise multi-kill bonuses.

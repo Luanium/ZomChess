@@ -67,4 +67,13 @@ else()
             $<TARGET_FILE_DIR:ZomChess>/assets
         COMMENT "Copying assets to build directory"
     )
+
+    # Lightweight target: sync only guide.txt without a full recompile.
+    # Usage: cmake --build build --target sync-guide
+    add_custom_target(sync-guide
+        COMMAND ${CMAKE_COMMAND} -E copy
+            ${CMAKE_SOURCE_DIR}/assets/guide.txt
+            $<TARGET_FILE_DIR:ZomChess>/assets/guide.txt
+        COMMENT "Syncing guide.txt to build directory"
+    )
 endif()
