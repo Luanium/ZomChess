@@ -46,6 +46,7 @@ public:
     size_t active_zombie_idx = 0;
     int active_zombie_substep = 0;
     float zombie_action_timer = 0.0f;
+    size_t zombie_phase_count = 0; // snapshot of zombies.size() at phase start — newly spawned zombies wait until next phase
     const float ZOMBIE_STEP_DELAY = 0.35f;
     float environment_action_timer = 0.0f;
     const float ENVIRONMENT_STEP_DELAY = 0.9f;

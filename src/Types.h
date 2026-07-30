@@ -12,7 +12,7 @@
 
 enum class Terrain { Dirt, Water, Wall, Fire, Forest, Ice };
 enum class InputMode { MoveMode, TargetKnife, TargetPistol, TargetShotgun, TargetGrenade, TargetMolotov, TargetWarpBolt, UseIcePick };
-enum class ZombieType { Clever, Fast, Exploding, Vampire, Sick };
+enum class ZombieType { Clever, Fast, Exploding, Vampire, Sick, Corruptor };
 enum class TurnPhase { HumanTurn, ZombieAnimating, EnvironmentAnimating };
 
 // Added Bite and Scratch FX
@@ -57,6 +57,7 @@ struct GameConfig {
     int count_exploding = GameConstants::Difficulty::Medium::COUNT_EXPLODING;
     int count_vampire  = GameConstants::Difficulty::Medium::COUNT_VAMPIRE;
     int count_sick     = GameConstants::Difficulty::Medium::COUNT_SICK;
+    int count_corruptor = GameConstants::Difficulty::SliderBounds::COUNT_CORRUPTOR_DEFAULT;
 
     bool spawn_shield = true;
     bool custom_map_mode = false;

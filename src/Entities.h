@@ -61,5 +61,6 @@ class FastZombie : public Zombie { public: using Zombie::Zombie; int getMovesPer
 class ExplodingZombie : public Zombie { public: using Zombie::Zombie; };
 class VampireZombie : public Zombie { public: using Zombie::Zombie; };
 class SickZombie : public Zombie { public: using Zombie::Zombie; };
+class CorruptorZombie : public Zombie { public: using Zombie::Zombie; };
 
 #endif // ENTITIES_H

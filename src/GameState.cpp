@@ -115,7 +115,7 @@ int GameState::calculate_available_spawn_cells() {
 bool GameState::is_zombie_count_valid() {
     int total_requested_zombies = active_config.count_normal + active_config.count_fast + 
                                   active_config.count_exploding + active_config.count_vampire +
-                                  active_config.count_sick;
+                                  active_config.count_sick + active_config.count_corruptor;
     return total_requested_zombies <= calculate_available_spawn_cells();
 }
 
@@ -140,6 +140,7 @@ void GameState::apply_quick_difficulty(int level) {
         active_config.count_exploding = GameConstants::Difficulty::Easy::COUNT_EXPLODING; 
         active_config.count_vampire = GameConstants::Difficulty::Easy::COUNT_VAMPIRE; 
         active_config.count_sick = GameConstants::Difficulty::Easy::COUNT_SICK;
+        active_config.count_corruptor = GameConstants::Difficulty::Easy::COUNT_CORRUPTOR;
         // Terrain: mostly open dirt, light obstacles, small water/forest patches, no ice
         active_config.ratio_dirt = 60;
         active_config.ratio_wall = 8;
@@ -168,6 +169,7 @@ void GameState::apply_quick_difficulty(int level) {
         active_config.count_exploding = GameConstants::Difficulty::Medium::COUNT_EXPLODING; 
         active_config.count_vampire = GameConstants::Difficulty::Medium::COUNT_VAMPIRE; 
         active_config.count_sick = GameConstants::Difficulty::Medium::COUNT_SICK;
+        active_config.count_corruptor = GameConstants::Difficulty::Medium::COUNT_CORRUPTOR;
         // Terrain: balanced mix with moderate hazards
         active_config.ratio_dirt = 52;
         active_config.ratio_wall = 10;
@@ -196,6 +198,7 @@ void GameState::apply_quick_difficulty(int level) {
         active_config.count_exploding = GameConstants::Difficulty::Hard::COUNT_EXPLODING; 
         active_config.count_vampire = GameConstants::Difficulty::Hard::COUNT_VAMPIRE; 
         active_config.count_sick = GameConstants::Difficulty::Hard::COUNT_SICK;
+        active_config.count_corruptor = GameConstants::Difficulty::Hard::COUNT_CORRUPTOR;
         // Terrain: more walls/water/ice, less open space
         active_config.ratio_dirt = 42;
         active_config.ratio_wall = 13;
@@ -224,6 +227,7 @@ void GameState::apply_quick_difficulty(int level) {
         active_config.count_exploding = GameConstants::Difficulty::Unfair::COUNT_EXPLODING; 
         active_config.count_vampire = GameConstants::Difficulty::Unfair::COUNT_VAMPIRE; 
         active_config.count_sick = GameConstants::Difficulty::Unfair::COUNT_SICK;
+        active_config.count_corruptor = GameConstants::Difficulty::Unfair::COUNT_CORRUPTOR;
         // Terrain: heavily obstructed, lots of ice and water hazards
         active_config.ratio_dirt = 32;
         active_config.ratio_wall = 15;
@@ -253,7 +257,7 @@ static const std::vector<std::string> ALL_EXPECTED_ZOM_FIELDS = {
     "PISTOL_AMMO", "SHOTGUN_AMMO", "WARP_AMMO",
     "GRENADES", "MINES", "MOLOTOVS",
     "TURN_LIMIT",
-    "ZOM_NORMAL", "ZOM_FAST", "ZOM_EXPLODING", "ZOM_VAMPIRE", "ZOM_SICK",
+    "ZOM_NORMAL", "ZOM_FAST", "ZOM_EXPLODING", "ZOM_VAMPIRE", "ZOM_SICK", "ZOM_CORRUPTOR",
     "SHIELD", "CUSTOM_MAP", "ENABLE_ENV", "FIXED_STAMINA",
     "RATIO_WALL", "RATIO_WATER", "RATIO_FOREST", "RATIO_DIRT", "RATIO_ICE",
     "CUST_HUMAN_X", "CUST_HUMAN_Y", "CUST_HUMAN_SET",
@@ -281,6 +285,7 @@ bool GameState::export_challenge_file(const std::string& path) {
     outFile << "ZOM_EXPLODING "   << active_config.count_exploding << "\n";
     outFile << "ZOM_VAMPIRE "     << active_config.count_vampire << "\n";
     outFile << "ZOM_SICK "        << active_config.count_sick << "\n";
+    outFile << "ZOM_CORRUPTOR "   << active_config.count_corruptor << "\n";
     outFile << "SHIELD "          << (active_config.spawn_shield ? 1 : 0) << "\n";
     outFile << "CUSTOM_MAP "      << (active_config.custom_map_mode ? 1 : 0) << "\n";
     outFile << "ENABLE_ENV "      << (active_config.enable_environment ? 1 : 0) << "\n";
@@ -450,6 +455,7 @@ GameState::ImportResult GameState::analyze_challenge_file(const std::string& pat
     checkZombie("ZOM_EXPLODING", D.count_exploding, GameConstants::Difficulty::SliderBounds::COUNT_EXPLODING_MAX);
     checkZombie("ZOM_VAMPIRE",   D.count_vampire,   GameConstants::Difficulty::SliderBounds::COUNT_VAMPIRE_MAX);
     checkZombie("ZOM_SICK",      D.count_sick,      GameConstants::Difficulty::SliderBounds::COUNT_SICK_MAX);
+    checkZombie("ZOM_CORRUPTOR", D.count_corruptor, GameConstants::Difficulty::SliderBounds::COUNT_CORRUPTOR_MAX);
 
     // Terrain ratios: each must be 0–100, and their effective sum (present values +
     // defaults for absent keys) must equal 100.
@@ -565,6 +571,7 @@ bool GameState::import_challenge_file(const std::string& path) {
         else if (key == "ZOM_EXPLODING") active_config.count_exploding = val;
         else if (key == "ZOM_VAMPIRE")  active_config.count_vampire = val;
         else if (key == "ZOM_SICK")     active_config.count_sick = val;
+        else if (key == "ZOM_CORRUPTOR") active_config.count_corruptor = val;
         else if (key == "SHIELD")       active_config.spawn_shield = (val == 1);
         else if (key == "CUSTOM_MAP")   active_config.custom_map_mode = (val == 1);
         else if (key == "ENABLE_ENV")   active_config.enable_environment = (val == 1);
@@ -626,8 +633,9 @@ bool GameState::import_challenge_file(const std::string& path) {
     clampZombie(active_config.count_normal,    GameConstants::Difficulty::SliderBounds::COUNT_CLEVER_MAX,   D.count_normal);
     clampZombie(active_config.count_fast,      GameConstants::Difficulty::SliderBounds::COUNT_FAST_MAX,     D.count_fast);
     clampZombie(active_config.count_exploding, GameConstants::Difficulty::SliderBounds::COUNT_EXPLODING_MAX,D.count_exploding);
-    clampZombie(active_config.count_vampire,   GameConstants::Difficulty::SliderBounds::COUNT_VAMPIRE_MAX,  D.count_vampire);
-    clampZombie(active_config.count_sick,      GameConstants::Difficulty::SliderBounds::COUNT_SICK_MAX,     D.count_sick);
+    clampZombie(active_config.count_vampire,   GameConstants::Difficulty::SliderBounds::COUNT_VAMPIRE_MAX,   D.count_vampire);
+    clampZombie(active_config.count_sick,      GameConstants::Difficulty::SliderBounds::COUNT_SICK_MAX,      D.count_sick);
+    clampZombie(active_config.count_corruptor, GameConstants::Difficulty::SliderBounds::COUNT_CORRUPTOR_MAX, D.count_corruptor);
 
     // Terrain ratios: individual range check, then sum check (using actual post-parse values)
     {
@@ -852,21 +860,23 @@ void GameState::init_game() {
     if (active_config.custom_map_mode) {
         auto zombie_name = [](ZombieType t) -> std::string {
             switch (t) {
-                case ZombieType::Clever:    return "Clever Zom";
-                case ZombieType::Fast:      return "Fast Sprinter";
-                case ZombieType::Exploding: return "Exploder";
-                case ZombieType::Vampire:   return "Vampire Dracula";
-                case ZombieType::Sick:      return "Sick Carrier";
+                case ZombieType::Clever:     return "Clever Zom";
+                case ZombieType::Fast:       return "Fast Sprinter";
+                case ZombieType::Exploding:  return "Exploder";
+                case ZombieType::Vampire:    return "Vampire Dracula";
+                case ZombieType::Sick:       return "Sick Carrier";
+                case ZombieType::Corruptor:  return "Corruptor";
             }
             return "Zombie";
         };
         auto zombie_hp = [](ZombieType t) -> int {
             switch (t) {
-                case ZombieType::Clever:    return GameConstants::Zombies::BASE_HP_NORMAL;
-                case ZombieType::Fast:      return GameConstants::Zombies::BASE_HP_FAST;
-                case ZombieType::Exploding: return GameConstants::Zombies::BASE_HP_EXPLODING;
-                case ZombieType::Vampire:   return GameConstants::Zombies::BASE_HP_VAMPIRE;
-                case ZombieType::Sick:      return GameConstants::Zombies::BASE_HP_SICK;
+                case ZombieType::Clever:     return GameConstants::Zombies::BASE_HP_NORMAL;
+                case ZombieType::Fast:       return GameConstants::Zombies::BASE_HP_FAST;
+                case ZombieType::Exploding:  return GameConstants::Zombies::BASE_HP_EXPLODING;
+                case ZombieType::Vampire:    return GameConstants::Zombies::BASE_HP_VAMPIRE;
+                case ZombieType::Sick:       return GameConstants::Zombies::BASE_HP_SICK;
+                case ZombieType::Corruptor:  return GameConstants::Zombies::BASE_HP_CORRUPTOR;
             }
             return 1;
         };
@@ -881,6 +891,7 @@ void GameState::init_game() {
             else if (zs.type == ZombieType::Exploding) zombies.push_back(std::make_unique<ExplodingZombie>(zs.pos, hp, name, zs.type));
             else if (zs.type == ZombieType::Vampire) zombies.push_back(std::make_unique<VampireZombie>(zs.pos, hp, name, zs.type));
             else if (zs.type == ZombieType::Sick) zombies.push_back(std::make_unique<SickZombie>(zs.pos, hp, name, zs.type));
+            else if (zs.type == ZombieType::Corruptor) zombies.push_back(std::make_unique<CorruptorZombie>(zs.pos, hp, name, zs.type));
         }
     } else {
         std::uniform_int_distribution<int> dist_x(0, width - 1);
@@ -908,6 +919,7 @@ void GameState::init_game() {
                 else if (z_type == ZombieType::Exploding) zombies.push_back(std::make_unique<ExplodingZombie>(z_pos, max_hp, name, z_type));
                 else if (z_type == ZombieType::Vampire) zombies.push_back(std::make_unique<VampireZombie>(z_pos, max_hp, name, z_type));
                 else if (z_type == ZombieType::Sick) zombies.push_back(std::make_unique<SickZombie>(z_pos, max_hp, name, z_type));
+                else if (z_type == ZombieType::Corruptor) zombies.push_back(std::make_unique<CorruptorZombie>(z_pos, max_hp, name, z_type));
             }
         };
 
@@ -916,6 +928,7 @@ void GameState::init_game() {
         spawn_zombie_lambda(ZombieType::Exploding, active_config.count_exploding, "Exploder", GameConstants::Zombies::BASE_HP_EXPLODING);
         spawn_zombie_lambda(ZombieType::Vampire, active_config.count_vampire, "Vampire Dracula", GameConstants::Zombies::BASE_HP_VAMPIRE);
         spawn_zombie_lambda(ZombieType::Sick, active_config.count_sick, "Sick Carrier", GameConstants::Zombies::BASE_HP_SICK);
+        spawn_zombie_lambda(ZombieType::Corruptor, active_config.count_corruptor, "Corruptor", GameConstants::Zombies::BASE_HP_CORRUPTOR);
     }
 
     //add_log("Tactical Battleground initialized with dynamic safety boundaries!", ImVec4(0, 1, 1, 1));
@@ -1957,6 +1970,8 @@ void GameState::apply_heatwave() {
     if (!evaporated.empty()) log += " Evaporated " + std::to_string(evaporated.size()) + " water cells.";
     if (!dried_forest.empty()) log += " Drought killed " + std::to_string(dried_forest.size()) + " forest cells.";
     add_log(tr(log, "[MT] Nang nong gay gat! Bang tan, nuoc boc hoi, rung kho het."), ImVec4(1.0f, 0.7f, 0.2f, 1.0f));
+    // Heatwave accelerates fire spread to adjacent forest
+    propagate_gradual_forest_fire();
     // Nếu ô nước/băng dưới loot chuyển thành đất, human có thể nhặt ngay
     check_loot_pickup();
 }
@@ -2059,6 +2074,42 @@ void GameState::apply_blizzard() {
                        "[MIN] Mìn o (" + std::to_string(p.x + 1) + ", " + std::to_string(p.y + 1) + ") bi dong bang!"),
                     ImVec4(1.0f, 0.6f, 0.2f, 1.0f));
         }
+    }
+
+    // Blizzard extinguishes all fire tiles and clears burning status
+    std::vector<Position> extinguished;
+    for (int x = 0; x < width; ++x) {
+        for (int y = 0; y < height; ++y) {
+            if (grid[x][y] == Terrain::Fire) {
+                grid[x][y] = Terrain::Dirt;
+                extinguished.push_back({x, y});
+            }
+        }
+    }
+    fire_cells.erase(std::remove_if(fire_cells.begin(), fire_cells.end(),
+        [&](const FireCell& fc) {
+            for (const auto& p : extinguished)
+                if (fc.pos == p) return true;
+            return false;
+        }), fire_cells.end());
+    active_fx.extinguished_cells = extinguished;
+
+    if (!extinguished.empty()) {
+        add_log(tr("[FIRE] Blizzard extinguishes " + std::to_string(extinguished.size()) + " fire tile(s)!",
+                   "[LUA] Bao tuyet dap tat " + std::to_string(extinguished.size()) + " o lua!"),
+                ImVec4(0.5f, 0.8f, 1.0f, 1.0f));
+    }
+
+    // Extinguish burning status on all entities
+    int cured = 0;
+    if (human.is_burning) { human.is_burning = false; cured++; }
+    for (auto& z : zombies) {
+        if (z->hp > 0 && z->is_burning) { z->is_burning = false; cured++; }
+    }
+    if (cured > 0) {
+        add_log(tr("[FIRE] Blizzard extinguished burning status for " + std::to_string(cured) + " entity/entities!",
+                   "[LUA] Bao tuyet dap tat trang thai chay cho " + std::to_string(cured) + " thuc the!"),
+                ImVec4(0.5f, 0.8f, 1.0f, 1.0f));
     }
 }
 
@@ -2524,6 +2575,65 @@ void GameState::zombie_single_step(size_t idx) {
         if (clever_zombie_use_weapon(idx)) {
             // Weapon was used — skip movement this substep but still allow attack if adjacent
             clever_zombie_check_loot_pickup(idx);
+            return;
+        }
+    }
+
+    // Corruptor Zombie: on its first substep, scan 4 orthogonal neighbours for
+    // non-frozen loot. If any found, convert one Corruptor per affected tile
+    // (regardless of how many loot items stack there) and skip movement.
+    // Tiles occupied by another living zombie are excluded.
+    // Newly spawned Corruptors are appended to the end of zombies[] and will
+    // not act until the next zombie phase.
+    if (zom->type == ZombieType::Corruptor && active_zombie_substep == 0) {
+        const int orth[4][2] = {{1,0},{-1,0},{0,1},{0,-1}};
+        // Collect distinct tiles that have loot AND are not occupied by a living zombie
+        std::vector<Position> tiles_to_corrupt;
+        for (const auto& d : orth) {
+            int nx = zom->pos.x + d[0];
+            int ny = zom->pos.y + d[1];
+            if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+            Position npos{nx, ny};
+            // Exclude tile if any living zombie is standing on it
+            bool zombie_present = false;
+            for (size_t k = 0; k < zombies.size(); ++k) {
+                if (k != idx && zombies[k]->hp > 0 && zombies[k]->pos == npos) {
+                    zombie_present = true; break;
+                }
+            }
+            if (zombie_present) continue;
+            bool has_loot = false;
+            for (const auto& ld : loot_drops) {
+                if (ld.pos == npos && !ld.frozen_under_ice) { has_loot = true; break; }
+            }
+            if (has_loot) tiles_to_corrupt.push_back(npos);
+        }
+        if (!tiles_to_corrupt.empty()) {
+            for (const Position& tile : tiles_to_corrupt) {
+                // Remove ALL loot on this tile
+                loot_drops.erase(
+                    std::remove_if(loot_drops.begin(), loot_drops.end(),
+                        [&](const LootDrop& ld) { return ld.pos == tile && !ld.frozen_under_ice; }),
+                    loot_drops.end());
+                // Spawn exactly one Corruptor on this tile (if not blocked)
+                if (grid[tile.x][tile.y] == Terrain::Wall) continue;
+                bool occupied = (tile == human.pos);
+                if (!occupied) {
+                    for (const auto& oz : zombies) {
+                        if (oz->hp > 0 && oz->pos == tile) { occupied = true; break; }
+                    }
+                }
+                if (!occupied) {
+                    zombies.push_back(std::make_unique<CorruptorZombie>(
+                        tile, GameConstants::Zombies::BASE_HP_CORRUPTOR,
+                        "Corruptor", ZombieType::Corruptor));
+                    add_log("[CORRUPT] Loot at (" + std::to_string(tile.x+1) + "," +
+                            std::to_string(tile.y+1) + ") corrupted into a new Corruptor!",
+                            ImVec4(0.5f, 0.9f, 0.3f, 1.0f));
+                }
+            }
+            // Skip movement — corruption is the turn action
+            check_fire_interactions();
             return;
         }
     }
@@ -3281,6 +3391,7 @@ void GameState::start_zombie_phase() {
     active_zombie_idx = 0; 
     active_zombie_substep = 0; 
     zombie_action_timer = 0.0f;
+    zombie_phase_count = zombies.size(); // only zombies alive NOW act this phase
 }
 
 void GameState::update_zombie_logic(float dt) { 
@@ -3310,7 +3421,7 @@ void GameState::update_zombie_logic(float dt) {
 
     if (phase != TurnPhase::ZombieAnimating || active_fx.type != FXType::None || !attack_animations.empty() || ice_slide_animation.active) return; 
     
-    if (active_zombie_idx >= zombies.size()) { 
+    if (active_zombie_idx >= zombie_phase_count) { 
         if (active_zombie_substep == 0) {
             // Burning is now applied per-zombie at the end of each individual turn.
             
@@ -3363,17 +3474,81 @@ void GameState::update_zombie_logic(float dt) {
         return;
     }
     if (zom->is_frozen) {
-        // Frozen zombies can still attack if human is adjacent, but cannot move
+        // Frozen zombies can still attack if human is adjacent, but cannot move.
+        // Corruptors additionally retain their loot-corruption ability while frozen.
         int dx = std::abs(zom->pos.x - human.pos.x);
         int dy = std::abs(zom->pos.y - human.pos.y);
-        if (dx <= 1 && dy <= 1 && human.hp > 0) {
-            // Human is adjacent - set pending_attack and fall through to the timer-based
-            // attack handler below so the turn can actually advance.
+        bool human_adjacent = (dx <= 1 && dy <= 1 && (dx != 0 || dy != 0) && human.hp > 0);
+
+        if (human_adjacent) {
+            // Attack takes priority — same path as all other frozen zombies
             if (!zom->pending_attack) {
                 zom->pending_attack = true;
-                zombie_action_timer = 0.0f; // Reset timer so the delay is measured from now
+                zombie_action_timer = 0.0f;
             }
-            // Fall through to the pending_attack timer block below (no return here)
+            // Fall through to pending_attack timer block below
+        } else if (zom->type == ZombieType::Corruptor) {
+            // Corruptor: try to corrupt neighbouring loot even while frozen
+            const int orth[4][2] = {{1,0},{-1,0},{0,1},{0,-1}};
+            std::vector<Position> tiles_to_corrupt;
+            for (const auto& d : orth) {
+                int nx = zom->pos.x + d[0];
+                int ny = zom->pos.y + d[1];
+                if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+                Position npos{nx, ny};
+                bool zombie_present = false;
+                for (size_t k = 0; k < zombies.size(); ++k) {
+                    if (k != active_zombie_idx && zombies[k]->hp > 0 && zombies[k]->pos == npos) {
+                        zombie_present = true; break;
+                    }
+                }
+                if (zombie_present) continue;
+                bool has_loot = false;
+                for (const auto& ld : loot_drops) {
+                    if (ld.pos == npos && !ld.frozen_under_ice) { has_loot = true; break; }
+                }
+                if (has_loot) tiles_to_corrupt.push_back(npos);
+            }
+            if (!tiles_to_corrupt.empty()) {
+                for (const Position& tile : tiles_to_corrupt) {
+                    loot_drops.erase(
+                        std::remove_if(loot_drops.begin(), loot_drops.end(),
+                            [&](const LootDrop& ld) { return ld.pos == tile && !ld.frozen_under_ice; }),
+                        loot_drops.end());
+                    if (grid[tile.x][tile.y] == Terrain::Wall) continue;
+                    bool occupied = (tile == human.pos);
+                    if (!occupied) {
+                        for (const auto& oz : zombies) {
+                            if (oz->hp > 0 && oz->pos == tile) { occupied = true; break; }
+                        }
+                    }
+                    if (!occupied) {
+                        zombies.push_back(std::make_unique<CorruptorZombie>(
+                            tile, GameConstants::Zombies::BASE_HP_CORRUPTOR,
+                            "Corruptor", ZombieType::Corruptor));
+                        add_log("[CORRUPT] Frozen Corruptor corrupts loot at (" +
+                                std::to_string(tile.x+1) + "," + std::to_string(tile.y+1) + ")!",
+                                ImVec4(0.3f, 0.85f, 0.95f, 1.0f));
+                    }
+                }
+                check_fire_interactions();
+                active_zombie_idx++;
+                active_zombie_substep = 0;
+                return;
+            } else {
+                // Nothing to corrupt and human not adjacent — frozen, does nothing
+                add_log(tr("[ICE] " + zom->name + " is frozen solid and cannot move! (Frozen until ice melts)",
+                           "[BANG] " + zom->name + " bi dong cung va khong the di chuyen! (Dong bang den khi bang tan)"), ImVec4(0.6f, 0.8f, 1.0f, 1.0f));
+                if (!zom->extra_turn && zom->is_burning) {
+                    zom->hp -= 1;
+                    floating_texts.push_back({zom->pos, -1, 1.0f, 1.0f});
+                    add_log("[FIRE] " + zom->name + " suffered 1 Burn Damage!", ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
+                    if (zom->hp <= 0 && zom->type == ZombieType::Exploding) queue_explosion(zom->pos.x, zom->pos.y, true);
+                }
+                active_zombie_idx++;
+                active_zombie_substep = 0;
+                return;
+            }
         } else {
             add_log(tr("[ICE] " + zom->name + " is frozen solid and cannot move! (Frozen until ice melts)",
                        "[BANG] " + zom->name + " bi dong cung va khong the di chuyen! (Dong bang den khi bang tan)"), ImVec4(0.6f, 0.8f, 1.0f, 1.0f));

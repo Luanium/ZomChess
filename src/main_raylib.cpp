@@ -16,6 +16,7 @@
 #include <sstream>
 #include <cstring>
 namespace fs = std::filesystem;
+#include "embedded/guide_txt.h"  // auto-generated from assets/guide.txt at build time
 
 // ── GameState audio method implementations for Raylib build ──────────────────
 // (GameState.cpp only defines these under #ifndef RAYLIB_BUILD, using the
@@ -58,11 +59,12 @@ void GameState::setSfxEnabled(bool enabled) {
 
 static Color zombieColor(ZombieType t) {
     switch (t) {
-        case ZombieType::Fast:      return (Color){55, 168, 255, 255};
-        case ZombieType::Exploding: return (Color){220, 110, 15, 255};
-        case ZombieType::Vampire:   return (Color){130, 30, 130, 255};
-        case ZombieType::Sick:      return (Color){210, 190, 65, 255};
-        default:                    return (Color){45, 175, 90, 255};
+        case ZombieType::Fast:       return (Color){55, 168, 255, 255};
+        case ZombieType::Exploding:  return (Color){220, 110, 15, 255};
+        case ZombieType::Vampire:    return (Color){130, 30, 130, 255};
+        case ZombieType::Sick:       return (Color){210, 190, 65, 255};
+        case ZombieType::Corruptor:  return (Color){0, 210, 190, 255};   // teal/cyan — distinct from all others
+        default:                     return (Color){45, 175, 90, 255};
     }
 }
 
@@ -344,26 +346,17 @@ struct GuideSection {
     std::vector<GuideEntry> entries; // subsection headers + bullets inside this section
 };
 
-// Parses assets/guide.txt into a list of sections.
-// Format:
+// Parses guide content (same format as assets/guide.txt) from a string.
+// Used by both the on-disk loader and the embedded fallback.
 //   # Title          -> new section
 //   ## Subtitle      -> subsection header inside current section (level 1)
 //   - text           -> bullet inside current section (level 2)
 //   blank line       -> ignored
-static std::vector<GuideSection> loadGuide(const std::string& path) {
+static std::vector<GuideSection> parseGuide(const std::string& content) {
     std::vector<GuideSection> sections;
-    std::ifstream f(path);
-    if (!f.is_open()) {
-        // Fallback: one section with a single entry explaining the file is missing
-        GuideSection s;
-        s.title = "Guide file not found";
-        s.entries.push_back({"Expected: " + path, 2});
-        sections.push_back(s);
-        return sections;
-    }
+    std::istringstream ss(content);
     std::string line;
-    while (std::getline(f, line)) {
-        // strip trailing \r
+    while (std::getline(ss, line)) {
         if (!line.empty() && line.back() == '\r') line.pop_back();
         if (line.empty()) continue;
         if (line.size() >= 3 && line[0] == '#' && line[1] == '#' && line[2] == ' ') {
@@ -379,6 +372,19 @@ static std::vector<GuideSection> loadGuide(const std::string& path) {
         }
     }
     return sections;
+}
+
+// Loads guide from disk if available (enables hot-reload during development),
+// otherwise falls back to the embedded string compiled into the binary.
+static std::vector<GuideSection> loadGuide(const std::string& path) {
+    std::ifstream f(path);
+    if (f.is_open()) {
+        std::string content((std::istreambuf_iterator<char>(f)),
+                             std::istreambuf_iterator<char>());
+        return parseGuide(content);
+    }
+    // File not found — use the version embedded at build time
+    return parseGuide(EMBEDDED_GUIDE_TXT);
 }
 
 int main() {
@@ -822,7 +828,7 @@ int main() {
             int available = state.calculate_available_spawn_cells();
             int totalZoms = state.active_config.count_normal + state.active_config.count_fast +
                             state.active_config.count_exploding + state.active_config.count_vampire +
-                            state.active_config.count_sick;
+                            state.active_config.count_sick + state.active_config.count_corruptor;
             bool overflow = !state.is_zombie_count_valid();
 
             // ── COLUMN B: Terrain ratios + Weather probabilities (multi-slider bars) ──
@@ -1017,6 +1023,8 @@ int main() {
                             GameConstants::Difficulty::SliderBounds::COUNT_VAMPIRE_MAX, colBX, colBW, by, (Color){170,50,170,255}); by += 42;
                 drawLockedSliderW("Sick Carriers", state.active_config.count_sick, 0,
                             GameConstants::Difficulty::SliderBounds::COUNT_SICK_MAX, colBX, colBW, by, (Color){210,190,65,255}); by += 42;
+                drawLockedSliderW("Corruptors", state.active_config.count_corruptor, 0,
+                            GameConstants::Difficulty::SliderBounds::COUNT_CORRUPTOR_MAX, colBX, colBW, by, (Color){0,210,190,255}); by += 42;
             } else {
                 drawSliderW("Clever Zombies", &state.active_config.count_normal, 0,
                             GameConstants::Difficulty::SliderBounds::COUNT_CLEVER_MAX, colBX, colBW, by, (Color){45,175,90,255}); by += 42;
@@ -1028,12 +1036,14 @@ int main() {
                             GameConstants::Difficulty::SliderBounds::COUNT_VAMPIRE_MAX, colBX, colBW, by, (Color){170,50,170,255}); by += 42;
                 drawSliderW("Sick Carriers", &state.active_config.count_sick, 0,
                             GameConstants::Difficulty::SliderBounds::COUNT_SICK_MAX, colBX, colBW, by, (Color){210,190,65,255}); by += 42;
+                drawSliderW("Corruptors", &state.active_config.count_corruptor, 0,
+                            GameConstants::Difficulty::SliderBounds::COUNT_CORRUPTOR_MAX, colBX, colBW, by, (Color){0,210,190,255}); by += 42;
             }
 
             available = state.calculate_available_spawn_cells();
             totalZoms = state.active_config.count_normal + state.active_config.count_fast +
                         state.active_config.count_exploding + state.active_config.count_vampire +
-                        state.active_config.count_sick;
+                        state.active_config.count_sick + state.active_config.count_corruptor;
             overflow = !state.is_zombie_count_valid();
             DrawText(TextFormat("Spawn tiles: %d | Zombies: %d", available, totalZoms),
                      (int)colBX, (int)by, 13, overflow ? (Color){255,80,80,255} : (Color){160,160,160,255});
@@ -1077,24 +1087,26 @@ int main() {
             float fixedY = scrollArea.y + scrollArea.height + 10.0f;
 
             // Custom Map checkbox + Open Editor button
-            static int savedManualCount[5] = {-1,-1,-1,-1,-1}; // -1 = chưa lưu lần nào
+            static int savedManualCount[6] = {-1,-1,-1,-1,-1,-1}; // -1 = chưa lưu lần nào
             static bool customMapEverInitialized = false;
             auto syncCountsFromSpawns = [&]() {
-                int c[5] = {0,0,0,0,0};
+                int c[6] = {0,0,0,0,0,0};
                 for (const auto& zs : state.active_config.custom_zombie_spawns) {
                     switch (zs.type) {
-                        case ZombieType::Clever:    c[0]++; break;
-                        case ZombieType::Fast:      c[1]++; break;
-                        case ZombieType::Exploding: c[2]++; break;
-                        case ZombieType::Vampire:   c[3]++; break;
-                        case ZombieType::Sick:      c[4]++; break;
+                        case ZombieType::Clever:     c[0]++; break;
+                        case ZombieType::Fast:       c[1]++; break;
+                        case ZombieType::Exploding:  c[2]++; break;
+                        case ZombieType::Vampire:    c[3]++; break;
+                        case ZombieType::Sick:       c[4]++; break;
+                        case ZombieType::Corruptor:  c[5]++; break;
                     }
                 }
-                state.active_config.count_normal    = c[0];
-                state.active_config.count_fast      = c[1];
-                state.active_config.count_exploding = c[2];
-                state.active_config.count_vampire   = c[3];
-                state.active_config.count_sick      = c[4];
+                state.active_config.count_normal     = c[0];
+                state.active_config.count_fast       = c[1];
+                state.active_config.count_exploding  = c[2];
+                state.active_config.count_vampire    = c[3];
+                state.active_config.count_sick       = c[4];
+                state.active_config.count_corruptor  = c[5];
             };
 
             bool customMapClick = drawCheckbox(mouse, mouseClicked, sliderX, fixedY, state.active_config.custom_map_mode, "Use Custom Map");
@@ -1116,11 +1128,12 @@ int main() {
                 } else {
                     // Turning OFF custom map — restore manual counts if we saved any
                     if (savedManualCount[0] >= 0) {
-                        state.active_config.count_normal    = savedManualCount[0];
-                        state.active_config.count_fast      = savedManualCount[1];
-                        state.active_config.count_exploding = savedManualCount[2];
-                        state.active_config.count_vampire   = savedManualCount[3];
-                        state.active_config.count_sick      = savedManualCount[4];
+                        state.active_config.count_normal     = savedManualCount[0];
+                        state.active_config.count_fast       = savedManualCount[1];
+                        state.active_config.count_exploding  = savedManualCount[2];
+                        state.active_config.count_vampire    = savedManualCount[3];
+                        state.active_config.count_sick       = savedManualCount[4];
+                        state.active_config.count_corruptor  = savedManualCount[5];
                     }
                 }
             }
@@ -1133,6 +1146,7 @@ int main() {
                 savedManualCount[2] = state.active_config.count_exploding;
                 savedManualCount[3] = state.active_config.count_vampire;
                 savedManualCount[4] = state.active_config.count_sick;
+                savedManualCount[5] = state.active_config.count_corruptor;
             }
             if (state.active_config.custom_map_mode) {
                 Rectangle editorBtn = { sliderX + 230, fixedY - 3, 200, 28 };
@@ -1581,13 +1595,14 @@ int main() {
             Rectangle brushZExplode  = { colZombieX, btnStartY + 2*btnStep, 200, btnH };
             Rectangle brushZVampire  = { colZombieX, btnStartY + 3*btnStep, 200, btnH };
             Rectangle brushZSick     = { colZombieX, btnStartY + 4*btnStep, 200, btnH };
-            Rectangle brushZErase    = { colZombieX, btnStartY + 5*btnStep, 200, btnH };
-            Rectangle brushZEraseAll = { colZombieX, btnStartY + 6*btnStep, 200, btnH };
+            Rectangle brushZCorruptor = { colZombieX, btnStartY + 5*btnStep, 200, btnH };
+            Rectangle brushZErase    = { colZombieX, btnStartY + 6*btnStep, 200, btnH };
+            Rectangle brushZEraseAll = { colZombieX, btnStartY + 7*btnStep, 200, btnH };
 
             Rectangle brushHuman       = { colHumanX, btnStartY + 0*btnStep, 200, btnH };
             Rectangle brushHumanUnset  = { colHumanX, btnStartY + 1*btnStep, 200, btnH };
 
-            float belowColumnsY = btnStartY + 7 * btnStep + 60.0f;
+            float belowColumnsY = btnStartY + 8 * btnStep + 60.0f;
             Rectangle resetMapBtn    = { colTerrainX, belowColumnsY,        260, 44 };
             Rectangle saveReturnBtn  = { colTerrainX, belowColumnsY + 60.0f, 260, 44 };
 
@@ -1608,12 +1623,13 @@ int main() {
                     resetTerrainJustOpened = true;
                 }
 
-                if (CheckCollisionPointRec(mouse, brushZClever))  { editorPlacingZombie = true; editorPlacingHuman = false; editorEraseZombieMode = false; editorSelectedZombieType = ZombieType::Clever; }
-                if (CheckCollisionPointRec(mouse, brushZFast))    { editorPlacingZombie = true; editorPlacingHuman = false; editorEraseZombieMode = false; editorSelectedZombieType = ZombieType::Fast; }
-                if (CheckCollisionPointRec(mouse, brushZExplode)) { editorPlacingZombie = true; editorPlacingHuman = false; editorEraseZombieMode = false; editorSelectedZombieType = ZombieType::Exploding; }
-                if (CheckCollisionPointRec(mouse, brushZVampire)) { editorPlacingZombie = true; editorPlacingHuman = false; editorEraseZombieMode = false; editorSelectedZombieType = ZombieType::Vampire; }
-                if (CheckCollisionPointRec(mouse, brushZSick))    { editorPlacingZombie = true; editorPlacingHuman = false; editorEraseZombieMode = false; editorSelectedZombieType = ZombieType::Sick; }
-                if (CheckCollisionPointRec(mouse, brushZErase))   { editorPlacingZombie = true; editorPlacingHuman = false; editorEraseZombieMode = true; }
+                if (CheckCollisionPointRec(mouse, brushZClever))   { editorPlacingZombie = true; editorPlacingHuman = false; editorEraseZombieMode = false; editorSelectedZombieType = ZombieType::Clever; }
+                if (CheckCollisionPointRec(mouse, brushZFast))      { editorPlacingZombie = true; editorPlacingHuman = false; editorEraseZombieMode = false; editorSelectedZombieType = ZombieType::Fast; }
+                if (CheckCollisionPointRec(mouse, brushZExplode))   { editorPlacingZombie = true; editorPlacingHuman = false; editorEraseZombieMode = false; editorSelectedZombieType = ZombieType::Exploding; }
+                if (CheckCollisionPointRec(mouse, brushZVampire))   { editorPlacingZombie = true; editorPlacingHuman = false; editorEraseZombieMode = false; editorSelectedZombieType = ZombieType::Vampire; }
+                if (CheckCollisionPointRec(mouse, brushZSick))      { editorPlacingZombie = true; editorPlacingHuman = false; editorEraseZombieMode = false; editorSelectedZombieType = ZombieType::Sick; }
+                if (CheckCollisionPointRec(mouse, brushZCorruptor)) { editorPlacingZombie = true; editorPlacingHuman = false; editorEraseZombieMode = false; editorSelectedZombieType = ZombieType::Corruptor; }
+                if (CheckCollisionPointRec(mouse, brushZErase))     { editorPlacingZombie = true; editorPlacingHuman = false; editorEraseZombieMode = true; }
 
                 if (CheckCollisionPointRec(mouse, brushHuman))    { editorPlacingHuman = true; editorPlacingZombie = false; }
                 if (CheckCollisionPointRec(mouse, brushHumanUnset)) {
@@ -1632,7 +1648,7 @@ int main() {
 
                 if (CheckCollisionPointRec(mouse, saveReturnBtn)) {
                     if (!state.active_config.custom_zombie_spawns.empty()) {
-                        int cClever = 0, cFast = 0, cExplode = 0, cVampire = 0, cSick = 0;
+                        int cClever = 0, cFast = 0, cExplode = 0, cVampire = 0, cSick = 0, cCorruptor = 0;
                         for (const auto& zs : state.active_config.custom_zombie_spawns) {
                             switch (zs.type) {
                                 case ZombieType::Clever:    cClever++; break;
@@ -1640,13 +1656,15 @@ int main() {
                                 case ZombieType::Exploding: cExplode++; break;
                                 case ZombieType::Vampire:   cVampire++; break;
                                 case ZombieType::Sick:      cSick++; break;
+                                case ZombieType::Corruptor: cCorruptor++; break;
                             }
                         }
-                        state.active_config.count_normal    = cClever;
-                        state.active_config.count_fast      = cFast;
-                        state.active_config.count_exploding = cExplode;
-                        state.active_config.count_vampire   = cVampire;
-                        state.active_config.count_sick      = cSick;
+                        state.active_config.count_normal     = cClever;
+                        state.active_config.count_fast       = cFast;
+                        state.active_config.count_exploding  = cExplode;
+                        state.active_config.count_vampire    = cVampire;
+                        state.active_config.count_sick       = cSick;
+                        state.active_config.count_corruptor  = cCorruptor;
                     }
                     state.current_scene = GameScene::MainMenu;
                 }
@@ -1871,6 +1889,8 @@ int main() {
             drawCenteredText("Vampire", brushZVampire, 15, (Color){130,30,130,255});
             DrawRectangleRec(brushZSick, zBrushColor(ZombieType::Sick, false));
             drawCenteredText("Sick", brushZSick, 15, (Color){210,190,65,255});
+            DrawRectangleRec(brushZCorruptor, zBrushColor(ZombieType::Corruptor, false));
+            drawCenteredText("Corruptor", brushZCorruptor, 15, (Color){0,210,190,255});
             DrawRectangleRec(brushZErase, (editorPlacingZombie && editorEraseZombieMode) ? (Color){200,60,60,255} : DARKGRAY);
             drawCenteredText("Erase Zombie", brushZErase, 15, WHITE);
             DrawRectangleRec(brushZEraseAll, (Color){140,20,20,255});
@@ -3034,7 +3054,7 @@ int main() {
         DrawText(TextFormat("Zombies: %d", aliveCount), (int)panelX, (int)sectionY, 16, (Color){255,100,100,255});
 
         {
-            int cvClever = 0, cvFast = 0, cvExploding = 0, cvVampire = 0, cvSick = 0;
+            int cvClever = 0, cvFast = 0, cvExploding = 0, cvVampire = 0, cvSick = 0, cvCorruptor = 0;
             for (const auto& z : state.zombies) {
                 if (z->hp <= 0) continue;
                 switch (z->type) {
@@ -3043,19 +3063,21 @@ int main() {
                     case ZombieType::Exploding: cvExploding++; break;
                     case ZombieType::Vampire:   cvVampire++; break;
                     case ZombieType::Sick:      cvSick++; break;
+                    case ZombieType::Corruptor: cvCorruptor++; break;
                 }
             }
             struct LegendRow { const char* label; Color color; int count; };
-            LegendRow rows[5] = {
-                { "Clever",   zombieColor(ZombieType::Clever),    cvClever },
-                { "Fast",     zombieColor(ZombieType::Fast),      cvFast },
-                { "Exploder", zombieColor(ZombieType::Exploding), cvExploding },
-                { "Vampire",  zombieColor(ZombieType::Vampire),   cvVampire },
-                { "Sick",     zombieColor(ZombieType::Sick),      cvSick },
+            LegendRow rows[6] = {
+                { "Clever",    zombieColor(ZombieType::Clever),    cvClever },
+                { "Fast",      zombieColor(ZombieType::Fast),      cvFast },
+                { "Exploder",  zombieColor(ZombieType::Exploding), cvExploding },
+                { "Vampire",   zombieColor(ZombieType::Vampire),   cvVampire },
+                { "Sick",      zombieColor(ZombieType::Sick),      cvSick },
+                { "Corruptor", zombieColor(ZombieType::Corruptor), cvCorruptor },
             };
             float itemW = colLeftW / 3.0f;
             float ly = sectionY + 25;
-            for (int i = 0; i < 5; ++i) {
+            for (int i = 0; i < 6; ++i) {
                 float lx = panelX + (i % 3) * itemW;
                 float ry = ly + (i / 3) * 22.0f;
                 DrawRectangle((int)lx, (int)ry, 14, 14, rows[i].color);

@@ -10,6 +10,24 @@ set(ZOMCHESS_SOURCES
     src/GameState.cpp
 )
 
+# ─── Embed assets/guide.txt into a generated header ──────────────────────────
+# cmake/EmbedGuide.cmake reads guide.txt and writes src/embedded/guide_txt.h
+# containing the content as a raw string literal. Runs at build time so every
+# rebuild picks up edits to the .txt file automatically.
+set(GUIDE_INPUT  "${CMAKE_SOURCE_DIR}/assets/guide.txt")
+set(GUIDE_OUTPUT "${CMAKE_SOURCE_DIR}/src/embedded/guide_txt.h")
+
+add_custom_command(
+    OUTPUT  "${GUIDE_OUTPUT}"
+    COMMAND ${CMAKE_COMMAND}
+            -DGUIDE_INPUT="${GUIDE_INPUT}"
+            -DGUIDE_OUTPUT="${GUIDE_OUTPUT}"
+            -P "${CMAKE_SOURCE_DIR}/cmake/EmbedGuide.cmake"
+    DEPENDS "${GUIDE_INPUT}"
+    COMMENT "Embedding assets/guide.txt into src/embedded/guide_txt.h"
+)
+add_custom_target(embed_guide ALL DEPENDS "${GUIDE_OUTPUT}")
+
 # Fixed paths to a locally-built raylib (quick path for now; will be made
 # portable via FetchContent later).
 set(RAYLIB_NATIVE_INCLUDE "/usr/local/include")
@@ -26,6 +44,7 @@ if (EMSCRIPTEN)
     target_compile_definitions(ZomChess PRIVATE RAYLIB_BUILD)
     target_compile_options(ZomChess PRIVATE -include ${CMAKE_SOURCE_DIR}/src/RaylibBuildPrelude.h)
     target_compile_options(ZomChess PRIVATE -O2)
+    add_dependencies(ZomChess embed_guide)
 
     set_target_properties(ZomChess PROPERTIES OUTPUT_NAME "ZomChess" SUFFIX ".html")
     target_link_libraries(ZomChess PRIVATE ${RAYLIB_WEB_LIB})
@@ -50,6 +69,7 @@ else()
     target_include_directories(ZomChess PRIVATE src ${RAYLIB_NATIVE_INCLUDE})
     target_compile_definitions(ZomChess PRIVATE RAYLIB_BUILD)
     target_compile_options(ZomChess PRIVATE -include ${CMAKE_SOURCE_DIR}/src/RaylibBuildPrelude.h)
+    add_dependencies(ZomChess embed_guide)
 
     target_link_libraries(ZomChess PRIVATE
         ${RAYLIB_NATIVE_LIB}

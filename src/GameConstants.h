@@ -42,6 +42,7 @@ namespace GameConstants {
             constexpr int COUNT_EXPLODING = 1;
             constexpr int COUNT_VAMPIRE = 1;
             constexpr int COUNT_SICK = 1;
+            constexpr int COUNT_CORRUPTOR = 0;
             constexpr int TURN_LIMIT = 40;
 
             // Terrain ratios (sum = 100)
@@ -76,6 +77,7 @@ namespace GameConstants {
             constexpr int COUNT_EXPLODING = 3;
             constexpr int COUNT_VAMPIRE = 2;
             constexpr int COUNT_SICK = 2;
+            constexpr int COUNT_CORRUPTOR = 1;
             constexpr int TURN_LIMIT = 30;
 
             // Terrain ratios (sum = 100)
@@ -110,6 +112,7 @@ namespace GameConstants {
             constexpr int COUNT_EXPLODING = 4;
             constexpr int COUNT_VAMPIRE = 3;
             constexpr int COUNT_SICK = 2;
+            constexpr int COUNT_CORRUPTOR = 2;
             constexpr int TURN_LIMIT = 20;
 
             // Terrain ratios (sum = 100)
@@ -144,6 +147,7 @@ namespace GameConstants {
             constexpr int COUNT_EXPLODING = 6;
             constexpr int COUNT_VAMPIRE = 3;
             constexpr int COUNT_SICK = 3;
+            constexpr int COUNT_CORRUPTOR = 3;
             constexpr int TURN_LIMIT = 15;
 
             // Terrain ratios (sum = 100)
@@ -197,6 +201,8 @@ namespace GameConstants {
             constexpr int COUNT_EXPLODING_MAX  = 50;
             constexpr int COUNT_VAMPIRE_MAX    = 50;
             constexpr int COUNT_SICK_MAX       = 50;
+            constexpr int COUNT_CORRUPTOR_MAX  = 50;
+            constexpr int COUNT_CORRUPTOR_DEFAULT = 1;
             constexpr int COUNT_NORMAL_MAX     = COUNT_CLEVER_MAX; // alias for compatibility
         }
     }
@@ -270,6 +276,7 @@ namespace GameConstants {
         constexpr int BASE_HP_EXPLODING = 3;
         constexpr int BASE_HP_VAMPIRE = 4;
         constexpr int BASE_HP_SICK = 2;
+        constexpr int BASE_HP_CORRUPTOR = 1;
 
         // Pathfinding AI weights
         constexpr double AI_LAMBDA = 1.2;
