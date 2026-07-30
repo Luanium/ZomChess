@@ -7,23 +7,21 @@
 - Lose: your HP reaches 0, or the turn limit is exceeded.
 
 # HUMAN
-- Represented by the white square icon with blinking colorful border.
-- The number in the middle is the remaining HP, the dots near the bottom are the remaining Stamina.
+- White square icon with blinking colorful border.
+- Number in the middle = remaining HP.
+- Dots near the bottom = remaining Stamina.
 ## Actions
-- Actions of Human take Stamina; when Human runs out of Stamina, Human turn ends.
-- Actions include moving and using weapons or tools, choose which action to be performed via the buttons on the right.
-- For most actions (except Mine planting), there are directional arrows indicating possible direction choices.
-- Those actions are considered to be performed only when you click on one of the tiles having the directional arrows
-- You can end Human turn even before running out of Stamina.
+- Actions of Human take Stamina.
+- When running out of Stamina, your turn ends.
+- Actions include moving and using weapons or tools.
+- Choose which action to be performed via the buttons on the right.
+- For most actions, there are directional arrows indicating possible direction choices.
+- You can deliberately end Human turn anytime.
 - IMPORTANT: You cannot undo actions, so plan carefully before doing anything.
 ## Stamina
-- At the start of each human turn, Stamina is given for Human to act.
+- At the start of each Human turn, Stamina is renewed.
 - Stamina can either be rolled randomly from 1 to 6, or be fixed at a value.
-- Moving on different terrains may costs different Stamina points.
-- Using different weapons or tools may costs different Stamina points.
-- You will lose 1 Stamina point in the next turn if you are bit by Sick Zombie.
-- If you are Paralyzed, your Stamina in that turn is 0 and your turn ends automatically.
-- If you pick up a Stamina potion from Loot drop, your Stamina is restored to 6 immediately.
+- If Paralyzed: Stamina = 0 and Human turn ends automatically.
 
 # WEAPONS AND TOOLS
 ## Knife
@@ -36,19 +34,20 @@
 - Ranged weapon. Accuracy drops with distance. Deals 1 damage if hit.
 - Costs 1 Stamina. -1 ammo each time.
 ## Shotgun
-- Fires in a 3-tile line, hitting all targets in the path. Deals 1 damage.
+- Fires in a 3-tile line, hitting all targets in the path. Deals 1 damage each.
 - Costs 1 Stamina. -1 ammo each time.
 - Effect may be blocked by Wall tiles.
-- Firing right at a Wall tile will destroy that Wall (into Dirt) and Human is knocked back by 1 step.
+- Firing right at a Wall will destroy that Wall (into Dirt) and Human is knocked back.
 ## Warp Bolt
-- Exchanges 2 tiles via spacetime gates: one at the Human-standing tile, the other at the tile the bolt landing.
+- Exchanges 2 tiles: one at the Human-standing tile, the other at the tile the bolt landing.
 - The bolt landing on the furthest tile before blocked by Wall.
 - Costs 1 Stamina. -1 ammo each time.
 - Cause -1HP damage to entities involved in the exchange.
-- If the bolt lands on the Human-standing tile, the extreme spacetime deformation causes immediate death to Human.
+- If the bolt lands on the Human-standing tile, it causes immediate death to Human.
 ## Grenade
 - Thrown randomly 1-6 tiles with a 1-turn fuse.
-- Throwing may be blocked by Wall tiles, and this may cause Grenade to land on Human's tile and explode immediately.
+- Throwing may be blocked by Wall tiles.
+- May land on Human's tile and explode immediately if blocked by Wall.
 - Costs 1 Stamina. -1 ammo each time.
 - AoE: 3x3 if landed on Water or being Frozen under Ice, 5x5 otherwise.
 - Damage: center tile -3HP, middle shell -2HP, outer shell -1HP.
@@ -57,40 +56,42 @@
 - Can be blown by Windstorm.
 ## Molotov
 - Thrown randomly 1–6 tiles. Creates a Fire tile on landing.
-- Throwing may be blocked by Wall tiles, and this may cause Molotov to land on Human's tile.
+- Throwing may be blocked by Wall tiles.
+- May land on Human's tile if blocked by Wall.
 - Costs 1 Stamina. -1 ammo each time.
 ## Mine
 - Placed on the current tile.
 - 1-tile blast radius. -1 ammo each time.
-- Detonates when an entity steps on it; or triggered by Lightning, by Explosion, by Fire, by being shot by Pistol and Shotgun.
+- Triggered by: entity steps on it, Lightning, explosion, Fire, Pistol, Shotgun.
+- Once exploding, the effects are the same as Grenade.
 
 # ZOMBIE
-- Represented by square icons with different colors (see the legends).
-- The number in the middle is the remaining HP.
+- Square icons with different colors (see the legends).
+- Number in the middle = remaining HP.
 - Has tendency to move toward Human.
 - Attacks: bite (orthogonal adjacent, -2HP), scratch (diagonal adjacent, -1HP).
 - Attacking is the last action in each Zombie's turn.
-- When a Zombie dies at a tile, it leave a Loot drop on the that tile.
+- Zombie leaves a Loot drop after dying.
 ## Clever
-- 2 HP. Moves 1 tile per turn. Cannot attack after moving in Water.
+- 2 HP. Moves 1 tile per turn.
 - Can pick up Loot and use Weapons.
 - Armed ones are marked with a small black triangle at the icon's top-right corner.
 ## Fast
-- 2 HP. Moves 2 tiles per turn. Move 1 tile per turn in Water but can still attack after that.
+- 2 HP. Moves 2 tiles per turn.
+- Move 1 tile per turn in Water but can still attack after that.
 ## Exploding
-- 3 HP. Detonates on death, dealing AoE damage.
+- 3 HP. Detonates on death, dealing AoE damage. Moves 1 tile per turn.
 - AoE: 1x1 if on Water or being Frozen under Ice, 3x3 otherwise.
-- Damage when detonate: -1 HP, cause knocking back.
+- Damage when detonate: -1 HP, cause Knocked back.
 ## Vampire
-- 4 HP. Moves 1 tile per turn. Cannot attack after moving in Water.
-- Steals your HP to heal itself via attacking you.
+- 4 HP. Moves 1 tile per turn.
+- Steals your HP to heal itself.
 ## Sick
-- 2 HP. Moves 1 tile per turn. Cannot attack after moving in Water.
-- Biting reduces your remaining number of turns by half and -1 HP in your next turn.
+- 2 HP. Moves 1 tile per turn.
+- Biting reduces remaining number of turns by half and -1 HP in next Human turn.
 ## Corruptor
-- 1 HP. Moves 1 tile per turn. Cannot attack after moving in Water.
-- On its turn, if any non-frozen loot drops are on 4 neighbouring (horizontal+vertical) tiles, it converts all of them into new Corruptors instead of moving.
-- New Corruptors are fully independent and have the same ability.
+- 1 HP. Moves 1 tile per turn.
+- Can transform adjacent Loot drops into its clones.
 
 # TERRAIN
 ## Dirt
@@ -99,26 +100,29 @@
 ## Wall
 - Blocks all movement and line-of-sight for ranged weapons.
 - Blocks AoE of explosion and Shotgun.
-- Can be destroyed by explosion and Shotgun.
+- Can be destroyed into Dirt by explosion and Shotgun.
 ## Water
 - Passable, but costs 2 Stamina to enter.
-- Conducts electricity to cause entities to be Paralyzed.
+- Prevent Zombie from attacking after moving (except Fast Zombie).
+- Fast Zombie can move only 1 step on Water, but can attack after moving.
+- Conducts electricity due to Lightning --> Paralyzed.
 - Extinguishes Burned status.
 - May become Ice under Blizzard.
-- May evaporate into Dirt under Heatwave.
+- Evaporate into Dirt under Heatwave.
 ## Forest
 - Passable.
 - Become Fire if there is an adjacent Fire.
 ## Ice
 - Passable. May cause unintentional sliding.
 - Can be broken into Water by Ice Pick.
-- Conducts electricity to cause entities to be Paralyzed.
-- Becomes Water under Heatwave.
+- Conducts electricity due to Lightning --> Paralyzed.
+- Melts into Water under Heatwave.
 ## Fire
+- Temporary, lasts for 2 turns at most then becomes Dirt.
 - Cause entities stepping onto it to be Burned.
 - Created by Molotov, or when Lightning strikes a Forest tile.
 - Cause adjacent Forest to become Fire.
-- Becomes Dirt under Rain and Blizzard.
+- Extinguished and becomes Dirt under Rain and Blizzard.
 
 # ENVIRONMENT EVENTS
 ## Clear sky
@@ -126,33 +130,34 @@
 ## Windstorm
 - Pushes entities, Grenades and Loot drops 1 tile in the wind direction if not blocked.
 ## Rain
-- Extinguishes all Fire into Dirt and clears burning status on all entities.
+- Extinguishes all Fire into Dirt and clears Burned status for all entities.
 - May transform Dirt into Water or Forest.
 ## Dark cloud
 - Cover the whole map by a black color that lasts until the next Environment phase.
-- Human can only see himself and the tiles enlightened by Fire.
+- You can only see Human and the tiles enlightened by Fire.
 ## Lightning
 - Strikes one or more random tiles.
 - Entities hit take -1 HP damage.
 - Striking on Forest causes Fire.
-- Striking on Water or Ice cause spreading of electricity which causes paralysis.
+- Striking on Water or Ice cause spreading of electricity --> Paralyzed.
 ## Heatwave
-- Transforms Ice into Water, Water into Dirt.
-- Cause Forest to conduct Fire faster.
+- Makes Ice --> Water, Water --> Dirt.
+- Kill Forest --> Dirt.
+- Speedify conduction of Fire to adjacent Forest.
 ## Blizzard
-- May freeze Water into Ice.
-- Extinguishes all Fire into Dirt and clears burning status on all entities.
+- May freeze Water --> Ice.
+- Extinguishes Fire --> Dirt and clears Burned status for all entities.
 
 # STATUS
 ## Burned
-- Gets Burned when staying on a Fire tile.
+- When staying on a Fire tile.
 - Loses 1 HP at the end of its turn if Burned is not resolved.
-- Resolve: on Water, or there is Rain or Blizzard.
+- Resolve: on Water, or if there is Rain or Blizzard.
 ## Paralyzed
-- Gets Paralyzed when staying on Water or Ice tiles which condctes electricity from Lightning.
+- When staying on Water or Ice which conducting electricity due to Lightning.
 - Cannot act for 1 turn.
 ## Frozen
-- Get Frozen when stayin on Water while there is Blizzard that transforms Water into Ice.
+- When stayin on Water while there is Blizzard that transforms Water --> Ice.
 - Cannot move, but can perform other actions.
 - Human resolves by using Ice Pick.
 - Frozen Loot drops cannot be picked up.
@@ -169,23 +174,23 @@
 ## Wall-blocking
 - AoE of explosions and ranged weapons are blocked by Wall tiles.
 ## Collision
-- If blocked while being knocked back, the eneties in the collision take -1 HP damage each.
+- If blocked while knocked back, entities in the collision take -1 HP damage each.
 
 # LOOT DROPS
-- Zombies drop loot when they die. Walk over a loot tile to pick it up.
-- Multiple zombies dying on the same tile stack their drops (shown with a number badge).
+- Zombies drop loot when they die. Stepping on a loot tile to pick it up.
+- Multiple zombies dying on the same tile stack their drops.
 - Loot frozen under Ice requires an Ice Pick to retrieve.
-- Clever Zombie can pick loot.
+- Clever Zombie can pick Loot.
 - Loot drops can be transformed into Corruptor Zombies.
-- Loot is destroyed by Fire, Lightning strike, explosion and Shotgun.
-- Picking a loot drop returns one of the following possibilities:  
+- Loot is destroyed by Fire, Lightning, explosion and Shotgun.
+- Picking a Loot drop returns one of the following possibilities:  
 ## Loot Types
 - Junk: useless.
 - PistolAmmo: +3 pistol rounds.
-- StaminaPotion: restores Stamina to 6 for Human, adds 1 extra turn for Clever Zombie.
+- StaminaPotion: restores Stamina to 6 for Human, or 1 extra turn for Zombie.
 - HealthPotion: +2 HP.
 - ShotgunAmmo: +1 shotgun shell.
 - Grenade: +1 grenade.
 - Molotov: +1 molotov cocktail.
 - Mine: +1 land mine.
-- WarpBolt: +1 warp charge — very rare.
+- WarpBolt: +1 warp charge.
