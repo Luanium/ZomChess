@@ -10,6 +10,8 @@
 
 # 🇬🇧 English Version
 
+![ZomChess Banner](assets/screenshots/Splashscreen.png)
+
 ## 🌌 Battle Context
 
 Post-apocalypse. You are the sole surviving operative trapped and surrounded in a complex terrain infested with mutated entities. No retreat, no reinforcements. The only thing standing between you and death is limited ammunition, a sharp mind, and the ability to calculate every move on the battlefield with precision.
@@ -18,8 +20,8 @@ Post-apocalypse. You are the sole surviving operative trapped and surrounded in 
 
 ## 🎯 Ultimate Objective
 
-* **Survive or Annihilate:** Clear all Zombies from the map before the turn limit (`turn_limit`).
-* **Defeat Condition:** Your character runs out of health (`HP <= 0`) or fails to complete the mission within the allotted turns.
+* **Survive or Annihilate:** Clear all Zombies from the map before the turn limit.
+* **Defeat Condition:** Your character runs out of health (`HP = 0`) or fails to complete the mission within the allotted turns.
 
 ---
 
@@ -28,79 +30,62 @@ Post-apocalypse. You are the sole surviving operative trapped and surrounded in 
 The battlefield operates on a clear three-phase alternating system:
 
 ### 1. Human Turn Phase
-Each turn, you receive a random amount of stamina (`Stamina`). You can perform the following actions as long as you have enough stamina:
-* **Movement:** Move to any of 8 adjacent tiles. Moving through Dirt, Forest, Ice, Fire costs 1 Stamina, wading through Water costs 2 Stamina. Cannot move through Walls.
-* **Attack & Weapon Usage:** Choose the weapons or tool to attack Zombies or to help yourself when being frozen.
+Each turn, you receive a random amount of stamina. You can perform actions as long as you have enough stamina: move across terrain, attack with weapons or tools, set traps, or end your turn deliberately. **There is no undo — plan before you act.**
 
 ### 2. Zombie Animation Phase
-After you end your turn, all Zombies start hunting for you. They can feel where you are by your smelling. Once approaching, they can scratch or bite you.
+After you end your turn, all Zombies hunt for you. They sense your position and close in to scratch or bite.
 
 ### 3. Environment Phase
-Environment is neither on your side or Zombies' side. It just does what it wants, but it can change the situation.
+The environment is on nobody's side. Storms, blizzards, lightning, heatwaves, and darkness all play out on their own terms — and they will change the situation.
 
 ---
 
 ## ⚔️ Arsenal & Combat Capabilities
 
-Your character is heavily armed but resources are extremely limited:
-
-* **🔪 Knife:** Close-range melee weapon, no ammo cost but requires dangerous proximity.
-* **⛏️ Ice Pick:** Use to break Ice tile where you stand, make that tile into Water.
-* **🔫 Pistol:** Standard ranged weapon with stable accuracy.
-* **💥 Shotgun:** Wide-area damage dealing at close range.
-* **💣 Grenade:** Throw to a location, detonates after a delay (Grenade Timer) causing area damage.
-* **🪔 Molotov:** Throw to a location, may create Fire tile (or not).
-* **🛑 Mines:** Place traps on any tile. Zombies stepping on them trigger instant detonation.
+Your character is heavily armed but resources are extremely limited. Your arsenal includes close-range melee, standard and spread-shot firearms, thrown explosives, fire, traps, and a spatial tool that swaps two map tiles — including the one you're standing on, which means instant death if you aim wrong.
 
 ---
 
 ## ☣️ Mutated Zombie Types
 
-Each Zombie type has different health (`HP`) and movement mechanics to counter your tactics:
-
-* **Normal Zombie:** Basic enemy, moves 1 tile per turn.
-* **Fast Sprinter:** Ultra-fast movement of 2 tiles per turn, specializes in surprise attacks.
-* **Volatile Exploder:** Explosive zombie. When defeated or triggered, they self-destruct causing area damage.
-* **Vampiric Dracula:** Blood-sucking creature. Each successful attack on the player restores their health.
-* **Sick Carrier:** Spread sick by biting, making you lose turns and stamina point .
+Six distinct enemy archetypes, each demanding a different approach. Some are fast. Some explode on death. Some drain your HP to heal themselves. Some spread disease that costs you turns. Some pick up weapons from fallen bodies and turn them against you. Some multiply by corrupting the loot around them.
 
 ---
 
 ## 🌟 Standout Features
 
-* **⚡ Quick Play:** Provides 4 pre-programmed difficulty levels suitable for all skill levels: **Easy**, **Medium**, **Hard** and **Unfair**.
-* **🛠️ Visual Map Editor:** Allows you to manually draw terrain and set player spawn positions directly on the graphical interface.
-* **📥 Challenge File Sharing System (.zom):** Export/Import functionality lets you easily save custom maps or load maps from friends to challenge yourself. Share `.zom` files with the community and challenge other players!
-* **🛡️ Smart Spawn Shield:** Optional 5x5 safe zone around your character at game start, preventing unfair Zombie spawns too close.
-* **🖥️ Cyberpunk Combat Interface:** Dark color scheme combined with Live Radar Logs displaying real-time battlefield events (damage, explosions, zombie healing...) creating an intense atmosphere.
+* **⚡ Quick Play:** Four pre-set difficulty levels — **Easy**, **Medium**, **Hard**, and **Unfair** — for instant action at any skill level.
 
----
+* **🛠️ Visual Map Editor:** Draw terrain tile by tile, place zombie spawns, set the human starting position, and configure every match parameter through a fully graphical interface.
 
-## 📑 Terrain Reference Guide
+  ![Map Editor](assets/screenshots/Map%20editor.png)
 
-| Terrain Type | Display Color | Combat Properties |
-| :--- | :--- | :--- |
-| **Dirt** | Brown | Normal movement. Costs 1 Stamina. |
-| **Water** | Blue | Swampy terrain slows movement. Costs 2 Stamina to traverse. Conduct electricity. |
-| **Wall** | Black | Solid walls forming boundaries or structures, completely blocks movement. |
-| **Forest** | Green | Flamable and spread Fire. |
-| **Fire** | Red | Temporary, cause Burned status and damage. |
-| **Ice** | White | May cause sliding. Conduct electricity. |
+* **📥 Challenge File Sharing (.zom):** Export your custom map as a `.zom` file and send it to a friend. They import it, play the exact same scenario, and report back. Same map, same conditions — pure tactics decide who survives. Share with the community and see who can clear what you built.
+
+  ![Import screen](assets/screenshots/Import.png)
+
+* **📖 In-Game Guide:** A full reference guide is accessible at any time during play — no need to leave the game to look something up.
+
+  ![Game guides](assets/screenshots/Game%20guides.png)
+
+* **🛡️ Smart Spawn Shield:** Optional safe zone around your starting position to prevent unfair early-game zombie clustering.
+
+* **🌐 Playable in Browser:** No installation required. Play directly on [itch.io](https://luanium.itch.io/zomchess) via WebAssembly. *(Note: `.zom` file import/export is unavailable in the browser build.)*
 
 ---
 
 ## 🎮 Screenshots
 
-![Screenshot 1 - Menu Hub](assets/screenshots/hub.png)
+![Main Menu](assets/screenshots/Main%20menu.png)
 
-![Screenshot 2 - In-game](assets/screenshots/ingame.png)
+![In-game](assets/screenshots/In-game.png)
 
 ---
 
 ## 🚀 Building & Running
 
-### Quick Start (Linux)
-Pre-built executable for Linux (and maybe MacOS) is available in the [GitHub Releases](https://github.com/Luanium/ZomChess/releases). Simply download and run:
+### Quick Start (Linux / macOS)
+Pre-built executables are available in the [GitHub Releases](https://github.com/Luanium/ZomChess/releases). Simply download and run:
 ```bash
 ./ZomChess
 ```
@@ -110,10 +95,9 @@ Pre-built executable for Linux (and maybe MacOS) is available in the [GitHub Rel
 **Requirements:**
 - CMake 3.10+
 - C++20 compatible compiler
-- SFML 2.5+
-- ImGui + ImGui-SFML
+- Raylib 5.0+
 
-**Linux:**
+**Linux / macOS:**
 ```bash
 mkdir build && cd build
 cmake ..
@@ -129,47 +113,53 @@ cmake --build . --config Release
 .\Release\ZomChess.exe
 ```
 
-**macOS:**
+### Web Build (Emscripten)
+
+See [BUILD_WEB.md](BUILD_WEB.md) for full instructions.
+
 ```bash
-mkdir build && cd build
-cmake ..
-make
-./ZomChess
+mkdir -p build_web && cd build_web
+emcmake cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake --build . -j$(nproc)
+# Output files appear in web_build/
 ```
 
 ---
 
 ## 🛠️ Technology Stack
 
-* **Language:** C++20.
-* **Frameworks:**
-    * **SFML (Simple and Fast Multimedia Library):** Manages window, renders 2D graphics, sprites, and game loop.
-    * **Dear ImGui + ImGui-SFML:** Creates smooth character/zombie stat configuration sliders, control panels, and map editor interface.
+* **Language:** C++20
+* **Framework:** [Raylib](https://www.raylib.com/) — window management, 2D rendering, audio, and game loop
+* **Web Target:** Emscripten / WebAssembly — enables in-browser play on itch.io
 
 ---
 
 ## 🎵 Credits
 
-### Soundtrack Attribution
-* **Battle Theme: Impending Boom** [battle_theme.ogg](assets/music/battle_theme.ogg)
-* **Victory Theme: Discovery Hit** [victory_theme.ogg](assets/music/victory_theme.ogg)
-* **Defeat Theme: The Ice Giants** [defeat_theme.ogg](assets/music/defeat_theme.ogg)
-* **Menu Theme: Ancient Rite** [menu_theme.ogg](assets/music/menu_theme.ogg)
+### Soundtrack
+All music by Kevin MacLeod ([Incompetech](https://incompetech.com/music/)), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
-All music tracks are sourced from [Incompetech](https://incompetech.com/music/), by Kevin MacLeod under CC BY 4.0 License.
+| Track | Title |
+| :--- | :--- |
+| Menu Theme | Ancient Rite |
+| Battle Theme | Impending Boom |
+| Victory Theme | Discovery Hit |
+| Defeat Theme | The Ice Giants |
 
-### Idea of the game
-Original idea traces back to my friend, Tran Thanh Sang, who played the on-paper version with me in our childhood. Now with the power of AIs, I decided to develop the gameplay and "digitalize" it, in order to recall part of my memories. That's the reason for the birth of ZomChess.
+### Origin
+The original idea traces back to my friend, Trần Thanh Sang, who played the on-paper version with me in our childhood. With the help of modern tools, I developed and digitalized the gameplay to recall part of those memories. That's the reason ZomChess exists.
 
 ---
 
 ## 📄 License
 
-This project is licensed under the AGPL-v3.0 - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the AGPL-v3.0 — see the [LICENSE](LICENSE) file for details.
 
 ---
 
 # 🇻🇳 Phiên Bản Tiếng Việt
+
+![ZomChess Banner](assets/screenshots/Splashscreen.png)
 
 ## 🌌 Bối Cảnh Trận Đánh
 
@@ -179,89 +169,72 @@ Hậu tận thế. Bạn là đặc nhiệm sống sót duy nhất bị vây hã
 
 ## 🎯 Mục Tiêu Tối Thượng
 
-* **Sống sót hoặc Tiêu diệt:** Quét sạch toàn bộ Zombie trên bản đồ trước khi hết lượt (`turn_limit`).
-* **Điều kiện Thua cuộc:** Nhân vật cạn kiệt sinh lực (`HP <= 0`) hoặc không hoàn thành nhiệm vụ trong số lượt quy định.
+* **Sống sót hoặc Tiêu diệt:** Quét sạch toàn bộ Zombie trên bản đồ trước khi hết lượt.
+* **Điều kiện Thua cuộc:** Nhân vật cạn kiệt sinh lực (`HP ≤ 0`) hoặc không hoàn thành nhiệm vụ trong số lượt quy định.
 
 ---
 
-## 🎮 Cơ Chế Gameplay Theo Lượt (Turn-Based)
+## 🎮 Cơ Chế Gameplay Theo Lượt
 
 Chiến trường hoạt động theo cơ chế ba pha luân phiên rõ ràng:
 
-### 1. Pha của Con Người (Human Turn)
-Mỗi lượt, bạn sẽ nhận được một lượng thể lực ngẫu nhiên (`Stamina`). Bạn có thể thực hiện các hành động sau miễn là còn đủ Stamina:
-* **Di chuyển:** Đi tới 8 ô xung quanh. Đi qua nền Đất (`Dirt`) tốn 1 Stamina, lội qua Nước (`Water`) tốn 2 Stamina. Không thể đi vào Tường (`Wall`) hay Vật cản (`Obstacle`).
-* **Tấn công & Sử dụng vũ khí:** Sử dụng vũ khí để tấn công Zombie hoặc tự thoát khỏi tình trạng đóng băng.
+### 1. Pha của Con Người
+Mỗi lượt, bạn nhận được một lượng thể lực ngẫu nhiên. Bạn có thể di chuyển, tấn công, đặt bẫy, sử dụng công cụ — miễn là còn đủ Stamina. **Không có tính năng hoàn tác — hãy tính toán trước khi hành động.**
 
-### 2. Pha của Zombie (Zombie Animating)
-Sau khi bạn kết thúc lượt, các Zombie bắt đầu di chuyển về phía bạn. Chúng cảm nhận vị trí của bạn qua mùi. Một khi lại gần, chúng sẽ cắn hoặc cào bạn.
+### 2. Pha của Zombie
+Sau khi bạn kết thúc lượt, các Zombie bắt đầu di chuyển về phía bạn. Chúng cảm nhận vị trí của bạn và tiếp cận để cắn hoặc cào.
 
-### 3. Pha của Môi trường
-Môi trường không đừng về phe nào. Nó chỉ làm những gì nó muốn, nhưng có thể thay đổi tình thế trên chiến trường.
+### 3. Pha của Môi Trường
+Môi trường không đứng về phe nào. Bão, băng giá, sét, nắng hạn, bóng tối — tất cả diễn ra theo quy luật riêng và sẽ thay đổi tình thế chiến trường.
 
 ---
 
 ## ⚔️ Kho Vũ Khí & Khả Năng Tác Chiến
 
-Nhân vật được trang bị tận răng nhưng tài nguyên vô cùng hữu hạn:
-
-* **🔪 Dao găm (Knife):** Vũ khí cận chiến tầm gần, không tốn đạn nhưng đòi hỏi áp sát nguy hiểm.
-* **⛏️ Ice Pick:** Dùng để phá ô Băng và biến ô Băng thành ô Nước.
-* **🔫 Súng lục (Pistol):** Vũ khí tầm xa tiêu chuẩn, độ chính xác ổn định.
-* **💥 Súng săn (Shotgun):** Sức sát thương diện rộng hủy diệt ở cự ly gần.
-* **💣 Lựu đạn (Grenade):** Ném vào một vị trí, kích nổ sau một khoảng thời gian (Grenade Timer) gây sát thương lan rộng phá hủy mục tiêu.
-* **🪔 Molotov:** Ném vào một vị trí, có thể tạo ra Lửa (hoặc không).
-* **🛑 Mìn Claymore (Mines):** Đặt bẫy tại ô bất kỳ. Zombie dẫm phải sẽ kích hoạt nổ ngay lập tức.
+Nhân vật được trang bị tận răng nhưng tài nguyên vô cùng hữu hạn. Kho vũ khí bao gồm cận chiến, súng bắn thẳng và tản rộng, vũ khí ném, bẫy lửa, mìn và một công cụ hoán đổi hai ô bản đồ với nhau — kể cả ô bạn đang đứng, nghĩa là nếu ngắm sai là chết ngay lập tức.
 
 ---
 
 ## ☣️ Các Chủng Loại Zombie Biến Dị
 
-Mỗi loại Zombie sở hữu chỉ số máu (`HP`) và cơ chế di chuyển khác nhau để khắc chế chiến thuật của bạn:
-
-* **Zombie Thường:** Kẻ địch cơ bản, di chuyển 1 ô mỗi lượt.
-* **Zombie Nhanh:** Di chuyển siêu tốc 2 ô mỗi lượt, chuyên áp sát bất ngờ.
-* **Zombie Nổ:** Zombie phát nổ. Khi bị tiêu diệt hoặc kích hoạt, chúng tự bạo gây sát thương lan ra xung quanh.
-* **Zombie Dơi:** Quái vật hút máu. Mỗi lần tấn công trúng con người, chúng sẽ được hồi phục sinh lực.
-* **Zombie Bệnh:** Lan truyền mầm bệnh qua vết cắn, làm bạn giảm số lượt và mất thể lực.
+Sáu loại kẻ địch với đặc điểm riêng biệt, mỗi loại đòi hỏi một cách tiếp cận khác nhau. Có loại di chuyển nhanh, có loại phát nổ khi chết, có loại hút máu bạn để hồi máu bản thân, có loại lây bệnh làm giảm số lượt của bạn, có loại nhặt vũ khí từ xác rơi và dùng lại chống bạn, có loại biến loot xung quanh thành thêm đồng loại.
 
 ---
 
-## 🌟 Tính Năng Đặc Sắc Thu Hút Người Chơi
+## 🌟 Tính Năng Đặc Sắc
 
-* **⚡ Trận Đấu Nhanh (Quick Play):** Cung cấp 3 mức độ khó lập trình sẵn phù hợp với mọi trình độ: **Binh nhì (Easy)**, **Trung tá (Medium)**, và **Ác mộng (Hard)**.
-* **🛠️ Trình Biên Tập Bản Đồ Trực Quan (Visual Map Editor):** Cho phép bạn tự tay vẽ địa hình (Đất, Nước, Tường, Vật cản) và đặt vị trí xuất phát cho nhân vật ngay trên giao diện đồ họa.
-* **📥 Hệ Thống Chia Sẻ Thử Thách (.zom):** Tính năng Xuất/Nhập dữ liệu (`export_challenge_file` / `import_challenge_file`) giúp bạn dễ dàng lưu lại map tự chế hoặc tải bản đồ từ bạn bè để thử thách bản thân. Chia sẻ file `.zom` với cộng đồng và thử thách những người chơi khác!
-* **🛡️ Vùng Bảo Hiểm Thông Minh (Spawn Shield):** Tùy chọn kích hoạt vùng an toàn 7x7 quanh nhân vật khi bắt đầu game, ngăn chặn Zombie sinh ra quá gần gây bất công.
-* **🖥️ Giao Diện Tác Chiến Cyberpunk:** Tông màu chủ đạo tối kết hợp bảng Live Radar Logs hiển thị thời gian thực mọi diễn biến trên chiến trường (sát thương, vụ nổ, zombie hồi máu...) tạo cảm giác nghẹt thở.
+* **⚡ Trận Đấu Nhanh:** Bốn mức độ khó có sẵn — **Easy**, **Medium**, **Hard** và **Unfair** — để vào game ngay không cần cấu hình.
 
----
+* **🛠️ Trình Biên Tập Bản Đồ Trực Quan:** Vẽ địa hình từng ô, đặt vị trí xuất hiện của Zombie, thiết lập điểm xuất phát của nhân vật và cấu hình toàn bộ thông số trận đấu qua giao diện đồ họa.
 
-## 📑 Hướng Dẫn Tra Cứu Thông Tin Địa Hình
+  ![Map Editor](assets/screenshots/Map%20editor.png)
 
-| Loại Địa Hình | Màu Sắc Hiển Thị | Đặc Tính Tác Chiến |
-| :--- | :--- | :--- |
-| **Dirt (Đất)** | Nâu Đất | Di chuyển bình thường. Tốn 1 Stamina. |
-| **Water (Nước)** | Xanh Dương | Đầm lầy cản bước. Tốn tới 2 Stamina để vượt qua. Dẫn điện. |
-| **Wall (Tường)** | Xám Khói | Tường kiên cố biên giới hoặc kiến trúc nội thất, chặn hoàn toàn di chuyển. |
-| **Forest (Rừng)** | Green | Dễ cháy và lan truyền Lửa. |
-| **Fire (Lửa)** | Red | Tạm thời, gây hiệu ứng cháy và mất máu. |
-| **Ice (Băng)** | White | Có thể gây trượt. Dẫn điện. |
+* **📥 Hệ Thống Chia Sẻ Thử Thách (.zom):** Xuất bản đồ tự chế thành file `.zom` và gửi cho bạn bè. Họ nhập vào, chơi đúng kịch bản bạn đã tạo, rồi so sánh kết quả. Cùng bản đồ, cùng điều kiện — thuần túy chiến thuật quyết định ai sống sót. Chia sẻ với cộng đồng để xem ai vượt được thứ bạn xây dựng.
+
+  ![Import screen](assets/screenshots/Import.png)
+
+* **📖 Hướng Dẫn Trong Game:** Tài liệu tham chiếu đầy đủ có thể truy cập bất kỳ lúc nào trong khi chơi — không cần thoát game để tra cứu.
+
+  ![Game guides](assets/screenshots/Game%20guides.png)
+
+* **🛡️ Vùng Bảo Hiểm Thông Minh:** Tùy chọn tạo vùng an toàn quanh vị trí xuất phát, ngăn Zombie sinh ra quá gần ngay từ đầu trận.
+
+* **🌐 Chơi Ngay Trên Trình Duyệt:** Không cần cài đặt. Chơi trực tiếp trên [itch.io](https://luanium.itch.io/zomchess) qua WebAssembly. *(Lưu ý: tính năng xuất/nhập file `.zom` không khả dụng trên bản web.)*
 
 ---
 
 ## 🎮 Ảnh Chụp Màn Hình
 
-![Ảnh Chụp 1 - Giao diện thiết lập](assets/screenshots/hub.png)
+![Main Menu](assets/screenshots/Main%20menu.png)
 
-![Ảnh Chụp 2 - Giao diện vào game](assets/screenshots/ingame.png)
+![In-game](assets/screenshots/In-game.png)
 
 ---
 
 ## 🚀 Cách Build & Chạy Game
 
-### Khởi Động Nhanh (Linux)
-File executable đã được build sẵn cho Linux (và có lẽ MacOS) có sẵn trong [GitHub Releases](https://github.com/Luanium/ZomChess/releases). Chỉ cần tải xuống và chạy:
+### Khởi Động Nhanh (Linux / macOS)
+File executable đã build sẵn có trong [GitHub Releases](https://github.com/Luanium/ZomChess/releases):
 ```bash
 ./ZomChess
 ```
@@ -271,10 +244,9 @@ File executable đã được build sẵn cho Linux (và có lẽ MacOS) có s�
 **Yêu cầu:**
 - CMake 3.10+
 - Trình biên dịch hỗ trợ C++20
-- SFML 2.5+
-- ImGui + ImGui-SFML
+- Raylib 5.0+
 
-**Linux:**
+**Linux / macOS:**
 ```bash
 mkdir build && cd build
 cmake ..
@@ -290,40 +262,44 @@ cmake --build . --config Release
 .\Release\ZomChess.exe
 ```
 
-**macOS:**
+### Web Build (Emscripten)
+
+Xem [BUILD_WEB.md](BUILD_WEB.md) để biết hướng dẫn đầy đủ.
+
 ```bash
-mkdir build && cd build
-cmake ..
-make
-./ZomChess
+mkdir -p build_web && cd build_web
+emcmake cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake --build . -j$(nproc)
+# Output xuất ra thư mục web_build/
 ```
 
 ---
 
-## �️ Công Nghệ Phát Triển
+## 🛠️ Công Nghệ Phát Triển
 
-* **Ngôn Ngữ:** C++20.
-* **Frameworks:**
-    * **SFML (Simple and Fast Multimedia Library):** Quản lý cửa sổ, render đồ họa 2D, sprite và vòng lặp game.
-    * **Dear ImGui + ImGui-SFML:** Tạo các slider cấu hình chỉ số nhân vật/zombie, bảng điều khiển và trình chỉnh sửa map editor mượt mà.
+* **Ngôn Ngữ:** C++20
+* **Framework:** [Raylib](https://www.raylib.com/) — quản lý cửa sổ, render 2D, âm thanh và game loop
+* **Nền tảng Web:** Emscripten / WebAssembly — cho phép chơi trực tiếp trên trình duyệt qua itch.io
 
 ---
 
 ## 🎵 Ghi Công
 
-### Ghi Công Nhạc Nền
-* **Battle Theme: Impending Boom** [battle_theme.ogg](assets/music/battle_theme.ogg)
-* **Victory Theme: Discovery Hit** [victory_theme.ogg](assets/music/victory_theme.ogg)
-* **Defeat Theme: The Ice Giants** [defeat_theme.ogg](assets/music/defeat_theme.ogg)
-* **Menu Theme: Ancient Rite** [menu_theme.ogg](assets/music/menu_theme.ogg)
+### Nhạc Nền
+Tất cả bản nhạc của Kevin MacLeod ([Incompetech](https://incompetech.com/music/)), theo giấy phép [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
-Tất cả bản nhạc được lấy từ nguồn [Incompetech](https://incompetech.com/music/), đóng góp bởi Kevin MacLeod theo Giấy phép CC BY 4.0.
+| Track | Tên Bài |
+| :--- | :--- |
+| Menu Theme | Ancient Rite |
+| Battle Theme | Impending Boom |
+| Victory Theme | Discovery Hit |
+| Defeat Theme | The Ice Giants |
 
-### Ý tưởng game
-Ý tưởng ban đầu xuất phát từ bạn tôi, Trần Thanh Sang, người đã cùng tôi chơi phiên bản trên giấy của trò này trong thời thơ ấu. Bây giờ với sự hỗ trợ của AI, tôi quyết định phát triển thêm gameplay và "số hóa" nó để ôn lại một phần ký ức. Đó là lý do ZomChess ra đời.
+### Ý Tưởng Game
+Ý tưởng ban đầu xuất phát từ bạn tôi, Trần Thanh Sang, người đã cùng tôi chơi phiên bản trên giấy của trò này trong thời thơ ấu. Với sự hỗ trợ của các công cụ hiện đại, tôi đã phát triển và số hóa gameplay để ôn lại một phần ký ức đó. Đó là lý do ZomChess ra đời.
 
 ---
 
 ## 📄 Giấy Phép
 
-Dự án này được cấp phép theo Giấy phép AGPL-v3.0 - xem tệp [LICENSE](LICENSE) để biết chi tiết.
+Dự án này được cấp phép theo AGPL-v3.0 — xem tệp [LICENSE](LICENSE) để biết chi tiết.

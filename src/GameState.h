@@ -173,11 +173,11 @@ public:
         std::vector<std::string> sanity_warnings;  // value-level problems (bad sums etc.) — defaults will be used
     };
 
+#ifndef __EMSCRIPTEN__
     bool export_challenge_file(const std::string& path);
-    // Đọc file & phân tích tương thích, KHÔNG áp dụng vào active_config.
     ImportResult analyze_challenge_file(const std::string& path);
-    // Thực sự áp dụng dữ liệu từ file vào active_config (gọi sau khi đã xác nhận).
     bool import_challenge_file(const std::string& path);
+#endif
 };
 
 #endif // GAMESTATE_H

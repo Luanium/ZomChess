@@ -12,7 +12,9 @@
 #endif
 #include <cmath>
 #include <algorithm>
-#include <fstream>
+#ifndef __EMSCRIPTEN__
+#  include <fstream>
+#endif
 #include <iostream>
 #include <map>
 #include <queue>
@@ -246,10 +248,11 @@ void GameState::apply_quick_difficulty(int level) {
 }
 
 // Canonical set of scalar KEY fields written by export_challenge_file.
-// This is the single source of truth used for both:
-//   - "missing" detection (expected but absent from the file)
-//   - "unknown" detection (present in the file but not in this list)
-// GRID_DATA and ZOMBIE_SPAWNS are structural block keys handled separately.
+// These functions use std::fstream and are not available on WebAssembly (WASM).
+// On WASM the caller-side code is also guarded with #ifndef __EMSCRIPTEN__
+// so these will never be called — but we still compile them out to avoid
+// linker errors from missing fstream symbols on older Emscripten toolchains.
+#ifndef __EMSCRIPTEN__
 static const std::vector<std::string> ALL_EXPECTED_ZOM_FIELDS = {
     "VERSION",
     "MAP_W", "MAP_H",
@@ -688,6 +691,7 @@ bool GameState::import_challenge_file(const std::string& path) {
 
     return true;
 }
+#endif // !__EMSCRIPTEN__
 
 void GameState::init_game() {
     zombies.clear(); 

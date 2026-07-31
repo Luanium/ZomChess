@@ -11,11 +11,13 @@
 #include <algorithm>
 #include <map>
 #include <set>
-#include <filesystem>
-#include <fstream>
+#ifndef __EMSCRIPTEN__
+#  include <filesystem>
+#  include <fstream>
+namespace fs = std::filesystem;
+#endif
 #include <sstream>
 #include <cstring>
-namespace fs = std::filesystem;
 #include "embedded/guide_txt.h"  // auto-generated from assets/guide.txt at build time
 #include "embedded/font_noto_bold.h" // auto-generated from assets/fonts/NotoSans-Bold.ttf
 
@@ -616,6 +618,7 @@ static void runSplashScreen(Font& gameFont) {
 
 
 // ── FileBrowser: directory navigation for .zom challenge files ───────────────
+#ifndef __EMSCRIPTEN__
 struct FileBrowser {
     enum class Mode { Open, Save };
     bool is_open = false;
@@ -697,6 +700,7 @@ struct FileBrowser {
         for (auto& f : files) entries.push_back(f);
     }
 };
+#endif // !__EMSCRIPTEN__
 
 // ── Game Guide: data structures and file loader ──────────────────────────────
 
@@ -743,13 +747,15 @@ static std::vector<GuideSection> parseGuide(const std::string& content) {
 // Loads guide from disk if available (enables hot-reload during development),
 // otherwise falls back to the embedded string compiled into the binary.
 static std::vector<GuideSection> loadGuide(const std::string& path) {
+#ifndef __EMSCRIPTEN__
     std::ifstream f(path);
     if (f.is_open()) {
         std::string content((std::istreambuf_iterator<char>(f)),
                              std::istreambuf_iterator<char>());
         return parseGuide(content);
     }
-    // File not found — use the version embedded at build time
+#endif
+    // On WASM (or if file not found): always use the embedded version
     return parseGuide(EMBEDDED_GUIDE_TXT);
 }
 
@@ -810,19 +816,20 @@ int main() {
     Rectangle icePickBtn = { panelX + (colW+10)*2,  boardOffset + 115, colW, 36 };
     bool showGuide = false;
     static float guideScroll = 0.0f;
-    // Load guide content from file; sections start collapsed
-    // Resolve guide.txt relative to the executable, with a source-tree fallback
-    // for development (so editing assets/guide.txt in the repo is reflected
-    // immediately without needing to copy the file manually).
+#ifndef __EMSCRIPTEN__
     auto resolveGuidePath = [&]() -> std::string {
         // 1. Next to the binary (normal installed / build-output location)
         std::string next_to_bin = std::string(GetApplicationDirectory()) + "assets/guide.txt";
         if (fs::exists(next_to_bin)) return next_to_bin;
         // 2. Source tree (working directory when launched from the project root)
         if (fs::exists("assets/guide.txt")) return "assets/guide.txt";
-        return next_to_bin; // return it anyway so the missing-file message shows a useful path
+        return next_to_bin;
     };
     std::vector<GuideSection> guideSections = loadGuide(resolveGuidePath());
+#else
+    // On WASM: no filesystem — always use embedded guide
+    std::vector<GuideSection> guideSections = loadGuide("");
+#endif
 
     Rectangle pistolBtn  = { panelX,               boardOffset + 160, colW, 36 };
     Rectangle shotgunBtn = { panelX + colW + 10,    boardOffset + 160, colW, 36 };
@@ -836,9 +843,11 @@ int main() {
     Rectangle mediumBtn = { 60, 255, 260, 45 };
     Rectangle hardBtn   = { 60, 310, 260, 45 };
     Rectangle unfairBtn = { 60, 365, 260, 45 };
+#ifndef __EMSCRIPTEN__
     Rectangle exportBtn = { 60, 440, 125, 38 };
     Rectangle importBtn = { 195, 440, 125, 38 };
     Rectangle startCustomBtn = { 60, 490, 260, 40 };
+#endif
     Rectangle creditsBtn = { 60, 540, 260, 38 };
     Rectangle quitGameBtn = { 60, 588, 260, 40 };
     bool showCredits = false;
@@ -850,12 +859,14 @@ int main() {
     bool waveKillsCounted = false;
     std::string ioMessage;
     float ioMessageTimer = 0.0f;
+#ifndef __EMSCRIPTEN__
     bool hasImportedConfig = false;
     bool showImportWarnPopup = false;
-    bool importWarnJustOpened = false;  // suppress the click that opened the popup
+    bool importWarnJustOpened = false;
     std::string pendingImportPath;
     GameState::ImportResult pendingImportAnalysis;
     float importWarnScroll = 0.0f;
+#endif
 
     // ── Custom difficulty sliders (right column) ──
     float sliderX = 400.0f;
@@ -891,7 +902,9 @@ int main() {
     bool resetTerrainJustOpened = false;
     ZombieType editorSelectedZombieType = ZombieType::Clever;   
 
+#ifndef __EMSCRIPTEN__
     FileBrowser saveBrowser, loadBrowser;
+#endif
 
     bool showConfirmExitGame = false;
     bool showConfirmReturnHub = false;
@@ -954,7 +967,11 @@ int main() {
                 ioMessageTimer -= dtSeconds;
                 if (ioMessageTimer <= 0.0f) ioMessage.clear();
             }
-            if (mouseClicked && !saveBrowser.is_open && !loadBrowser.is_open) {
+            if (mouseClicked
+#ifndef __EMSCRIPTEN__
+                && !saveBrowser.is_open && !loadBrowser.is_open
+#endif
+               ) {
                 int chosen = -1;
                 if (CheckCollisionPointRec(mouse, easyBtn))   chosen = 0;
                 if (CheckCollisionPointRec(mouse, mediumBtn)) chosen = 1;
@@ -969,6 +986,7 @@ int main() {
                     survivalWave = 0; survivalKills = 0;
                     waveKills = 0; waveKillsCounted = false; endMusicPlayed = false;
                 }
+#ifndef __EMSCRIPTEN__
                 if (CheckCollisionPointRec(mouse, exportBtn)) {
                     saveBrowser.open(FileBrowser::Mode::Save, "my_custom_challenge.zom");
                 }
@@ -983,6 +1001,7 @@ int main() {
                     survivalWave = 0; survivalKills = 0;
                     waveKills = 0; waveKillsCounted = false; endMusicPlayed = false;
                 }
+#endif
                 if (CheckCollisionPointRec(mouse, creditsBtn)) {
                     showCredits = true;
                 }
@@ -1002,16 +1021,28 @@ int main() {
                 bool sfxClick      = drawCheckbox(mouse, mouseClicked, sfxPos.x,   sfxPos.y,   state.sfx_enabled,   "SFX");
                 bool survivalClick = drawCheckbox(mouse, mouseClicked, survPos.x,  survPos.y,  survivalMode,        "Survival");
 
-                if (musicClick && !saveBrowser.is_open && !loadBrowser.is_open) {
+                if (musicClick
+#ifndef __EMSCRIPTEN__
+                    && !saveBrowser.is_open && !loadBrowser.is_open
+#endif
+                   ) {
                     state.music_enabled = !state.music_enabled;
                     if (state.music_enabled) AudioManager::getInstance().playMusic("menu");
                     else AudioManager::getInstance().stopMusic();
                 }
-                if (sfxClick && !saveBrowser.is_open && !loadBrowser.is_open) {
+                if (sfxClick
+#ifndef __EMSCRIPTEN__
+                    && !saveBrowser.is_open && !loadBrowser.is_open
+#endif
+                   ) {
                     state.sfx_enabled = !state.sfx_enabled;
                     state.setSfxEnabled(state.sfx_enabled);
                 }
-                if (survivalClick && !saveBrowser.is_open && !loadBrowser.is_open) {
+                if (survivalClick
+#ifndef __EMSCRIPTEN__
+                    && !saveBrowser.is_open && !loadBrowser.is_open
+#endif
+                   ) {
                     survivalMode = !survivalMode;
                 }
             }
@@ -1027,6 +1058,7 @@ int main() {
             DrawRectangleRec(unfairBtn, (Color){200,0,0,255});
             drawCenteredText("UNFAIR", unfairBtn, 20, WHITE);
 
+#ifndef __EMSCRIPTEN__
             DrawText("Challenge Files", 60, 415, 18, (Color){230, 210, 100, 255});
             DrawRectangleRec(exportBtn, (Color){0,110,110,255});
             drawCenteredText("Export .zom", exportBtn, 15, WHITE);
@@ -1035,6 +1067,7 @@ int main() {
 
             DrawRectangleRec(startCustomBtn, hasImportedConfig ? (Color){160,60,180,255} : (Color){60,60,60,255});
             drawCenteredText("Start Imported Game", startCustomBtn, 16, WHITE);
+#endif
 
             DrawRectangleRec(creditsBtn, (Color){70,70,110,255});
             drawCenteredText("Credits", creditsBtn, 16, WHITE);
@@ -1042,9 +1075,11 @@ int main() {
             DrawRectangleRec(quitGameBtn, (Color){140,20,20,255});
             drawCenteredText("Quit Game", quitGameBtn, 16, WHITE);
 
+#ifndef __EMSCRIPTEN__
             if (!ioMessage.empty()) {
                 DrawText(ioMessage.c_str(), 60, 540, 15, (Color){255, 220, 100, 255});
             }
+#endif
 
             // ── Right column: Custom Difficulty (2 sub-columns, scrollable) ──
             DrawText("Custom Difficulty", (int)sliderX, 40, 26, (Color){255, 140, 220, 255});
@@ -1548,6 +1583,7 @@ int main() {
             }
 
             // ── File Browser popups (Save / Load .zom) ──
+#ifndef __EMSCRIPTEN__
             auto drawFileBrowser = [&](FileBrowser& fb, const char* title) {
                 if (!fb.is_open) return;
                 DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), (Color){0, 0, 0, 150});
@@ -1883,6 +1919,7 @@ int main() {
                     showImportWarnPopup = false;
                 }
             }
+#endif // !__EMSCRIPTEN__
 
             if (showCredits) {
                 DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), (Color){0, 0, 0, 150});
@@ -2416,8 +2453,10 @@ int main() {
             if (CheckCollisionPointRec(mouse, guideBtn)) {
                 showGuide = true;
                 guideScroll = 0.0f;
+#ifndef __EMSCRIPTEN__
                 // Reload from disk so edits to guide.txt are reflected immediately
                 guideSections = loadGuide(resolveGuidePath());
+#endif
             } else if (CheckCollisionPointRec(mouse, returnHubTopBtn)) {
                 showConfirmReturnHub = true;
             }

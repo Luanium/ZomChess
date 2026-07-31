@@ -1,3 +1,12 @@
+# v3.0.0: Big update
+- Move from ImGUI to Raylib for UI/UX
+- Rework on UI/UX
+- Many logic changes
+- New Zombie type: `Corruptor`
+- New tool: `Warp Bolt`
+- Add Survival mode
+- Improve functionalities of Export/Import game settings
+
 # v2.6.0
 
 ## Logic:
