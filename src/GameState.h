@@ -51,6 +51,7 @@ public:
     float environment_action_timer = 0.0f;
     const float ENVIRONMENT_STEP_DELAY = 0.9f;
     bool dark_cloud_active = false;
+    bool blizzard_active = false;  // true from blizzard event until next environment phase
     std::string last_environment_event = "Clear skies";
 
     VisualFX active_fx;

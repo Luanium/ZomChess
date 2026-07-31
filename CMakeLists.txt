@@ -10,6 +10,22 @@ set(ZOMCHESS_SOURCES
     src/GameState.cpp
 )
 
+# ─── Embed assets/fonts/NotoSans-Bold.ttf into a generated header ────────────
+set(FONT_INPUT  "${CMAKE_SOURCE_DIR}/assets/fonts/NotoSans-Bold.ttf")
+set(FONT_OUTPUT "${CMAKE_SOURCE_DIR}/src/embedded/font_noto_bold.h")
+
+add_custom_command(
+    OUTPUT  "${FONT_OUTPUT}"
+    COMMAND ${CMAKE_COMMAND}
+            -DFONT_INPUT="${FONT_INPUT}"
+            -DFONT_OUTPUT="${FONT_OUTPUT}"
+            -DFONT_VARNAME="font_noto_bold"
+            -P "${CMAKE_SOURCE_DIR}/cmake/EmbedFont.cmake"
+    DEPENDS "${FONT_INPUT}"
+    COMMENT "Embedding NotoSans-Bold.ttf into src/embedded/font_noto_bold.h"
+)
+add_custom_target(embed_font ALL DEPENDS "${FONT_OUTPUT}")
+
 # ─── Embed assets/guide.txt into a generated header ──────────────────────────
 # cmake/EmbedGuide.cmake reads guide.txt and writes src/embedded/guide_txt.h
 # containing the content as a raw string literal. Runs at build time so every
@@ -44,7 +60,7 @@ if (EMSCRIPTEN)
     target_compile_definitions(ZomChess PRIVATE RAYLIB_BUILD)
     target_compile_options(ZomChess PRIVATE -include ${CMAKE_SOURCE_DIR}/src/RaylibBuildPrelude.h)
     target_compile_options(ZomChess PRIVATE -O2)
-    add_dependencies(ZomChess embed_guide)
+    add_dependencies(ZomChess embed_guide embed_font)
 
     set_target_properties(ZomChess PROPERTIES OUTPUT_NAME "ZomChess" SUFFIX ".html")
     target_link_libraries(ZomChess PRIVATE ${RAYLIB_WEB_LIB})
@@ -69,7 +85,7 @@ else()
     target_include_directories(ZomChess PRIVATE src ${RAYLIB_NATIVE_INCLUDE})
     target_compile_definitions(ZomChess PRIVATE RAYLIB_BUILD)
     target_compile_options(ZomChess PRIVATE -include ${CMAKE_SOURCE_DIR}/src/RaylibBuildPrelude.h)
-    add_dependencies(ZomChess embed_guide)
+    add_dependencies(ZomChess embed_guide embed_font)
 
     target_link_libraries(ZomChess PRIVATE
         ${RAYLIB_NATIVE_LIB}

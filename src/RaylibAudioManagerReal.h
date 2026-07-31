@@ -409,6 +409,41 @@ static Sound makeHeal() {
     return bufferToSound(s);
 }
 
+// Low guttural grunt — man suppressing pain through clenched teeth.
+// Built from three layers:
+//   1. A low vocal fundamental (~100 Hz) with rapid tremolo (tense muscles)
+//   2. Nasal formant (~500 Hz) that fades quickly — the "ngh" quality
+//   3. Subtle breathed noise burst at the start — the sharp intake of breath
+static Sound makeHumanPain() {
+    std::mt19937 rng(99);
+    float dur = 0.38f; int n = (int)(dur * SAMPLE_RATE);
+    std::vector<float> s(n);
+    for (int i = 0; i < n; ++i) {
+        float t = (float)i / SAMPLE_RATE;
+
+        // Envelope: very fast attack (0.01s), then exponential decay
+        float env = envelope(t, dur, 0.01f, 0.15f);
+
+        // 1. Low chest/throat fundamental — frequency drops slightly (jaw tightening)
+        float f0 = 105.f - 25.f * (t / dur); // 105 -> 80 Hz
+        float tremolo = 1.f + 0.18f * std::sin(2.f * PI * 14.f * t); // ~14 Hz tremolo
+        float fundamental = std::sin(2.f * PI * f0 * t) * tremolo * 0.55f;
+
+        // 2. Nasal "ng" formant at ~500 Hz — fades faster than fundamental
+        float nasal = std::sin(2.f * PI * 500.f * t) * std::exp(-t * 22.f) * 0.30f;
+
+        // 3. Brief breath noise at onset (sharp inhalation before clenching)
+        float breath_env = std::exp(-t * 80.f); // gone by ~25ms
+        float breath = noisef(rng) * breath_env * 0.20f;
+
+        // 4. Second harmonic for vocal thickness
+        float h2 = std::sin(2.f * PI * f0 * 2.f * t) * 0.15f;
+
+        s[i] = (fundamental + nasal + breath + h2) * env * 0.85f;
+    }
+    return bufferToSound(s);
+}
+
 } // namespace RaylibSoundSynth
 
 class AudioManager {
@@ -533,6 +568,7 @@ private:
         sounds["zombie_loot"]   = makeZombieLoot();
         sounds["loot_pickup"]   = makeLootPickup();
         sounds["heal"]          = makeHeal();
+        sounds["human_pain"]    = makeHumanPain();
     }
 };
 

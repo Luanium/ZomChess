@@ -700,6 +700,7 @@ void GameState::init_game() {
     active_fx = VisualFX{};
     pending_warp_damage_positions.clear();
     dark_cloud_active = false;
+    blizzard_active   = false;
     last_environment_event = "Clear skies";
     game_over = false; 
     game_won = false;
@@ -1497,14 +1498,17 @@ void GameState::apply_windstorm(int dx, int dy) {
     add_log(wind_log, ImVec4(0.65f, 0.85f, 1.0f, 1.0f));
 
     // Windstorms make Forest tiles right after Fire tiles (in wind direction) become Fire tiles
+    // Blizzard suppresses this wind-driven fire-to-forest spread while active.
     std::vector<Position> wind_fire_spread;
-    for (int x = 0; x < width; ++x) {
-        for (int y = 0; y < height; ++y) {
-            if (grid[x][y] != Terrain::Fire) continue;
-            int nx = x + dx, ny = y + dy;
-            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-                if (grid[nx][ny] == Terrain::Forest) {
-                    wind_fire_spread.push_back({nx, ny});
+    if (!blizzard_active) {
+        for (int x = 0; x < width; ++x) {
+            for (int y = 0; y < height; ++y) {
+                if (grid[x][y] != Terrain::Fire) continue;
+                int nx = x + dx, ny = y + dy;
+                if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                    if (grid[nx][ny] == Terrain::Forest) {
+                        wind_fire_spread.push_back({nx, ny});
+                    }
                 }
             }
         }
@@ -1789,6 +1793,7 @@ void GameState::apply_lightning_strike() {
 
         if (human.hp > 0 && human.pos == strike) {
             human.hp = std::max(0, human.hp - GameConstants::Environment::LIGHTNING_HP_DAMAGE);
+            sfx("human_pain");
             floating_texts.push_back({human.pos, -GameConstants::Environment::LIGHTNING_HP_DAMAGE, 1.0f, 1.0f});
             add_log("-> Human is struck by lightning! -" + std::to_string(GameConstants::Environment::LIGHTNING_HP_DAMAGE) + " HP.", ImVec4(1.0f, 0.25f, 0.25f, 1.0f));
             // Direct strike on the struck cell unfreezes the entity
@@ -2076,31 +2081,10 @@ void GameState::apply_blizzard() {
         }
     }
 
-    // Blizzard extinguishes all fire tiles and clears burning status
-    std::vector<Position> extinguished;
-    for (int x = 0; x < width; ++x) {
-        for (int y = 0; y < height; ++y) {
-            if (grid[x][y] == Terrain::Fire) {
-                grid[x][y] = Terrain::Dirt;
-                extinguished.push_back({x, y});
-            }
-        }
-    }
-    fire_cells.erase(std::remove_if(fire_cells.begin(), fire_cells.end(),
-        [&](const FireCell& fc) {
-            for (const auto& p : extinguished)
-                if (fc.pos == p) return true;
-            return false;
-        }), fire_cells.end());
-    active_fx.extinguished_cells = extinguished;
+    // Blizzard: clear burning status on all entities (fire tiles are NOT extinguished).
+    // While blizzard_active, propagate_gradual_forest_fire() will skip Forest ignition.
+    blizzard_active = true;
 
-    if (!extinguished.empty()) {
-        add_log(tr("[FIRE] Blizzard extinguishes " + std::to_string(extinguished.size()) + " fire tile(s)!",
-                   "[LUA] Bao tuyet dap tat " + std::to_string(extinguished.size()) + " o lua!"),
-                ImVec4(0.5f, 0.8f, 1.0f, 1.0f));
-    }
-
-    // Extinguish burning status on all entities
     int cured = 0;
     if (human.is_burning) { human.is_burning = false; cured++; }
     for (auto& z : zombies) {
@@ -2111,10 +2095,14 @@ void GameState::apply_blizzard() {
                    "[LUA] Bao tuyet dap tat trang thai chay cho " + std::to_string(cured) + " thuc the!"),
                 ImVec4(0.5f, 0.8f, 1.0f, 1.0f));
     }
+    add_log(tr("[BLIZZARD] Fire cannot spread to Forest while the blizzard lasts.",
+               "[BLIZZARD] Lua khong the lan sang rung khi bao tuyet dang hoat dong."),
+            ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
 }
 
 void GameState::resolve_environment_turn() {
     if (dark_cloud_active) dark_cloud_active = false;
+    if (blizzard_active)   blizzard_active   = false; // expires at next environment phase
 
     std::discrete_distribution<int> event_dist({
         static_cast<double>(active_config.env_prob_clear),
@@ -2475,6 +2463,7 @@ void GameState::execute_explosion_internal(int cx, int cy, bool is_zombie_explod
 
     if (human_extra_damage > 0) {
         human.hp = std::max(0, human.hp - human_extra_damage);
+        sfx("human_pain");
         floating_texts.push_back({human.pos, -human_extra_damage, 1.0f, 1.0f});
         add_log("-> Human total explosion damage: -" + std::to_string(human_extra_damage) + " HP.", ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
     }
@@ -2871,6 +2860,7 @@ void GameState::handle_weapon_click(int tx, int ty, float cellSize, float boardO
                 check_mine_interactions();
             } else {
                 human.hp = std::max(0, human.hp - 1);
+                sfx("human_pain");
                 floating_texts.push_back({human.pos, -1, 1.0f, 1.0f});
                 add_log("[RADIO] Recoil impact! Human loses 1 HP and the wall is destroyed.", ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
             }
@@ -3368,6 +3358,7 @@ void GameState::start_zombie_phase() {
     // At end of human turn, if still burning, take 1 HP damage (burning is NOT cleared).
     if (human.is_burning) {
         human.hp = std::max(0, human.hp - 1);
+        sfx("human_pain");
         floating_texts.push_back({human.pos, -1, 1.0f, 1.0f});
         add_log("[FIRE] Human suffered 1 Burn Damage!", ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
     }
@@ -3603,6 +3594,7 @@ void GameState::update_zombie_logic(float dt) {
                 }
                 
                 human.hp = std::max(0, human.hp - dmg); 
+                if (dmg > 0) sfx("human_pain");
                 floating_texts.push_back({human.pos, -dmg, 1.0f, 1.0f});
                 attack_animations.push_back(atk_fx);
 
@@ -3782,6 +3774,9 @@ void GameState::propagate_gradual_forest_fire() {
     for (int x = 0; x < width; ++x) {
         for (int y = 0; y < height; ++y) {
             if (grid[x][y] == Terrain::Forest) {
+                // Blizzard suppresses fire-to-forest spread while active.
+                // (Molotov can still convert Forest directly via set_cell_on_fire.)
+                if (blizzard_active) continue;
                 // Forest fire spreads orthogonally only (4 directions)
                 for (const auto& d : ortho) {
                     int nx = x + d[0], ny = y + d[1];

@@ -130,7 +130,8 @@
 ## Windstorm
 - Pushes entities, Grenades and Loot drops 1 tile in the wind direction if not blocked.
 ## Rain
-- Extinguishes all Fire into Dirt and clears Burned status for all entities.
+- Extinguishes all Fire into Dirt
+- Clears Burned status for all entities.
 - May transform Dirt into Water or Forest.
 ## Dark cloud
 - Cover the whole map by a black color that lasts until the next Environment phase.
@@ -146,7 +147,8 @@
 - Speedify conduction of Fire to adjacent Forest.
 ## Blizzard
 - May freeze Water --> Ice.
-- Extinguishes Fire --> Dirt and clears Burned status for all entities.
+- Clears Burned status for all entities.
+- Temporarily prevents Fire spreading to adjacent Forest tiles.
 
 # STATUS
 ## Burned

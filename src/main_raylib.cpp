@@ -17,6 +17,7 @@
 #include <cstring>
 namespace fs = std::filesystem;
 #include "embedded/guide_txt.h"  // auto-generated from assets/guide.txt at build time
+#include "embedded/font_noto_bold.h" // auto-generated from assets/fonts/NotoSans-Bold.ttf
 
 // ── GameState audio method implementations for Raylib build ──────────────────
 // (GameState.cpp only defines these under #ifndef RAYLIB_BUILD, using the
@@ -155,99 +156,464 @@ static bool drawCheckbox(Vector2 mouse, bool clicked, float x, float y, bool che
     return clicked && CheckCollisionPointRec(mouse, hitArea);
 }
 
-// ── Splash screen: dark tactical theme matching the game's vibe ──────────────
-static void runSplashScreen(Font& gameFont) {
-    const float DURATION = 6.0f;
-    float elapsed = 0.0f;
+// ── Splash screen: cinematic chess-vs-zombie title card ──────────────────────
+//
+// Layout (top → bottom):
+//   [fog + chessboard floor]
+//   [zombie-pawn silhouettes left & right]
+//   ── TITLE: "Zom" (blood-red glow) + "Chess" (ivory/gold glow) ──
+//   [blood-drip ribbons below "Zom"]
+//   [tagline]
+//   [♟ · · · ♟ ornament divider]
+//   [Created by  |  Music credit]
+//   [version bottom-right]
+//   [Press any key — blinking]
+//   [scanline overlay for cinematic depth]
+// ─────────────────────────────────────────────────────────────────────────────
 
-    struct Drip { float x, y, speed, len; };
-    std::vector<Drip> drips;
-    for (int i = 0; i < 18; ++i) {
-        Drip d;
-        d.x = (float)GetRandomValue(0, 1400);
-        d.y = (float)GetRandomValue(-600, 0);
-        d.speed = GetRandomValue(30, 90) / 10.0f;
-        d.len = (float)GetRandomValue(40, 140);
-        drips.push_back(d);
+// Tiny particle for ambient dust/blood specks
+struct SplashParticle {
+    float x, y, vx, vy, life, maxLife, radius;
+    unsigned char r, g, b;
+};
+
+static void runSplashScreen(Font& gameFont) {
+    // ── Load large-atlas font from embedded bytes (fully self-contained) ──
+    // font_noto_bold_ttf / font_noto_bold_ttf_len are generated at build time
+    // from assets/fonts/NotoSans-Bold.ttf by cmake/EmbedFont.cmake.
+    // fileType must be ".ttf" so Raylib picks the right decoder.
+    Font bigFont = LoadFontFromMemory(".ttf",
+                       font_noto_bold_ttf, (int)font_noto_bold_ttf_len,
+                       210, nullptr, 0);
+    if (bigFont.texture.id == 0) bigFont = gameFont; // should never happen
+    SetTextureFilter(bigFont.texture, TEXTURE_FILTER_BILINEAR);
+
+    const float DURATION      = 8.0f;
+    const float FADE_IN       = 1.0f;
+    const float FADE_OUT      = 0.7f;
+    float elapsed = 0.0f;
+    bool  fadeOut = false;
+    float fadeOutTimer = 0.0f;
+
+    // ── Seed ambient particles ──────────────────────────────────────────────
+    const int PART_COUNT = 120;
+    std::vector<SplashParticle> parts(PART_COUNT);
+    {
+        srand(42);
+        auto rf = [](float lo, float hi) { return lo + (hi - lo) * (rand() / (float)RAND_MAX); };
+        for (auto& p : parts) {
+            int W2 = GetScreenWidth(), H2 = GetScreenHeight();
+            p.x = rf(0, (float)W2);  p.y = rf(0, (float)H2);
+            p.vx = rf(-8.f, 8.f);    p.vy = rf(-20.f, -4.f); // drift upward
+            float l = rf(1.5f, 6.f); p.life = l; p.maxLife = l;
+            p.radius = rf(1.0f, 3.2f);
+            int col = rand() % 3;
+            if (col == 0) { p.r=200; p.g=20;  p.b=20;  } // blood red
+            else if (col==1){ p.r=40;  p.g=160; p.b=80;  } // zombie green
+            else             { p.r=220; p.g=190; p.b=60;  } // gold dust
+        }
     }
 
-    while (elapsed < DURATION) {
+    // ── Blood-drip state ──────────────────────────────────────────────────
+    // Each drip starts at the bottom edge of the "Zom" text and falls slowly.
+    // 'tailY' = top of drip trail, 'headY' = current leading tip.
+    // Speed is slow (blood is thick): 30–70 px/s.
+    struct Drip {
+        float x;          // horizontal position
+        float tailY;      // where the drip peels off (fixed, = title baseline)
+        float headY;      // current tip position (moves downward)
+        float speed;      // px per second
+        float maxLen;     // maximum trail length before the tail also starts falling
+        bool  tailFalling;// once max length reached, tail follows head
+        float tailFallY;  // where tail started falling from
+    };
+    std::vector<Drip> drips;
+    float dripSpawnTimer = 0.f;
+    float dripSpawnInterval = 0.4f; // seconds between new drips
+    // Title metrics pre-computed once (approximate; refined each frame)
+    // We'll set titleBaselineY properly once we have W/H inside the loop.
+    float titleBaselineY = 0.f; // set on first frame
+
+    while (true) {
         if (WindowShouldClose()) return;
-        if (GetKeyPressed() != 0 || IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) break;
+        if (GetKeyPressed() != 0 || IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+            if (!fadeOut) { fadeOut = true; }
+        }
 
         float dt = GetFrameTime();
         elapsed += dt;
+        if (fadeOut) {
+            fadeOutTimer += dt;
+            if (fadeOutTimer >= FADE_OUT) break;
+        } else if (elapsed >= DURATION) {
+            fadeOut = true;
+        }
 
+        // Global alpha
         float alpha = 1.0f;
-        if (elapsed < 0.4f) alpha = elapsed / 0.4f;
+        if (elapsed < FADE_IN)   alpha = elapsed / FADE_IN;
+        if (fadeOut)             alpha = 1.0f - (fadeOutTimer / FADE_OUT);
+        alpha = (alpha < 0.f) ? 0.f : (alpha > 1.f) ? 1.f : alpha;
         unsigned char a = (unsigned char)(alpha * 255);
 
         int W = GetScreenWidth();
         int H = GetScreenHeight();
 
-        for (auto& d : drips) {
-            d.y += d.speed;
-            if (d.y - d.len > H) { d.y = (float)GetRandomValue(-200, 0); d.x = (float)GetRandomValue(0, W); }
-        }
-
-        BeginDrawing();
-        ClearBackground((Color){8, 6, 6, 255});
-
-        // Dark red vignette background
-        DrawRectangleGradientV(0, 0, W, H, (Color){25, 4, 4, a}, (Color){5, 2, 2, a});
-
-        // Blood drips falling from top
-        for (const auto& d : drips) {
-            DrawLineEx((Vector2){d.x, d.y}, (Vector2){d.x, d.y + d.len}, 3.0f, (Color){130, 10, 10, (unsigned char)(a * 0.7f)});
-            DrawCircle((int)d.x, (int)(d.y + d.len), 3.0f, (Color){130, 10, 10, (unsigned char)(a * 0.7f)});
-        }
-
-        // Cracked vignette corners
-        DrawRectangleGradientV(0, 0, W, 150, (Color){0,0,0,(unsigned char)(a*0.9f)}, (Color){0,0,0,0});
-        DrawRectangleGradientV(0, H - 150, W, 150, (Color){0,0,0,0}, (Color){0,0,0,(unsigned char)(a*0.9f)});
-
-        const char* title = "ZomChess";
-        float titleSize = 150.0f;
-        Vector2 tsz = MeasureTextEx(gameFont, title, titleSize, 3.0f);
-        float titleX = (W - tsz.x) / 2.0f;
-        float titleY = H * 0.28f;
-
-        // Dripping blood glow behind title
-        for (int i = 4; i >= 1; --i) {
-            float jitterY = sinf(elapsed * 5.0f + i) * 1.5f * i;
-            unsigned char glowA = (unsigned char)((a / 4) * (5 - i) / 4.0f);
-            DrawTextEx(gameFont, title, (Vector2){titleX, titleY + jitterY + i * 3.0f}, titleSize, 3.0f,
-                       (Color){120, 5, 5, glowA});
-        }
-
-        float pulse = 0.85f + 0.15f * sinf(elapsed * 2.0f);
-        DrawTextEx(gameFont, title, (Vector2){titleX, titleY}, titleSize, 3.0f,
-                   (Color){200, (unsigned char)(15*pulse), (unsigned char)(15*pulse), a});
-
-        // Blood drip dripping off the title text itself
-        for (int i = 0; i < 6; ++i) {
-            float dx = titleX + tsz.x * (0.1f + 0.15f * i);
-            float dripLen = 20.0f + 15.0f * sinf(elapsed * 1.5f + i * 2.0f);
-            if (dripLen > 0) {
-                DrawLineEx((Vector2){dx, titleY + titleSize * 0.85f}, (Vector2){dx, titleY + titleSize * 0.85f + dripLen}, 2.5f, (Color){150, 10, 10, a});
+        // ── Update particles ──────────────────────────────────────────────
+        {
+            auto rf = [](float lo, float hi) { return lo + (hi - lo) * (rand() / (float)RAND_MAX); };
+            for (auto& p : parts) {
+                p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
+                if (p.life <= 0.f) {
+                    p.x = rf(0, (float)W); p.y = (float)H + 10.f;
+                    p.vx = rf(-8.f, 8.f);  p.vy = rf(-20.f, -4.f);
+                    float l = rf(1.5f, 6.f); p.life = l; p.maxLife = l;
+                }
             }
         }
 
-        const char* tagline = "EVERY WRONG MOVE LEADS YOU TO DEATH!";
-        float tagSize = 28.0f;
-        Vector2 tagsz = MeasureTextEx(gameFont, tagline, tagSize, 1.0f);
-        DrawTextEx(gameFont, tagline, (Vector2){(W - tagsz.x) / 2.0f, titleY + titleSize + 35}, tagSize, 1.0f,
-                   (Color){180, 150, 150, a});
+        // ── Update blood drips ────────────────────────────────────────────
+        // Set baseline Y on first frame
+        if (titleBaselineY == 0.f)
+            titleBaselineY = (H - 260.f) * 0.5f - H * 0.06f + 260.f - 4.f;
 
-        float blink = 0.5f + 0.5f * sinf(elapsed * 3.5f);
-        const char* prompt = "Press any key to continue...";
-        Vector2 psz = MeasureTextEx(gameFont, prompt, 22, 1);
-        DrawTextEx(gameFont, prompt, (Vector2){(W - psz.x) / 2.0f, H * 0.82f},
-                   22.0f, 1.0f, (Color){140, 100, 100, (unsigned char)(blink * a)});
+        // Update existing drips
+        for (auto& d : drips) {
+            d.headY += d.speed * dt;
+            float currentLen = d.headY - d.tailY;
+            if (!d.tailFalling && currentLen > d.maxLen) {
+                d.tailFalling = true;
+                d.tailFallY = d.tailY;
+            }
+            if (d.tailFalling)
+                d.tailY += d.speed * 0.92f * dt; // tail chases head slightly slower
+        }
+        // Remove drips that have fully scrolled off screen
+        drips.erase(std::remove_if(drips.begin(), drips.end(),
+            [&](const Drip& d){ return d.tailY > H + 40.f; }), drips.end());
+
+        // Spawn new drips — only during the "Zom" half of the title width
+        dripSpawnTimer += dt;
+        if (dripSpawnTimer >= dripSpawnInterval && (int)drips.size() < 10) {
+            dripSpawnTimer = 0.f;
+            dripSpawnInterval = 0.25f + (rand() % 60) / 100.f; // 0.25–0.85s
+            // "Zom" occupies roughly left half of title block; sample within it
+            int W2 = GetScreenWidth();
+            const float titleSize2 = 260.f;
+            Vector2 zsz2 = MeasureTextEx(bigFont, "Zom", titleSize2, 2.f);
+            float titleX2 = (W2 - (zsz2.x + MeasureTextEx(bigFont, "Chess", titleSize2, 2.f).x)) * 0.5f;            Drip d;
+            d.x = titleX2 + 8.f + (rand() % (int)(zsz2.x - 16.f));
+            d.tailY = titleBaselineY;
+            d.headY = titleBaselineY + 2.f;
+            d.speed = 32.f + (rand() % 38); // 32–70 px/s
+            d.maxLen = 28.f + (rand() % 55); // trail length 28–83px
+            d.tailFalling = false;
+            d.tailFallY = d.tailY;
+            drips.push_back(d);
+        }
+
+        BeginDrawing();
+        ClearBackground((Color){8, 8, 10, 255});
+
+        // ── 1. Full-screen chessboard — square cells, centered ───────────────
+        {
+            // Cell size = largest square that fits evenly; board is centered.
+            const int COLS = 14;
+            float cellSz = (float)W / COLS;   // derive from width
+            int ROWS = (int)ceilf((float)H / cellSz) + 2; // enough rows to fill height
+            float boardH = ROWS * cellSz;
+            float startY = -fmodf(elapsed * 14.f, cellSz * 2.f); // scroll by 2 cell heights
+            for (int r = 0; r < ROWS; ++r) {
+                for (int c = 0; c < COLS; ++c) {
+                    bool dark = ((r + c) % 2 == 0);
+                    Color cc = dark ? (Color){14, 12, 17, a} : (Color){28, 25, 34, a};
+                    DrawRectangle((int)(c * cellSz), (int)(startY + r * cellSz),
+                                  (int)(cellSz + 1.f), (int)(cellSz + 1.f), cc);
+                }
+            }
+            // Darken centre to keep text readable
+            DrawRectangleGradientV(0, 0, W, H, (Color){0,0,0,120}, (Color){0,0,0,70});
+        }
+
+        // ── 4. Ambient particles (dust, blood specks, gold motes) ──────────
+        for (const auto& p : parts) {
+            float ratio = p.life / p.maxLife;
+            unsigned char pa = (unsigned char)(ratio * 180.f * alpha);
+            DrawCircleV((Vector2){p.x, p.y}, p.radius,
+                        (Color){p.r, p.g, p.b, pa});
+        }
+
+        // ── 5. Ambient particles only (zombie pawns removed) ─────────────
+
+        // ── 6. TITLE: "Zom" (blood-red) + "Chess" (ivory/gold) ─────────────
+        // ── 6. TITLE: "Zom" (blood-red) + "Chess" (ivory/gold) ─────────────
+        // Uses bigFont (210px atlas) — crisp and self-contained.
+        {
+            const float titleSize = 260.f;  // BIG — fills horizontal space
+            const float spacing   = 2.f;
+
+            const char* ZOM   = "Zom";
+            const char* CHESS = "Chess";
+            Vector2 zsz = MeasureTextEx(bigFont, ZOM,   titleSize, spacing);
+            Vector2 csz = MeasureTextEx(bigFont, CHESS, titleSize, spacing);
+            float totalW = zsz.x + csz.x;
+            float titleX = (W - totalW) * 0.5f;
+            // Vertically centred slightly above middle
+            float titleY = (H - titleSize) * 0.5f - H * 0.06f;
+
+            float pulse_z  = 0.92f + 0.08f * sinf(elapsed * 2.6f);
+            float pulse_c  = 0.94f + 0.06f * sinf(elapsed * 3.1f + 1.0f);
+
+            // ── GLOWING BORDER effect ────────────────────────────────────
+            // Strategy: draw the text many times at increasing offsets with
+            // a bright saturated colour and decreasing alpha — this creates
+            // a thick, luminous halo that looks like a glowing outline.
+
+            // Outer soft bloom (large spread, low alpha)
+            for (int r = 18; r >= 6; r -= 3) {
+                unsigned char ba = (unsigned char)(alpha * (8 + (18-r)));
+                for (int dx = -r; dx <= r; dx += r) {
+                    for (int dy = -r; dy <= r; dy += r) {
+                        if (dx == 0 && dy == 0) continue;
+                        DrawTextEx(bigFont, ZOM,
+                            (Vector2){titleX+dx, titleY+dy}, titleSize, spacing,
+                            (Color){255, 60, 60, ba});
+                        DrawTextEx(bigFont, CHESS,
+                            (Vector2){titleX+zsz.x+dx, titleY+dy}, titleSize, spacing,
+                            (Color){255, 220, 80, ba});
+                    }
+                }
+            }
+            // Inner bright ring (tight offset, high alpha = the actual glowing edge)
+            for (int r = 4; r >= 1; r--) {
+                unsigned char ba = (unsigned char)(alpha * (60 + r * 20));
+                for (int dx = -r; dx <= r; dx++) {
+                    for (int dy = -r; dy <= r; dy++) {
+                        if (dx == 0 && dy == 0) continue;
+                        DrawTextEx(bigFont, ZOM,
+                            (Vector2){titleX+dx, titleY+dy}, titleSize, spacing,
+                            (Color){255, 80, 80, ba});
+                        DrawTextEx(bigFont, CHESS,
+                            (Vector2){titleX+zsz.x+dx, titleY+dy}, titleSize, spacing,
+                            (Color){255, 230, 100, ba});
+                    }
+                }
+            }
+
+            // — Main fill — drawn last so it sits on top of all glow layers
+            DrawTextEx(bigFont, ZOM,
+                (Vector2){titleX, titleY}, titleSize, spacing,
+                (Color){255, (unsigned char)(30*pulse_z), (unsigned char)(30*pulse_z), a});
+            DrawTextEx(bigFont, CHESS,
+                (Vector2){titleX + zsz.x, titleY}, titleSize, spacing,
+                (Color){(unsigned char)(255*pulse_c), (unsigned char)(248*pulse_c), (unsigned char)(200*pulse_c), a});
+
+            // ── Blood drips below "Zom" ──────────────────────────────────
+            for (const auto& d : drips) {
+                float trailTop = d.tailY;
+                float trailBot = d.headY;
+                float trailLen = trailBot - trailTop;
+                if (trailLen <= 0.f) continue;
+                const int STEPS = (int)trailLen;
+                for (int s = 0; s < STEPS; ++s) {
+                    float t = (float)s / (float)(STEPS > 1 ? STEPS - 1 : 1);
+                    float w = 4.f - t * 3.f;
+                    float py = trailTop + s;
+                    float opT = (t < 0.15f) ? t / 0.15f : 1.f;
+                    float opB = (t > 0.85f) ? (1.f - t) / 0.15f : 1.f;
+                    unsigned char da = (unsigned char)(alpha * opT * opB * 220);
+                    DrawRectangle((int)(d.x - w * 0.5f), (int)py, (int)(w + 0.5f), 2,
+                                  (Color){200, 8, 8, da});
+                }
+                float bulgeR = 4.5f - (trailLen / d.maxLen) * 1.5f;
+                if (bulgeR < 2.f) bulgeR = 2.f;
+                DrawCircle((int)d.x, (int)trailBot, bulgeR,
+                           (Color){210, 10, 10, (unsigned char)(alpha * 230)});
+            }
+        }
+
+        // ── 7. Tagline ────────────────────────────────────────────────────
+        {
+            const char* tagline = "EVERY WRONG MOVE LEADS YOU TO DEATH";
+            float tagSize = 26.f;
+            float tagSpacing = 3.2f;
+            Vector2 tsz2 = MeasureTextEx(gameFont, tagline, tagSize, tagSpacing);
+            float tagX = (W - tsz2.x) * 0.5f;
+            float tagY = (H - 260.f) * 0.5f - H * 0.06f + 260.f + 22.f;
+            float flicker = 0.82f + 0.18f * sinf(elapsed * 1.9f);
+            DrawTextEx(gameFont, tagline, (Vector2){tagX - 2.f, tagY + 1.f},
+                tagSize, tagSpacing,
+                (Color){180, 0, 0, (unsigned char)(a * 0.35f * flicker)});
+            DrawTextEx(gameFont, tagline, (Vector2){tagX, tagY},
+                tagSize, tagSpacing,
+                (Color){215, 210, 200, (unsigned char)(a * flicker)});
+        }
+
+        // ── 8. "Press any key" blinking prompt ───────────────────────────
+        {
+            float blink = 0.45f + 0.55f * sinf(elapsed * 3.8f);
+            const char* prompt = "Press any key or click to continue...";
+            float pSize = 20.f;
+            Vector2 psz = MeasureTextEx(gameFont, prompt, pSize, 1.2f);
+            DrawTextEx(gameFont, prompt,
+                (Vector2){(W - psz.x)*0.5f, H * 0.885f},
+                pSize, 1.2f,
+                (Color){155, 155, 160, (unsigned char)(blink * alpha * 220)});
+        }
+
+        // ── 9. Zombie claw-scratch animation (right side, mid-height) ────────
+        // Appears at elapsed >= DURATION*0.5.
+        // Four parallel slash marks, each shaped like a bear-claw gouge:
+        // narrow at both tips, widest in the middle (lentil / spindle silhouette).
+        // Drawn by stacking many thin horizontal slices whose width follows sin().
+        {
+            const float CLAW_START = DURATION * 0.5f;
+            if (elapsed >= CLAW_START) {
+                float claw_t = elapsed - CLAW_START;
+
+                // Anchor: right side, roughly mid-height
+                const float AX    = W * 0.875f;
+                const float AY    = H * 0.52f;   // moved up vs previous
+                const float ANGLE = 2.05f;        // ~117° — slashes down-left
+                // Short marks — bear claw is compact, not a long slash
+                const float SCRATCH_LEN = H * 0.22f;
+                float sdx = cosf(ANGLE) * SCRATCH_LEN;
+                float sdy = sinf(ANGLE) * SCRATCH_LEN;
+
+                // Perpendicular direction (for spacing parallel claws)
+                float perp_dx = -sinf(ANGLE);
+                float perp_dy =  cosf(ANGLE);
+                const float SPACING   = 22.f; // gap between claws
+                const int   N_CLAWS   = 4;
+                const float DRAW_DUR  = 0.10f;
+                // Max half-width of each gouge at its thickest point
+                const float MAX_WIDTH = 7.f;
+
+                for (int ci = 0; ci < N_CLAWS; ++ci) {
+                    float offset = SPACING * (ci - (N_CLAWS - 1) * 0.5f);
+                    float sx = AX + perp_dx * offset; // start point (tip 1)
+                    float sy = AY + perp_dy * offset;
+                    float ex = sx + sdx;              // end point (tip 2)
+                    float ey = sy + sdy;
+
+                    float draw_t = claw_t; // all claws appear simultaneously
+                    if (draw_t <= 0.f) continue;
+
+                    float vis = draw_t / DRAW_DUR;  // 0→1 draw-in progress
+                    if (vis > 1.f) vis = 1.f;
+
+                    unsigned char scratch_a = (unsigned char)(alpha * 215);
+
+                    // Draw the gouge as N_SLICES stacked segments.
+                    // Each segment's thickness = MAX_WIDTH * sin(π * t) where
+                    // t = slice position along the mark (0=tip1, 1=tip2).
+                    // Only draw up to 'vis' fraction of the mark length.
+                    const int N_SLICES = 60;
+                    int visible_slices = (int)(N_SLICES * vis);
+
+                    for (int si = 0; si < visible_slices; ++si) {
+                        float t0 = (float) si      / N_SLICES;
+                        float t1 = (float)(si + 1) / N_SLICES;
+                        float tm = (t0 + t1) * 0.5f;
+
+                        // Width profile: sin gives 0 at both tips, 1 at centre
+                        float w = MAX_WIDTH * sinf(3.1415926f * tm);
+
+                        // Position along the mark
+                        float px = sx + (ex - sx) * tm;
+                        float py = sy + (ey - sy) * tm;
+
+                        // Perpendicular offset for the width
+                        float nx = perp_dx * w;
+                        float ny = perp_dy * w;
+
+                        Vector2 p1 = { px - nx, py - ny };
+                        Vector2 p2 = { px + nx, py + ny };
+
+                        // Outer glow layer
+                        float glow_w = w * 1.7f;
+                        Vector2 g1 = { px - perp_dx*glow_w, py - perp_dy*glow_w };
+                        Vector2 g2 = { px + perp_dx*glow_w, py + perp_dy*glow_w };
+                        DrawLineEx(g1, g2, 2.f,
+                            (Color){140, 0, 0, (unsigned char)(scratch_a * 0.30f)});
+
+                        // Core dark-red gouge
+                        DrawLineEx(p1, p2,
+                            (si == 0 || si == visible_slices - 1) ? 1.f : 2.f,
+                            (Color){210, 25, 25, scratch_a});
+
+                        // Bright centre highlight (inner light streak)
+                        float hw = w * 0.28f;
+                        Vector2 h1 = { px - perp_dx*hw, py - perp_dy*hw };
+                        Vector2 h2 = { px + perp_dx*hw, py + perp_dy*hw };
+                        DrawLineEx(h1, h2, 1.f,
+                            (Color){255, 160, 160, (unsigned char)(scratch_a * 0.55f)});
+                    }
+
+                    // White-hot flash sweeping along during draw-in
+                    if (vis < 1.f) {
+                        float tip_x = sx + (ex - sx) * vis;
+                        float tip_y = sy + (ey - sy) * vis;
+                        float flash_r = MAX_WIDTH * 1.2f;
+                        DrawCircle((int)tip_x, (int)tip_y, flash_r,
+                            (Color){255, 220, 220, (unsigned char)(alpha * 160 * (1.f - vis))});
+                    }
+
+                    // Blood drips — one drip per claw, from the centre of the gouge
+                    if (vis >= 1.f) {
+                        float drip_t = draw_t - DRAW_DUR;
+                        float drip_delay = ci * 0.15f;
+                        float dt2 = drip_t - drip_delay;
+                        if (dt2 > 0.f) {
+                            // Origin: midpoint of the scratch
+                            float ox = (sx + ex) * 0.5f;
+                            float oy = (sy + ey) * 0.5f;
+
+                            float head_y = oy + dt2 * 50.f;
+                            float tail_y = oy;
+                            float trail  = head_y - tail_y;
+                            const float MAX_TRAIL = 55.f;
+                            if (trail > MAX_TRAIL) {
+                                tail_y = head_y - MAX_TRAIL;
+                                trail  = MAX_TRAIL;
+                            }
+
+                            int steps = (int)trail;
+                            for (int s = 0; s < steps; ++s) {
+                                float st = (float)s / (steps > 1 ? steps - 1 : 1);
+                                float sw = 4.f - st * 3.f;
+                                float opT = st < 0.12f ? st / 0.12f : 1.f;
+                                float opB = st > 0.85f ? (1.f - st) / 0.15f : 1.f;
+                                unsigned char da = (unsigned char)(alpha * opT * opB * 210);
+                                DrawRectangle((int)(ox - sw * 0.5f), (int)(tail_y + s),
+                                              (int)(sw + 0.5f), 2,
+                                              (Color){200, 8, 8, da});
+                            }
+                            float bR = 4.f - (trail / MAX_TRAIL) * 2.f;
+                            if (bR < 1.5f) bR = 1.5f;
+                            DrawCircle((int)ox, (int)head_y, bR,
+                                (Color){210, 10, 10, (unsigned char)(alpha * 225)});
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── 10. Scanline overlay ─────────────────────────────────────────
+        {
+            unsigned char sl_a = (unsigned char)(alpha * 22);
+            for (int y2 = 0; y2 < H; y2 += 3) {
+                DrawRectangle(0, y2, W, 1, (Color){0, 0, 0, sl_a});
+            }
+        }
 
         EndDrawing();
     }
+    if (bigFont.texture.id != gameFont.texture.id)
+        UnloadFont(bigFont);
 }
+
+
 
 // ── FileBrowser: directory navigation for .zom challenge files ───────────────
 struct FileBrowser {
@@ -476,6 +842,12 @@ int main() {
     Rectangle creditsBtn = { 60, 540, 260, 38 };
     Rectangle quitGameBtn = { 60, 588, 260, 40 };
     bool showCredits = false;
+    bool survivalMode  = false;   // survival: carry HP+ammo across waves
+    int  survivalWave  = 0;       // waves cleared so far (0 = not started)
+    int  survivalKills = 0;       // total zombie kills across all waves
+    bool endMusicPlayed   = false;
+    int  waveKills        = 0;
+    bool waveKillsCounted = false;
     std::string ioMessage;
     float ioMessageTimer = 0.0f;
     bool hasImportedConfig = false;
@@ -594,6 +966,8 @@ int main() {
                     centerViewOnHuman();
                     state.current_scene = GameScene::Playing;
                     AudioManager::getInstance().playMusic("battle");
+                    survivalWave = 0; survivalKills = 0;
+                    waveKills = 0; waveKillsCounted = false; endMusicPlayed = false;
                 }
                 if (CheckCollisionPointRec(mouse, exportBtn)) {
                     saveBrowser.open(FileBrowser::Mode::Save, "my_custom_challenge.zom");
@@ -606,6 +980,8 @@ int main() {
                     centerViewOnHuman();
                     state.current_scene = GameScene::Playing;
                     AudioManager::getInstance().playMusic("battle");
+                    survivalWave = 0; survivalKills = 0;
+                    waveKills = 0; waveKillsCounted = false; endMusicPlayed = false;
                 }
                 if (CheckCollisionPointRec(mouse, creditsBtn)) {
                     showCredits = true;
@@ -619,11 +995,12 @@ int main() {
             ClearBackground((Color){22, 23, 25, 255});
             DrawText("ZomChess", 60, 40, 48, RAYWHITE);
 
-            // ── Music / SFX toggles ──
+            // ── Music / SFX / Survival toggles ──
             {
-                Vector2 musicPos = {60, 95}, sfxPos = {180, 95};
-                bool musicClick = drawCheckbox(mouse, mouseClicked, musicPos.x, musicPos.y, state.music_enabled, "Music");
-                bool sfxClick   = drawCheckbox(mouse, mouseClicked, sfxPos.x, sfxPos.y, state.sfx_enabled, "SFX");
+                Vector2 musicPos = {60, 95}, sfxPos = {168, 95}, survPos = {258, 95};
+                bool musicClick    = drawCheckbox(mouse, mouseClicked, musicPos.x, musicPos.y, state.music_enabled, "Music");
+                bool sfxClick      = drawCheckbox(mouse, mouseClicked, sfxPos.x,   sfxPos.y,   state.sfx_enabled,   "SFX");
+                bool survivalClick = drawCheckbox(mouse, mouseClicked, survPos.x,  survPos.y,  survivalMode,        "Survival");
 
                 if (musicClick && !saveBrowser.is_open && !loadBrowser.is_open) {
                     state.music_enabled = !state.music_enabled;
@@ -633,6 +1010,9 @@ int main() {
                 if (sfxClick && !saveBrowser.is_open && !loadBrowser.is_open) {
                     state.sfx_enabled = !state.sfx_enabled;
                     state.setSfxEnabled(state.sfx_enabled);
+                }
+                if (survivalClick && !saveBrowser.is_open && !loadBrowser.is_open) {
+                    survivalMode = !survivalMode;
                 }
             }
 
@@ -1996,7 +2376,7 @@ int main() {
                 Rectangle popup = { GetScreenWidth()/2.0f - 240, GetScreenHeight()/2.0f - 90, 480, 180 };
                 DrawRectangleRec(popup, (Color){35, 36, 40, 255});
                 DrawRectangleLinesEx(popup, 2, (Color){100, 100, 100, 255});
-                DrawText("WARNING: All unsaved progress will be permanently lost!", (int)popup.x + 20, (int)popup.y + 20, 15, (Color){255,200,80,255});
+                DrawText("WARNING: All unsaved progress will be lost!", (int)popup.x + 20, (int)popup.y + 20, 15, (Color){255,200,80,255});
                 DrawText("Are you sure you want to quit the game?", (int)popup.x + 20, (int)popup.y + 45, 15, RAYWHITE);
 
                 Rectangle yesBtn = { popup.x + 40,  popup.y + 110, 180, 40 };
@@ -2592,11 +2972,75 @@ int main() {
                 Vector2 e = toScreen(state.active_fx.end_p);
                 DrawLineEx(s, e, 3.0f, (Color){255, 60, 60, alpha});
             } else if (state.active_fx.type == FXType::Knife) {
-                Vector2 e = toScreen(state.active_fx.end_p);
-                float t = 1.0f - progress;
-                Vector2 slashStart = { e.x - 15 + 30 * t, e.y - 15 - 10 * t };
-                Vector2 slashEnd   = { e.x + 15 - 10 * t, e.y + 15 + 30 * t };
-                DrawLineEx(slashStart, slashEnd, 3.0f, (Color){230, 230, 230, alpha});
+                // Arc-sweep animation: a fan of blade lines radiates from the human
+                // cell and sweeps through the target cell, like a knife slash in an arc.
+                //
+                // progress goes 1.0 → 0.0 over the FX duration.
+                // t = 1 - progress goes 0.0 → 1.0 (animation advance).
+                //
+                // We pick a base angle pointing from human toward zombie, then draw
+                // several lines at angles slightly before and after that direction.
+                // As t advances, the fan "sweeps" through the arc.
+
+                Vector2 src = toScreen(state.active_fx.start_p); // human cell center
+                Vector2 dst = toScreen(state.active_fx.end_p);   // zombie cell center
+
+                float dx_dir = dst.x - src.x;
+                float dy_dir = dst.y - src.y;
+                float base_angle = atan2f(dy_dir, dx_dir); // radians
+
+                // Fan half-width in radians (~50 degrees total)
+                const float FAN_HALF = 0.44f;
+                // Blade length (roughly 1.5 cells)
+                const float BLADE_LEN = cellSize * 1.5f;
+                // Number of blade lines in the fan
+                const int   NUM_BLADES = 7;
+
+                float t_anim = 1.0f - progress; // 0→1
+
+                for (int b = 0; b < NUM_BLADES; ++b) {
+                    // Each blade sweeps from one edge of the fan to the other.
+                    // Offset within the fan: blade 0 leads, blade N-1 trails.
+                    float blade_frac = (float)b / (NUM_BLADES - 1); // 0..1
+
+                    // The sweep means the blade is visible when t_anim is near its
+                    // blade_frac value. Window width = 0.45 of the total animation.
+                    float center_t = blade_frac;
+                    float window = 0.55f;
+                    float dist = fabsf(t_anim - center_t);
+                    if (dist > window) continue;
+
+                    // Alpha: bright at centre of window, fades at edges
+                    float blade_alpha = 1.0f - (dist / window);
+                    blade_alpha = blade_alpha * blade_alpha; // ease-in
+
+                    // Angle within the fan: sweep from -FAN_HALF to +FAN_HALF
+                    float sweep_angle = base_angle + FAN_HALF * (blade_frac * 2.f - 1.f);
+
+                    float bx = src.x + cosf(sweep_angle) * BLADE_LEN;
+                    float by = src.y + sinf(sweep_angle) * BLADE_LEN;
+
+                    // Main blade line
+                    unsigned char ba = (unsigned char)(blade_alpha * alpha * 0.95f);
+                    DrawLineEx(src, {bx, by}, 2.5f, (Color){230, 230, 240, ba});
+
+                    // Thin bright highlight slightly offset for a glint effect
+                    float glint_off = 4.f;
+                    float perp_x = -sinf(sweep_angle) * glint_off;
+                    float perp_y =  cosf(sweep_angle) * glint_off;
+                    unsigned char ga = (unsigned char)(blade_alpha * alpha * 0.55f);
+                    DrawLineEx({src.x + perp_x, src.y + perp_y},
+                               {bx   + perp_x, by   + perp_y},
+                               1.0f, (Color){255, 255, 255, ga});
+                }
+
+                // Small impact flash on the zombie cell at end of sweep
+                if (t_anim > 0.7f) {
+                    float flash = (t_anim - 0.7f) / 0.3f;
+                    unsigned char fa = (unsigned char)(flash * alpha * 180);
+                    DrawCircle((int)dst.x, (int)dst.y, cellSize * 0.35f,
+                               (Color){255, 220, 180, fa});
+                }
             } else if (state.active_fx.type == FXType::GrenadeFly) {
                 Vector2 s = toScreen(state.active_fx.start_p);
                 Vector2 e = toScreen(state.active_fx.end_p);
@@ -3162,28 +3606,153 @@ int main() {
 
         // ── End Game popup modal — drawn last so it overlays everything ──
         if (state.game_over || state.game_won) {
-            Rectangle popup = { 1400/2.0f - 220, 654/2.0f - 100, 440, 200 };
-            DrawRectangle(0, 0, 1400, 654, (Color){0, 0, 0, 150}); // dim background
-            DrawRectangleRec(popup, (Color){35, 36, 40, 255});
-            DrawRectangleLinesEx(popup, 2, (Color){100, 100, 100, 255});
-
-            const char* msg = state.game_over ? "OPERATION FAILED! YOU DIED."
-                                               : "MISSION ACCOMPLISHED! SECTOR CLEAN.";
-            DrawText(msg, (int)popup.x + 20, (int)popup.y + 30, 18, RAYWHITE);
-
-            static bool endMusicPlayed = false;
             if (!endMusicPlayed) {
                 AudioManager::getInstance().playMusic(state.game_won ? "victory" : "defeat");
                 endMusicPlayed = true;
             }
 
-            Rectangle returnBtn = { popup.x + 120, popup.y + 120, 200, 40 };
-            DrawRectangleRec(returnBtn, (Color){120,20,20,255});
-            drawCenteredText("Return to HUB", returnBtn, 16, WHITE);
-            if (mouseClicked && CheckCollisionPointRec(mouse, returnBtn)) {
-                state.current_scene = GameScene::MainMenu;
-                AudioManager::getInstance().playMusic("menu");
-                endMusicPlayed = false;
+            // Count kills this wave (zombies with hp <= 0)
+            if (!waveKillsCounted) {
+                waveKills = 0;
+                for (const auto& z : state.zombies) if (z->hp <= 0) waveKills++;
+                waveKillsCounted = true;
+            }
+
+            // ── SURVIVAL WIN: "Next Wave" popup ─────────────────────────
+            if (survivalMode && state.game_won) {
+                Rectangle popup = { 1400/2.0f - 330, 654/2.0f - 120, 660, 240 };
+                DrawRectangle(0, 0, 1400, 654, (Color){0, 0, 0, 160});
+                DrawRectangleRec(popup, (Color){28, 40, 28, 255});
+                DrawRectangleLinesEx(popup, 2, (Color){60, 200, 80, 255});
+
+                DrawText("WAVE CLEARED!", (int)popup.x + 20, (int)popup.y + 20, 22,
+                         (Color){60, 240, 80, 255});
+                DrawText(TextFormat("Wave: %d   Kills this wave: %d   Total kills: %d",
+                         survivalWave + 1, waveKills, survivalKills + waveKills),
+                         (int)popup.x + 20, (int)popup.y + 58, 16, RAYWHITE);
+                DrawText(TextFormat("HP: %d   Pistol: %d   Shotgun: %d   Grenades: %d   Mines: %d   Molotovs: %d",
+                         state.human.hp, state.human.pistol_ammo, state.human.shotgun_ammo,
+                         state.human.grenades, state.human.mines, state.human.molotovs),
+                         (int)popup.x + 20, (int)popup.y + 84, 14, (Color){200, 220, 200, 255});
+                DrawText("Your HP and ammo carry over to the next wave.",
+                         (int)popup.x + 20, (int)popup.y + 112, 14, (Color){160, 160, 160, 255});
+
+                Rectangle nextBtn   = { popup.x + 30,  popup.y + 160, 210, 42 };
+                Rectangle hubBtn    = { popup.x + 420, popup.y + 160, 210, 42 };
+                DrawRectangleRec(nextBtn, (Color){30, 160, 50, 255});
+                drawCenteredText("Next Wave!", nextBtn, 17, WHITE);
+                DrawRectangleRec(hubBtn, (Color){100, 40, 40, 255});
+                drawCenteredText("Retreat to HUB", hubBtn, 15, WHITE);
+
+                if (mouseClicked && CheckCollisionPointRec(mouse, nextBtn)) {
+                    // Save carry-over stats
+                    int carry_hp       = state.human.hp;
+                    int carry_pistol   = state.human.pistol_ammo;
+                    int carry_shotgun  = state.human.shotgun_ammo;
+                    int carry_grenades = state.human.grenades;
+                    int carry_mines    = state.human.mines;
+                    int carry_molotovs = state.human.molotovs;
+                    int carry_warp     = state.human.warp_ammo;
+
+                    survivalWave++;
+                    survivalKills += waveKills;
+                    waveKills = 0; waveKillsCounted = false;
+
+                    // Re-init the game world (new map, new zombies)
+                    state.init_game();
+
+                    // Restore human carry-over stats (override what init_game set)
+                    state.human.hp           = carry_hp;
+                    state.human.pistol_ammo  = carry_pistol;
+                    state.human.shotgun_ammo = carry_shotgun;
+                    state.human.grenades     = carry_grenades;
+                    state.human.mines        = carry_mines;
+                    state.human.molotovs     = carry_molotovs;
+                    state.human.warp_ammo    = carry_warp;
+
+                    centerViewOnHuman();
+                    AudioManager::getInstance().playMusic("battle");
+                    endMusicPlayed = false;
+                }
+                if (mouseClicked && CheckCollisionPointRec(mouse, hubBtn)) {
+                    survivalKills += waveKills;
+                    waveKills = 0; waveKillsCounted = false;
+                    survivalWave = 0; survivalKills = 0;
+                    state.current_scene = GameScene::MainMenu;
+                    AudioManager::getInstance().playMusic("menu");
+                    endMusicPlayed = false;
+                }
+
+            // ── SURVIVAL DEFEAT: summary popup ──────────────────────────
+            } else if (survivalMode && state.game_over) {
+                Rectangle popup = { 1400/2.0f - 300, 654/2.0f - 140, 600, 280 };
+                DrawRectangle(0, 0, 1400, 654, (Color){0, 0, 0, 170});
+                DrawRectangleRec(popup, (Color){40, 20, 20, 255});
+                DrawRectangleLinesEx(popup, 2, (Color){200, 40, 40, 255});
+
+                DrawText("SURVIVAL ENDED", (int)popup.x + 20, (int)popup.y + 20, 22,
+                         (Color){240, 60, 60, 255});
+                DrawText("─── YOUR RUN ───",
+                         (int)popup.x + 20, (int)popup.y + 58, 16, (Color){180, 180, 180, 255});
+                DrawText(TextFormat("Waves cleared:    %d", survivalWave),
+                         (int)popup.x + 40, (int)popup.y + 86, 17, RAYWHITE);
+                DrawText(TextFormat("Total kills:      %d", survivalKills + waveKills),
+                         (int)popup.x + 40, (int)popup.y + 112, 17, RAYWHITE);
+                DrawText(TextFormat("Fell on wave:     %d", survivalWave + 1),
+                         (int)popup.x + 40, (int)popup.y + 138, 17, (Color){220, 160, 60, 255});
+                // Simple rank
+                const char* rank =
+                    survivalWave >= 10 ? "RANK: LEGENDARY" :
+                    survivalWave >= 7  ? "RANK: VETERAN"   :
+                    survivalWave >= 4  ? "RANK: SOLDIER"   :
+                    survivalWave >= 2  ? "RANK: RECRUIT"   : "RANK: FRESH MEAT";
+                DrawText(rank, (int)popup.x + 40, (int)popup.y + 170, 18,
+                         (Color){255, 210, 60, 255});
+
+                Rectangle retryBtn = { popup.x + 30,  popup.y + 210, 200, 42 };
+                Rectangle hubBtn2  = { popup.x + 370, popup.y + 210, 200, 42 };
+                DrawRectangleRec(retryBtn, (Color){160, 50, 50, 255});
+                drawCenteredText("Try Again", retryBtn, 16, WHITE);
+                DrawRectangleRec(hubBtn2, (Color){60, 60, 100, 255});
+                drawCenteredText("Return to HUB", hubBtn2, 15, WHITE);
+
+                if (mouseClicked && CheckCollisionPointRec(mouse, retryBtn)) {
+                    // Retry from wave 1 with fresh stats
+                    survivalWave = 0; survivalKills = 0;
+                    waveKills = 0; waveKillsCounted = false;
+                    state.init_game();
+                    centerViewOnHuman();
+                    AudioManager::getInstance().playMusic("battle");
+                    endMusicPlayed = false;
+                }
+                if (mouseClicked && CheckCollisionPointRec(mouse, hubBtn2)) {
+                    survivalWave = 0; survivalKills = 0;
+                    waveKills = 0; waveKillsCounted = false;
+                    state.current_scene = GameScene::MainMenu;
+                    AudioManager::getInstance().playMusic("menu");
+                    endMusicPlayed = false;
+                }
+
+            // ── NORMAL MODE popup (unchanged behaviour) ──────────────────
+            } else {
+                Rectangle popup = { 1400/2.0f - 220, 654/2.0f - 100, 440, 200 };
+                DrawRectangle(0, 0, 1400, 654, (Color){0, 0, 0, 150});
+                DrawRectangleRec(popup, (Color){35, 36, 40, 255});
+                DrawRectangleLinesEx(popup, 2, (Color){100, 100, 100, 255});
+
+                const char* msg = state.game_over ? "OPERATION FAILED! YOU DIED."
+                                                   : "MISSION ACCOMPLISHED! SECTOR CLEAN.";
+                DrawText(msg, (int)popup.x + 20, (int)popup.y + 30, 18, RAYWHITE);
+
+                Rectangle returnBtn = { popup.x + 120, popup.y + 120, 200, 40 };
+                DrawRectangleRec(returnBtn, (Color){120, 20, 20, 255});
+                drawCenteredText("Return to HUB", returnBtn, 16, WHITE);
+                if (mouseClicked && CheckCollisionPointRec(mouse, returnBtn)) {
+                    waveKills = 0; waveKillsCounted = false;
+                    state.current_scene = GameScene::MainMenu;
+                    AudioManager::getInstance().playMusic("menu");
+                    endMusicPlayed = false;
+                }
             }
         }
 
@@ -3318,7 +3887,7 @@ int main() {
             Rectangle popup = { GetScreenWidth()/2.0f - 240, GetScreenHeight()/2.0f - 90, 480, 180 };
             DrawRectangleRec(popup, (Color){35, 36, 40, 255});
             DrawRectangleLinesEx(popup, 2, (Color){100, 100, 100, 255});
-            DrawText("WARNING: All unsaved progress will be permanently lost!", (int)popup.x + 20, (int)popup.y + 20, 15, (Color){255,200,80,255});
+            DrawText("WARNING: All unsaved progress will be lost!", (int)popup.x + 20, (int)popup.y + 20, 15, (Color){255,200,80,255});
             DrawText("Are you sure you want to quit the game?", (int)popup.x + 20, (int)popup.y + 45, 15, RAYWHITE);
 
             Rectangle yesBtn = { popup.x + 40,  popup.y + 110, 180, 40 };
