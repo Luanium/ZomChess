@@ -20,6 +20,61 @@ namespace fs = std::filesystem;
 #include <cstring>
 #include "embedded/guide_txt.h"  // auto-generated from assets/guide.txt at build time
 #include "embedded/font_noto_bold.h" // auto-generated from assets/fonts/NotoSans-Bold.ttf
+#ifdef __EMSCRIPTEN__
+#  include <emscripten/emscripten.h>
+#  include <functional>
+
+// ── WASM import buffer — JS writes here, C++ polls each frame ────────────────
+static std::string  g_wasm_import_content;
+static bool         g_wasm_import_ready = false;
+
+extern "C" {
+// Called from JS after the user picks a file
+EMSCRIPTEN_KEEPALIVE
+void wasm_receive_import(const char* content) {
+    g_wasm_import_content = content ? content : "";
+    g_wasm_import_ready   = true;
+}
+}
+
+// JS: trigger a browser <a download> with the given text content
+EM_JS(void, js_download_text, (const char* filename, const char* content), {
+    var blob = new Blob([UTF8ToString(content)], {type: 'text/plain'});
+    var a    = document.createElement('a');
+    a.href   = URL.createObjectURL(blob);
+    a.download = UTF8ToString(filename);
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+});
+
+// JS: open a file-picker, read the chosen .zom file as text,
+// then call back into WASM via wasm_receive_import()
+EM_JS(void, js_open_file_picker, (), {
+    var input   = document.createElement('input');
+    input.type  = 'file';
+    input.accept = '.zom,text/plain';
+    input.style.display = 'none';
+    input.onchange = function(e) {
+        var file = e.target.files[0];
+        if (!file) return;
+        var reader = new FileReader();
+        reader.onload = function(ev) {
+            var text = ev.target.result;
+            var len  = lengthBytesUTF8(text) + 1;
+            var buf  = _malloc(len);
+            stringToUTF8(text, buf, len);
+            _wasm_receive_import(buf);
+            _free(buf);
+        };
+        reader.readAsText(file);
+        document.body.removeChild(input);
+    };
+    document.body.appendChild(input);
+    input.click();
+});
+#endif
 
 // ── GameState audio method implementations for Raylib build ──────────────────
 // (GameState.cpp only defines these under #ifndef RAYLIB_BUILD, using the
@@ -158,7 +213,45 @@ static bool drawCheckbox(Vector2 mouse, bool clicked, float x, float y, bool che
     return clicked && CheckCollisionPointRec(mouse, hitArea);
 }
 
-// ── Splash screen: cinematic chess-vs-zombie title card ──────────────────────
+#ifdef __EMSCRIPTEN__
+// ── WASM splash state — driven by the main loop instead of a blocking function
+static Font g_bigFont; // loaded in main(), used by splash scene
+struct WasmSplashState {
+    float elapsed        = 0.f;
+    bool  fadeOut        = false;
+    float fadeOutTimer   = 0.f;
+    float titleBaselineY = 0.f;
+    float dripSpawnTimer = 0.f;
+    float dripSpawnInterval = 0.4f;
+
+    struct Drip {
+        float x, tailY, headY, speed, maxLen;
+        bool tailFalling; float tailFallY;
+    };
+    std::vector<Drip> drips;
+
+    struct Particle { float x,y,vx,vy,life,maxLife,radius; unsigned char r,g,b; };
+    std::vector<Particle> parts;
+
+    void init(int W, int H) {
+        srand(42);
+        auto rf=[](float lo,float hi){return lo+(hi-lo)*(rand()/(float)RAND_MAX);};
+        parts.resize(120);
+        for (auto& p : parts) {
+            p.x=rf(0,W); p.y=rf(0,H);
+            p.vx=rf(-8,8); p.vy=rf(-20,-4);
+            float l=rf(1.5f,6.f); p.life=l; p.maxLife=l;
+            p.radius=rf(1.f,3.2f);
+            int c=rand()%3;
+            if(c==0){p.r=200;p.g=20;p.b=20;}
+            else if(c==1){p.r=40;p.g=160;p.b=80;}
+            else{p.r=220;p.g=190;p.b=60;}
+        }
+    }
+};
+static WasmSplashState g_splash;
+static bool g_splash_inited = false;
+#endif
 //
 // Layout (top → bottom):
 //   [fog + chessboard floor]
@@ -763,6 +856,22 @@ int main() {
     InitWindow(1400, 654, "ZomChess");
     SetTargetFPS(60);
 
+#ifdef __EMSCRIPTEN__
+    // On WASM: load only printable ASCII (codepoints 32-126) to keep the
+    // font texture atlas small enough for WebGL (max 4096x4096).
+    // NotoSans has 2000+ glyphs — loading all of them creates an atlas that
+    // exceeds WebGL texture limits on many devices.
+    Font gameFont;
+    {
+        int cp_count = 95; // ' ' (32) through '~' (126)
+        int codepoints[95];
+        for (int i = 0; i < cp_count; i++) codepoints[i] = 32 + i;
+        gameFont = LoadFontFromMemory(".ttf",
+                       font_noto_bold_ttf, (int)font_noto_bold_ttf_len,
+                       32, codepoints, cp_count);
+    }
+    if (gameFont.texture.id == 0) gameFont = GetFontDefault();
+#else
     Font gameFont = LoadFontEx("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 32, nullptr, 0);
     if (gameFont.texture.id == 0) {
         gameFont = LoadFontEx("/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf", 32, nullptr, 0);
@@ -770,9 +879,14 @@ int main() {
     if (gameFont.texture.id == 0) {
         gameFont = GetFontDefault();
     }
+#endif
     SetTextureFilter(gameFont.texture, TEXTURE_FILTER_BILINEAR);
 
+#ifndef __EMSCRIPTEN__
+    // Splash screen uses a blocking loop — skip on WASM where blocking is not allowed.
+    // The browser's loading indicator serves the same purpose while the WASM module loads.
     runSplashScreen(gameFont);
+#endif
 
     #define DrawText(text, x, y, size, ...) DrawTextEx(gameFont, text, (Vector2){(float)(x),(float)(y)}, (float)(size), 1.0f, __VA_ARGS__)
 
@@ -784,6 +898,20 @@ int main() {
     };
 
     GameState state; // starts at GameScene::MainMenu by default
+#ifdef __EMSCRIPTEN__
+    state.current_scene = GameScene::Splash; // WASM uses in-loop splash
+    // Load big font for crisp title rendering in splash scene
+    {
+        int cp_count = 95;
+        int codepoints[95];
+        for (int i = 0; i < cp_count; i++) codepoints[i] = 32 + i;
+        g_bigFont = LoadFontFromMemory(".ttf",
+                        font_noto_bold_ttf, (int)font_noto_bold_ttf_len,
+                        260, codepoints, cp_count);
+        if (g_bigFont.texture.id == 0) g_bigFont = gameFont;
+        SetTextureFilter(g_bigFont.texture, TEXTURE_FILTER_BILINEAR);
+    }
+#endif
 
     AudioManager& audio = AudioManager::getInstance();
     audio.loadMusicFromMemory("menu",    menu_theme_ogg,    menu_theme_ogg_len);
@@ -791,6 +919,10 @@ int main() {
     audio.loadMusicFromMemory("victory", victory_theme_ogg, victory_theme_ogg_len);
     audio.loadMusicFromMemory("defeat",  defeat_theme_ogg,  defeat_theme_ogg_len);
     audio.playMusic("menu");
+#ifdef __EMSCRIPTEN__
+    // On WASM: don't play music yet — splash scene will trigger it on transition
+    AudioManager::getInstance().stopMusic();
+#endif
 
     const float cellSize = 40.0f;
     const float boardOffset = 20.0f;
@@ -847,9 +979,16 @@ int main() {
     Rectangle exportBtn = { 60, 440, 125, 38 };
     Rectangle importBtn = { 195, 440, 125, 38 };
     Rectangle startCustomBtn = { 60, 490, 260, 40 };
+#else
+    // Same coordinates as native — layout is identical on WASM
+    Rectangle exportBtn      = { 60, 440, 125, 38 };
+    Rectangle importBtn      = { 195, 440, 125, 38 };
+    Rectangle startCustomBtn = { 60, 490, 260, 40 };
 #endif
     Rectangle creditsBtn = { 60, 540, 260, 38 };
+#ifndef __EMSCRIPTEN__
     Rectangle quitGameBtn = { 60, 588, 260, 40 };
+#endif
     bool showCredits = false;
     bool survivalMode  = false;   // survival: carry HP+ammo across waves
     int  survivalWave  = 0;       // waves cleared so far (0 = not started)
@@ -859,13 +998,13 @@ int main() {
     bool waveKillsCounted = false;
     std::string ioMessage;
     float ioMessageTimer = 0.0f;
-#ifndef __EMSCRIPTEN__
-    bool hasImportedConfig = false;
-    bool showImportWarnPopup = false;
-    bool importWarnJustOpened = false;
-    std::string pendingImportPath;
+    bool hasImportedConfig       = false;
+    bool showImportWarnPopup     = false;
+    bool importWarnJustOpened    = false;
+    float importWarnScroll       = 0.0f;
     GameState::ImportResult pendingImportAnalysis;
-    float importWarnScroll = 0.0f;
+#ifndef __EMSCRIPTEN__
+    std::string pendingImportPath;
 #endif
 
     // ── Custom difficulty sliders (right column) ──
@@ -909,16 +1048,42 @@ int main() {
     bool showConfirmExitGame = false;
     bool showConfirmReturnHub = false;
     bool shouldQuit = false;
-    SetExitKey(KEY_NULL); // disable default ESC-to-close, we handle confirmation ourselves
+    SetExitKey(KEY_NULL); // disable default ESC-to-close, we handle confirmation ourselves // disable default ESC-to-close, we handle confirmation ourselves
 
+#ifndef __EMSCRIPTEN__
     bool wasFocused = true;
-    int minimizeRestorePending = 0; // 0 = idle, >0 = counting down to restore
+    int minimizeRestorePending = 0;
+#endif
 
+#ifdef __EMSCRIPTEN__
+    // On WASM: wrap the frame body as a lambda, dispatch via emscripten_set_main_loop.
+    // 'shouldQuit' isn't used on WASM (no way to quit a browser tab from code anyway).
+    auto frame_body = [&]() {
+#else
     while (!shouldQuit) {
+#endif
         bool closeRequested = WindowShouldClose();
         float dtSeconds = GetFrameTime();
         AudioManager::getInstance().updateMusic();
 
+#ifdef __EMSCRIPTEN__
+        // Poll for pending file import from JS file-picker callback
+        if (g_wasm_import_ready) {
+            g_wasm_import_ready = false;
+            if (!g_wasm_import_content.empty()) {
+                // Analyze first, then show the same warn/confirm popup as native
+                pendingImportAnalysis = state.analyze_from_string(g_wasm_import_content);
+                pendingImportAnalysis.file_opened = true;
+                showImportWarnPopup   = true;
+                importWarnJustOpened  = true;
+                importWarnScroll      = 0.0f;
+                // g_wasm_import_content kept until user confirms
+            }
+        }
+#endif
+
+#ifndef __EMSCRIPTEN__
+        // Browser tabs don't have minimize/restore — skip on WASM
         bool isFocusedNow = IsWindowFocused();
         if (isFocusedNow && !wasFocused && minimizeRestorePending == 0) {
             minimizeRestorePending = 2;
@@ -933,6 +1098,7 @@ int main() {
                 ToggleFullscreen();
             }
         }
+#endif
 
         mouse = GetMousePosition();
         bool mouseDownRaw = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
@@ -947,7 +1113,8 @@ int main() {
                 showConfirmExitGame = true;
             } else {
                 shouldQuit = true;
-                break;
+                // Note: no 'break' here — on WASM the while loop is a lambda,
+                // so we just let the frame return and shouldQuit stops future frames.
             }
         }
 
@@ -958,6 +1125,247 @@ int main() {
             state.turn_banner_fx.max_duration = 1.0f;
             state.turn_banner_fx.banner_text = "TURN ENDED";
         };
+
+        // ══════════════════════════════════════════════════════════════
+        // SPLASH SCENE (WASM only — native uses blocking runSplashScreen)
+        // ══════════════════════════════════════════════════════════════
+#ifdef __EMSCRIPTEN__
+        if (state.current_scene == GameScene::Splash) {
+            int W = GetScreenWidth();
+            int H = GetScreenHeight();
+            if (!g_splash_inited) {
+                g_splash.init(W, H);
+                g_splash_inited = true;
+            }
+
+            const float DURATION = 8.f, FADE_IN = 1.f, FADE_OUT = 0.7f;
+
+            // Skip on any key/click
+            if (GetKeyPressed() != 0 || IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
+                g_splash.fadeOut = true;
+
+            g_splash.elapsed += dtSeconds;
+            if (g_splash.fadeOut) {
+                g_splash.fadeOutTimer += dtSeconds;
+                if (g_splash.fadeOutTimer >= FADE_OUT) {
+                    state.current_scene = GameScene::MainMenu;
+                    AudioManager::getInstance().playMusic("menu");
+                }
+            } else if (g_splash.elapsed >= DURATION) {
+                g_splash.fadeOut = true;
+            }
+
+            float alpha = 1.f;
+            if (g_splash.elapsed < FADE_IN) alpha = g_splash.elapsed / FADE_IN;
+            if (g_splash.fadeOut) alpha = 1.f - (g_splash.fadeOutTimer / FADE_OUT);
+            alpha = std::max(0.f, std::min(1.f, alpha));
+            unsigned char a = (unsigned char)(alpha * 255);
+
+            // Update particles
+            {
+                auto rf=[](float lo,float hi){return lo+(hi-lo)*(rand()/(float)RAND_MAX);};
+                for (auto& p : g_splash.parts) {
+                    p.x+=p.vx*dtSeconds; p.y+=p.vy*dtSeconds; p.life-=dtSeconds;
+                    if (p.life<=0.f) {
+                        p.x=rf(0,W); p.y=H+10.f;
+                        p.vx=rf(-8,8); p.vy=rf(-20,-4);
+                        float l=rf(1.5f,6.f); p.life=l; p.maxLife=l;
+                    }
+                }
+            }
+
+            // Update drips
+            if (g_splash.titleBaselineY == 0.f)
+                g_splash.titleBaselineY = (H-260.f)*0.5f - H*0.06f + 260.f - 4.f;
+            for (auto& d : g_splash.drips) {
+                d.headY += d.speed*dtSeconds;
+                if (!d.tailFalling && (d.headY-d.tailY)>d.maxLen) {
+                    d.tailFalling=true; d.tailFallY=d.tailY;
+                }
+                if (d.tailFalling) d.tailY += d.speed*0.92f*dtSeconds;
+            }
+            g_splash.drips.erase(std::remove_if(g_splash.drips.begin(),g_splash.drips.end(),
+                [&](const WasmSplashState::Drip& d) -> bool { return d.tailY>H+40.f; }),g_splash.drips.end());
+            g_splash.dripSpawnTimer += dtSeconds;
+            if (g_splash.dripSpawnTimer >= g_splash.dripSpawnInterval && (int)g_splash.drips.size()<10) {
+                g_splash.dripSpawnTimer = 0.f;
+                g_splash.dripSpawnInterval = 0.25f+(rand()%60)/100.f;
+                Vector2 zsz2 = MeasureTextEx(g_bigFont,"Zom",260.f,2.f);
+                float titleX2 = (W-(zsz2.x+MeasureTextEx(g_bigFont,"Chess",260.f,2.f).x))*0.5f;
+                WasmSplashState::Drip d;
+                d.x = titleX2+8.f+(rand()%(int)(zsz2.x-16.f));
+                d.tailY = g_splash.titleBaselineY;
+                d.headY = d.tailY+2.f;
+                d.speed = 32.f+(rand()%38);
+                d.maxLen = 28.f+(rand()%55);
+                d.tailFalling=false; d.tailFallY=d.tailY;
+                g_splash.drips.push_back(d);
+            }
+
+            BeginDrawing();
+            ClearBackground((Color){8,8,10,255});
+
+            // Chessboard
+            {
+                const int COLS=14;
+                float cellSz=(float)W/COLS;
+                int ROWS=(int)ceilf((float)H/cellSz)+2;
+                float startY=-fmodf(g_splash.elapsed*14.f,cellSz*2.f);
+                for(int r=0;r<ROWS;++r) for(int c=0;c<COLS;++c) {
+                    bool dark=((r+c)%2==0);
+                    Color cc=dark?(Color){14,12,17,a}:(Color){28,25,34,a};
+                    DrawRectangle((int)(c*cellSz),(int)(startY+r*cellSz),(int)(cellSz+1.f),(int)(cellSz+1.f),cc);
+                }
+                DrawRectangleGradientV(0,0,W,H,(Color){0,0,0,120},(Color){0,0,0,70});
+            }
+
+            // Particles
+            for (const auto& p : g_splash.parts) {
+                float ratio=p.life/p.maxLife;
+                DrawCircleV({p.x,p.y},p.radius,(Color){p.r,p.g,p.b,(unsigned char)(ratio*180.f*alpha)});
+            }
+
+            // Title — uses g_bigFont (260px atlas) for crisp rendering
+            {
+                const float ts=260.f, sp=2.f;
+                float pz=0.92f+0.08f*sinf(g_splash.elapsed*2.6f);
+                float pc=0.94f+0.06f*sinf(g_splash.elapsed*3.1f+1.f);
+                Vector2 zsz=MeasureTextEx(g_bigFont,"Zom",ts,sp);
+                Vector2 csz=MeasureTextEx(g_bigFont,"Chess",ts,sp);
+                float totalW=zsz.x+csz.x;
+                float titleX=(W-totalW)*0.5f;
+                float titleY=(H-ts)*0.5f-H*0.06f;
+
+                // Outline
+                const int STR=5;
+                int offs[8][2]={{-STR,0},{STR,0},{0,-STR},{0,STR},{-STR,-STR},{STR,-STR},{-STR,STR},{STR,STR}};
+                for (auto& o:offs) {
+                    DrawTextEx(g_bigFont,"Zom",{titleX+o[0],titleY+o[1]},ts,sp,(Color){0,0,0,a});
+                    DrawTextEx(g_bigFont,"Chess",{titleX+zsz.x+o[0],titleY+o[1]},ts,sp,(Color){0,0,0,a});
+                }
+                // Glow
+                float gp=0.7f+0.3f*sinf(g_splash.elapsed*2.6f);
+                float gp2=0.7f+0.3f*sinf(g_splash.elapsed*3.1f+1.f);
+                for(int g2=10;g2>=2;g2-=2){
+                    unsigned char ga=(unsigned char)(gp*alpha*(5+g2*1.8f));
+                    unsigned char gb=(unsigned char)(gp2*alpha*(5+g2*1.8f));
+                    DrawTextEx(g_bigFont,"Zom",{titleX-g2*0.5f,titleY},ts,sp,(Color){255,20,20,ga});
+                    DrawTextEx(g_bigFont,"Zom",{titleX+g2*0.5f,titleY},ts,sp,(Color){255,20,20,ga});
+                    DrawTextEx(g_bigFont,"Chess",{titleX+zsz.x-g2*0.5f,titleY},ts,sp,(Color){255,210,60,gb});
+                    DrawTextEx(g_bigFont,"Chess",{titleX+zsz.x+g2*0.5f,titleY},ts,sp,(Color){255,210,60,gb});
+                }
+                // Fill
+                DrawTextEx(g_bigFont,"Zom",{titleX,titleY},ts,sp,
+                    (Color){255,(unsigned char)(28*pz),(unsigned char)(28*pz),a});
+                DrawTextEx(g_bigFont,"Chess",{titleX+zsz.x,titleY},ts,sp,
+                    (Color){(unsigned char)(255*pc),(unsigned char)(245*pc),(unsigned char)(195*pc),a});
+
+                // Blood drips
+                for (const auto& d : g_splash.drips) {
+                    float trailLen=d.headY-d.tailY;
+                    if(trailLen<=0.f) continue;
+                    int steps=(int)trailLen;
+                    for(int s=0;s<steps;++s){
+                        float t=(float)s/(steps>1?steps-1:1);
+                        float w=4.f-t*3.f;
+                        float opT=t<0.15f?t/0.15f:1.f;
+                        float opB=t>0.85f?(1.f-t)/0.15f:1.f;
+                        DrawRectangle((int)(d.x-w*0.5f),(int)(d.tailY+s),(int)(w+0.5f),2,
+                            (Color){200,8,8,(unsigned char)(alpha*opT*opB*220)});
+                    }
+                    float bR=4.5f-(trailLen/d.maxLen)*1.5f; if(bR<2.f)bR=2.f;
+                    DrawCircle((int)d.x,(int)d.headY,bR,(Color){210,10,10,(unsigned char)(alpha*230)});
+                }
+            }
+
+            // Claw scratch animation (appears at half-duration, right side mid-height)
+            {
+                const float CLAW_START = DURATION * 0.5f;
+                if (g_splash.elapsed >= CLAW_START) {
+                    float claw_t = g_splash.elapsed - CLAW_START;
+                    const float AX=W*0.875f, AY=H*0.52f;
+                    const float ANGLE=2.05f, SCRATCH_LEN=H*0.22f;
+                    float sdx=cosf(ANGLE)*SCRATCH_LEN, sdy=sinf(ANGLE)*SCRATCH_LEN;
+                    float perp_dx=-sinf(ANGLE), perp_dy=cosf(ANGLE);
+                    const float SPACING=22.f; const int N_CLAWS=4;
+                    const float DRAW_DUR=0.10f; const float MAX_WIDTH=7.f;
+                    for(int ci=0;ci<N_CLAWS;++ci){
+                        float offset=SPACING*(ci-(N_CLAWS-1)*0.5f);
+                        float sx=AX+perp_dx*offset, sy=AY+perp_dy*offset;
+                        float ex=sx+sdx, ey=sy+sdy;
+                        float draw_t=claw_t; if(draw_t<=0.f) continue;
+                        float vis=draw_t/DRAW_DUR; if(vis>1.f)vis=1.f;
+                        unsigned char scratch_a=(unsigned char)(alpha*215);
+                        const int N_SLICES=60;
+                        int visible_slices=(int)(N_SLICES*vis);
+                        for(int si=0;si<visible_slices;++si){
+                            float tm=((float)si+0.5f)/N_SLICES;
+                            float w2=MAX_WIDTH*sinf(3.1415926f*tm);
+                            float px2=sx+(ex-sx)*tm, py2=sy+(ey-sy)*tm;
+                            float nx=perp_dx*w2, ny=perp_dy*w2;
+                            DrawLineEx({px2-nx,py2-ny},{px2+nx,py2+ny},2.f,
+                                (Color){210,25,25,scratch_a});
+                        }
+                        // Blood drip from centre
+                        if(vis>=1.f){
+                            float drip_t=draw_t-DRAW_DUR-ci*0.15f;
+                            if(drip_t>0.f){
+                                float ox=(sx+ex)*0.5f, oy=(sy+ey)*0.5f;
+                                float head_y=oy+drip_t*50.f;
+                                float tail_y=oy;
+                                float trail=head_y-tail_y;
+                                if(trail>55.f){tail_y=head_y-55.f;trail=55.f;}
+                                int steps=(int)trail;
+                                for(int s=0;s<steps;++s){
+                                    float t=(float)s/(steps>1?steps-1:1);
+                                    float sw=4.f-t*3.f;
+                                    float opT=t<0.12f?t/0.12f:1.f;
+                                    float opB=t>0.85f?(1.f-t)/0.15f:1.f;
+                                    DrawRectangle((int)(ox-sw*0.5f),(int)(tail_y+s),(int)(sw+0.5f),2,
+                                        (Color){200,8,8,(unsigned char)(alpha*opT*opB*210)});
+                                }
+                                float bR=4.f-(trail/55.f)*2.f; if(bR<1.5f)bR=1.5f;
+                                DrawCircle((int)ox,(int)head_y,bR,(Color){210,10,10,(unsigned char)(alpha*225)});
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Tagline
+            {
+                const char* tag="EVERY WRONG MOVE LEADS YOU TO DEATH";
+                float tagY=(H-260.f)*0.5f-H*0.06f+260.f+22.f;
+                float flicker=0.82f+0.18f*sinf(g_splash.elapsed*1.9f);
+                Vector2 tsz2=MeasureTextEx(gameFont,tag,26.f,3.2f);
+                float tagX=(W-tsz2.x)*0.5f;
+                DrawTextEx(gameFont,tag,{tagX-2.f,tagY+1.f},26.f,3.2f,
+                    (Color){180,0,0,(unsigned char)(a*0.35f*flicker)});
+                DrawTextEx(gameFont,tag,{tagX,tagY},26.f,3.2f,
+                    (Color){215,210,200,(unsigned char)(a*flicker)});
+            }
+
+            // Press any key
+            {
+                float blink=0.45f+0.55f*sinf(g_splash.elapsed*3.8f);
+                const char* prompt="Press any key or click to continue...";
+                Vector2 psz=MeasureTextEx(gameFont,prompt,20.f,1.2f);
+                DrawTextEx(gameFont,prompt,{(W-psz.x)*0.5f,H*0.885f},20.f,1.2f,
+                    (Color){155,155,160,(unsigned char)(blink*alpha*220)});
+            }
+
+            // Scanlines
+            { unsigned char sl_a=(unsigned char)(alpha*22);
+              for(int y2=0;y2<H;y2+=3) DrawRectangle(0,y2,W,1,(Color){0,0,0,sl_a}); }
+
+            EndDrawing();
+#ifdef __EMSCRIPTEN__
+            return;
+#else
+            continue;
+#endif
+        }
+#endif // __EMSCRIPTEN__ splash scene
 
         // ══════════════════════════════════════════════════════════════
         // MAIN MENU — quick play (left) + custom difficulty sliders (right)
@@ -1001,13 +1409,37 @@ int main() {
                     survivalWave = 0; survivalKills = 0;
                     waveKills = 0; waveKillsCounted = false; endMusicPlayed = false;
                 }
+#else
+                // WASM: use browser download/upload instead of FileBrowser
+                if (CheckCollisionPointRec(mouse, exportBtn)) {
+                    std::string content = state.serialize_to_string();
+                    js_download_text("challenge.zom", content.c_str());
+                    ioMessage = "Exported! Check your downloads folder.";
+                    ioMessageTimer = 4.0f;
+                }
+                if (CheckCollisionPointRec(mouse, importBtn)) {
+                    js_open_file_picker();
+                    suppressNextClick = true; // file picker steals a mouse-up event
+                    ioMessage = "Select a .zom file...";
+                    ioMessageTimer = 6.0f;
+                }
+                if (hasImportedConfig && CheckCollisionPointRec(mouse, startCustomBtn)) {
+                    state.init_game();
+                    centerViewOnHuman();
+                    state.current_scene = GameScene::Playing;
+                    AudioManager::getInstance().playMusic("battle");
+                    survivalWave = 0; survivalKills = 0;
+                    waveKills = 0; waveKillsCounted = false; endMusicPlayed = false;
+                }
 #endif
                 if (CheckCollisionPointRec(mouse, creditsBtn)) {
                     showCredits = true;
                 }
+#ifndef __EMSCRIPTEN__
                 if (CheckCollisionPointRec(mouse, quitGameBtn)) {
                     showConfirmExitGame = true;
                 }
+#endif
             }
 
             BeginDrawing();
@@ -1067,19 +1499,26 @@ int main() {
 
             DrawRectangleRec(startCustomBtn, hasImportedConfig ? (Color){160,60,180,255} : (Color){60,60,60,255});
             drawCenteredText("Start Imported Game", startCustomBtn, 16, WHITE);
+#else
+            DrawText("Challenge Files", 60, 415, 18, (Color){230, 210, 100, 255});
+            DrawRectangleRec(exportBtn, (Color){0,110,110,255});
+            drawCenteredText("Export .zom", exportBtn, 15, WHITE);
+            DrawRectangleRec(importBtn, (Color){110,90,0,255});
+            drawCenteredText("Import .zom", importBtn, 15, WHITE);
+            DrawRectangleRec(startCustomBtn, hasImportedConfig ? (Color){160,60,180,255} : (Color){60,60,60,255});
+            drawCenteredText("Start Imported Game", startCustomBtn, 16, WHITE);
 #endif
-
             DrawRectangleRec(creditsBtn, (Color){70,70,110,255});
             drawCenteredText("Credits", creditsBtn, 16, WHITE);
 
+#ifndef __EMSCRIPTEN__
             DrawRectangleRec(quitGameBtn, (Color){140,20,20,255});
             drawCenteredText("Quit Game", quitGameBtn, 16, WHITE);
-
-#ifndef __EMSCRIPTEN__
-            if (!ioMessage.empty()) {
-                DrawText(ioMessage.c_str(), 60, 540, 15, (Color){255, 220, 100, 255});
-            }
 #endif
+
+            if (!ioMessage.empty()) {
+                DrawText(ioMessage.c_str(), 60, 510, 15, (Color){255, 220, 100, 255});
+            }
 
             // ── Right column: Custom Difficulty (2 sub-columns, scrollable) ──
             DrawText("Custom Difficulty", (int)sliderX, 40, 26, (Color){255, 140, 220, 255});
@@ -1726,14 +2165,19 @@ int main() {
                 DrawRectangleRec(noBtn, (Color){60, 60, 60, 255});
                 drawCenteredText("Cancel", noBtn, 16, WHITE);
 
+#ifndef __EMSCRIPTEN__
                 if (mouseClicked && CheckCollisionPointRec(mouse, yesBtn)) {
                     shouldQuit = true;
                     showConfirmExitGame = false;
                 } else if (mouseClicked && CheckCollisionPointRec(mouse, noBtn)) {
+#else
+                if (mouseClicked && CheckCollisionPointRec(mouse, noBtn)) {
+#endif
                     showConfirmExitGame = false;
                 }
             }
 
+#endif // !__EMSCRIPTEN__
             if (showImportWarnPopup) {
                 DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), (Color){0, 0, 0, 160});
 
@@ -1910,16 +2354,26 @@ int main() {
                 if (importWarnJustOpened) {
                     importWarnJustOpened = false;
                 } else if (mouseClicked && CheckCollisionPointRec(mouse, yesBtn)) {
+#ifndef __EMSCRIPTEN__
                     bool ok = state.import_challenge_file(pendingImportPath);
                     ioMessage = ok ? ("Imported " + fs::path(pendingImportPath).filename().string()) : "Import failed!";
+#else
+                    bool ok = state.deserialize_from_string(g_wasm_import_content);
+                    g_wasm_import_content.clear();
+                    ioMessage = ok ? "Import successful! Click 'Start Imported Game'." : "Import failed!";
+#endif
                     ioMessageTimer = 3.0f;
                     hasImportedConfig = ok;
                     showImportWarnPopup = false;
+                    suppressNextClick = true;
                 } else if (mouseClicked && CheckCollisionPointRec(mouse, noBtn)) {
+#ifdef __EMSCRIPTEN__
+                    g_wasm_import_content.clear();
+#endif
                     showImportWarnPopup = false;
+                    suppressNextClick = true;
                 }
             }
-#endif // !__EMSCRIPTEN__
 
             if (showCredits) {
                 DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), (Color){0, 0, 0, 150});
@@ -1937,11 +2391,16 @@ int main() {
                 drawCenteredText("Close", closeBtn, 16, WHITE);
                 if (mouseClicked && CheckCollisionPointRec(mouse, closeBtn)) {
                     showCredits = false;
+                    suppressNextClick = true;
                 }
             }
 
             EndDrawing();
+#ifdef __EMSCRIPTEN__
+            return; // skip rest of frame — main menu already drawn
+#else
             continue;
+#endif
         }
         // ══════════════════════════════════════════════════════════════
         if (state.current_scene == GameScene::MapEditor) {
@@ -2423,16 +2882,24 @@ int main() {
                 DrawRectangleRec(noBtn, (Color){60, 60, 60, 255});
                 drawCenteredText("Cancel", noBtn, 16, WHITE);
 
+#ifndef __EMSCRIPTEN__
                 if (mouseClicked && CheckCollisionPointRec(mouse, yesBtn)) {
                     shouldQuit = true;
                     showConfirmExitGame = false;
                 } else if (mouseClicked && CheckCollisionPointRec(mouse, noBtn)) {
+#else
+                if (mouseClicked && CheckCollisionPointRec(mouse, noBtn)) {
+#endif
                     showConfirmExitGame = false;
                 }
             }
 
             EndDrawing();
+#ifdef __EMSCRIPTEN__
+            return; // skip rest of frame — map editor already drawn
+#else
             continue;
+#endif
         }
 
         bool onPanel = CheckCollisionPointRec(mouse, endTurnBtn) || CheckCollisionPointRec(mouse, moveBtn) ||
@@ -3965,14 +4432,30 @@ int main() {
                 state.current_scene = GameScene::MainMenu;
                 AudioManager::getInstance().playMusic("menu");
                 showConfirmReturnHub = false;
+                suppressNextClick = true;
             } else if (mouseClicked && CheckCollisionPointRec(mouse, noBtn)) {
                 showConfirmReturnHub = false;
+                suppressNextClick = true;
             }
         }
 
         EndDrawing();
-    }
+#ifdef __EMSCRIPTEN__
+        if (shouldQuit) emscripten_cancel_main_loop();
+#endif
+#ifdef __EMSCRIPTEN__
+    }; // end frame_body lambda
+#else
+    } // end while loop
+#endif
 
+#ifdef __EMSCRIPTEN__
+    // Store the lambda in a static so the plain-C trampoline can reach it.
+    static std::function<void()> s_frame = frame_body;
+    emscripten_set_main_loop([]() { s_frame(); }, 0, 1);
+    // simulate_infinite_loop=1: this call never returns; Emscripten unwinds the stack.
+#else
     CloseWindow();
     return 0;
+#endif
 }

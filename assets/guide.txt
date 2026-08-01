@@ -65,7 +65,7 @@
 - Triggered by: entity steps on it, Lightning, explosion, Fire, Pistol, Shotgun.
 - Once exploding, the effects are the same as Grenade.
 
-# ZOMBIE
+# ZOMBIES
 - Square icons with different colors (see the legends).
 - Number in the middle = remaining HP.
 - Has tendency to move toward Human.
@@ -82,7 +82,7 @@
 ## Exploding
 - 3 HP. Detonates on death, dealing AoE damage. Moves 1 tile per turn.
 - AoE: 1x1 if on Water or being Frozen under Ice, 3x3 otherwise.
-- Damage when detonate: -1 HP, cause Knocked back.
+- Damage when detonate: -2 HP, cause Knocked back.
 ## Vampire
 - 4 HP. Moves 1 tile per turn.
 - Steals your HP to heal itself.
@@ -93,7 +93,7 @@
 - 1 HP. Moves 1 tile per turn.
 - Can transform adjacent Loot drops into its clones.
 
-# TERRAIN
+# TERRAINS
 ## Dirt
 - Standard tile. Passable.
 - May transform into Water or Forest if there is Rain.
@@ -138,6 +138,7 @@
 - You can only see Human and the tiles enlightened by Fire.
 ## Lightning
 - Strikes one or more random tiles.
+- Striking probabilities are different for various terrain types.
 - Entities hit take -1 HP damage.
 - Striking on Forest causes Fire.
 - Striking on Water or Ice cause spreading of electricity --> Paralyzed.

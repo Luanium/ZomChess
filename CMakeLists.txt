@@ -66,11 +66,13 @@ if (EMSCRIPTEN)
     target_link_libraries(ZomChess PRIVATE ${RAYLIB_WEB_LIB})
     target_link_options(ZomChess PRIVATE
         -sUSE_GLFW=3
-        -sALLOW_MEMORY_GROWTH=1
-        -sMAXIMUM_MEMORY=536870912
-        -sINITIAL_MEMORY=67108864
+        -sALLOW_MEMORY_GROWTH=0
+        -sTOTAL_MEMORY=268435456
         -sSTACK_SIZE=1048576
         -sNO_EXIT_RUNTIME=1
+        -sASYNCIFY=1
+        "-sEXPORTED_FUNCTIONS=['_main','_wasm_receive_import','_malloc','_free']"
+        "-sEXPORTED_RUNTIME_METHODS=['lengthBytesUTF8','stringToUTF8']"
         --preload-file ${CMAKE_SOURCE_DIR}/assets@/assets
         -O2
     )

@@ -1,0 +1,5 @@
+# Hashes of file build rules.
+385067ace491033c6554c7412daae14d /home/luan/Documents/GitHub/ZomChess/src/embedded/font_noto_bold.h
+13ba3be25ebd32fa36216a14addf47d9 /home/luan/Documents/GitHub/ZomChess/src/embedded/guide_txt.h
+0cf2ef0bbacaba7d00411b363b91dce1 CMakeFiles/embed_font
+0cf2ef0bbacaba7d00411b363b91dce1 CMakeFiles/embed_guide

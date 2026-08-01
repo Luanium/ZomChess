@@ -16,6 +16,7 @@
 #  include <fstream>
 #endif
 #include <iostream>
+#include <sstream>
 #include <map>
 #include <queue>
 #include <unordered_map>
@@ -126,12 +127,12 @@ void GameState::apply_quick_difficulty(int level) {
     active_config.spawn_shield = true;
     active_config.map_width = 15;
     active_config.map_height = 15;
-    active_config.turn_limit = 50;
     active_config.enable_environment = true;
 
     if (level == 0) { // Easy — open map, mild weather, lots of room to maneuver
         active_config.human_hp = GameConstants::Difficulty::Easy::HUMAN_HP;
         active_config.initial_stamina = GameConstants::Difficulty::Easy::INITIAL_STAMINA;
+        active_config.turn_limit = GameConstants::Difficulty::Easy::TURN_LIMIT;
         active_config.pistol_ammo = GameConstants::Difficulty::Easy::PISTOL_AMMO; 
         active_config.shotgun_ammo = GameConstants::Difficulty::Easy::SHOTGUN_AMMO;
         active_config.grenades = GameConstants::Difficulty::Easy::GRENADES;     
@@ -161,6 +162,7 @@ void GameState::apply_quick_difficulty(int level) {
     else if (level == 1) { // Medium — balanced terrain, varied weather
         active_config.human_hp = GameConstants::Difficulty::Medium::HUMAN_HP;
         active_config.initial_stamina = GameConstants::Difficulty::Medium::INITIAL_STAMINA;
+        active_config.turn_limit = GameConstants::Difficulty::Medium::TURN_LIMIT;
         active_config.pistol_ammo = GameConstants::Difficulty::Medium::PISTOL_AMMO; 
         active_config.shotgun_ammo = GameConstants::Difficulty::Medium::SHOTGUN_AMMO;
         active_config.grenades = GameConstants::Difficulty::Medium::GRENADES;     
@@ -190,6 +192,7 @@ void GameState::apply_quick_difficulty(int level) {
     else if (level == 2) { // Hard — dense terrain, hostile weather
         active_config.human_hp = GameConstants::Difficulty::Hard::HUMAN_HP;
         active_config.initial_stamina = GameConstants::Difficulty::Hard::INITIAL_STAMINA;
+        active_config.turn_limit = GameConstants::Difficulty::Hard::TURN_LIMIT;
         active_config.pistol_ammo = GameConstants::Difficulty::Hard::PISTOL_AMMO;  
         active_config.shotgun_ammo = GameConstants::Difficulty::Hard::SHOTGUN_AMMO;
         active_config.grenades = GameConstants::Difficulty::Hard::GRENADES;     
@@ -219,6 +222,7 @@ void GameState::apply_quick_difficulty(int level) {
     else { // Unfair — chaotic terrain, extreme weather
         active_config.human_hp = GameConstants::Difficulty::Unfair::HUMAN_HP;
         active_config.initial_stamina = GameConstants::Difficulty::Unfair::INITIAL_STAMINA;
+        active_config.turn_limit = GameConstants::Difficulty::Unfair::TURN_LIMIT;
         active_config.pistol_ammo = GameConstants::Difficulty::Unfair::PISTOL_AMMO;  
         active_config.shotgun_ammo = GameConstants::Difficulty::Unfair::SHOTGUN_AMMO;
         active_config.grenades = GameConstants::Difficulty::Unfair::GRENADES;     
@@ -252,8 +256,9 @@ void GameState::apply_quick_difficulty(int level) {
 // On WASM the caller-side code is also guarded with #ifndef __EMSCRIPTEN__
 // so these will never be called — but we still compile them out to avoid
 // linker errors from missing fstream symbols on older Emscripten toolchains.
-#ifndef __EMSCRIPTEN__
-static const std::vector<std::string> ALL_EXPECTED_ZOM_FIELDS = {
+
+// ── String-based serialize/deserialize — platform-independent ────────────────
+static const std::vector<std::string> ALL_EXPECTED_ZOM_FIELDS_STR = {
     "VERSION",
     "MAP_W", "MAP_H",
     "HUMAN_HP", "INITIAL_STAMINA",
@@ -268,428 +273,275 @@ static const std::vector<std::string> ALL_EXPECTED_ZOM_FIELDS = {
     "ENV_PROB_LIGHT", "ENV_PROB_HEAT", "ENV_PROB_BLIZ"
 };
 
-bool GameState::export_challenge_file(const std::string& path) {
-    std::ofstream outFile(path);
-    if (!outFile.is_open()) return false;
-    outFile << "VERSION "         << GameConstants::GAME_VERSION << "\n";
-    outFile << "MAP_W "           << active_config.map_width << "\n";
-    outFile << "MAP_H "           << active_config.map_height << "\n";
-    outFile << "HUMAN_HP "        << active_config.human_hp << "\n";
-    outFile << "INITIAL_STAMINA " << active_config.initial_stamina << "\n";
-    outFile << "PISTOL_AMMO "     << active_config.pistol_ammo << "\n";
-    outFile << "SHOTGUN_AMMO "    << active_config.shotgun_ammo << "\n";
-    outFile << "WARP_AMMO "       << active_config.warp_charges << "\n";
-    outFile << "GRENADES "        << active_config.grenades << "\n";
-    outFile << "MINES "           << active_config.mines << "\n";
-    outFile << "MOLOTOVS "        << active_config.molotovs << "\n";
-    outFile << "TURN_LIMIT "      << active_config.turn_limit << "\n";
-    outFile << "ZOM_NORMAL "      << active_config.count_normal << "\n";
-    outFile << "ZOM_FAST "        << active_config.count_fast << "\n";
-    outFile << "ZOM_EXPLODING "   << active_config.count_exploding << "\n";
-    outFile << "ZOM_VAMPIRE "     << active_config.count_vampire << "\n";
-    outFile << "ZOM_SICK "        << active_config.count_sick << "\n";
-    outFile << "ZOM_CORRUPTOR "   << active_config.count_corruptor << "\n";
-    outFile << "SHIELD "          << (active_config.spawn_shield ? 1 : 0) << "\n";
-    outFile << "CUSTOM_MAP "      << (active_config.custom_map_mode ? 1 : 0) << "\n";
-    outFile << "ENABLE_ENV "      << (active_config.enable_environment ? 1 : 0) << "\n";
-    outFile << "FIXED_STAMINA "   << (active_config.fixed_stamina ? 1 : 0) << "\n";
-    outFile << "RATIO_WALL "      << active_config.ratio_wall << "\n";
-    outFile << "RATIO_WATER "     << active_config.ratio_water << "\n";
-    outFile << "RATIO_FOREST "    << active_config.ratio_forest << "\n";
-    outFile << "RATIO_DIRT "      << active_config.ratio_dirt << "\n";
-    outFile << "RATIO_ICE "       << active_config.ratio_ice << "\n";
-    outFile << "CUST_HUMAN_X "    << active_config.custom_human_pos.x << "\n";
-    outFile << "CUST_HUMAN_Y "    << active_config.custom_human_pos.y << "\n";
-    outFile << "CUST_HUMAN_SET "  << (active_config.custom_human_pos_set ? 1 : 0) << "\n";
-    outFile << "ENV_PROB_CLEAR "  << active_config.env_prob_clear << "\n";
-    outFile << "ENV_PROB_WIND "   << active_config.env_prob_wind << "\n";
-    outFile << "ENV_PROB_RAIN "   << active_config.env_prob_rain << "\n";
-    outFile << "ENV_PROB_CLOUDS " << active_config.env_prob_clouds << "\n";
-    outFile << "ENV_PROB_LIGHT "  << active_config.env_prob_lightning << "\n";
-    outFile << "ENV_PROB_HEAT "   << active_config.env_prob_heatwave << "\n";
-    outFile << "ENV_PROB_BLIZ "   << active_config.env_prob_blizzard << "\n";
-
+std::string GameState::serialize_to_string() const {
+    std::ostringstream out;
+    out << "VERSION "         << GameConstants::GAME_VERSION << "\n";
+    out << "MAP_W "           << active_config.map_width << "\n";
+    out << "MAP_H "           << active_config.map_height << "\n";
+    out << "HUMAN_HP "        << active_config.human_hp << "\n";
+    out << "INITIAL_STAMINA " << active_config.initial_stamina << "\n";
+    out << "PISTOL_AMMO "     << active_config.pistol_ammo << "\n";
+    out << "SHOTGUN_AMMO "    << active_config.shotgun_ammo << "\n";
+    out << "WARP_AMMO "       << active_config.warp_charges << "\n";
+    out << "GRENADES "        << active_config.grenades << "\n";
+    out << "MINES "           << active_config.mines << "\n";
+    out << "MOLOTOVS "        << active_config.molotovs << "\n";
+    out << "TURN_LIMIT "      << active_config.turn_limit << "\n";
+    out << "ZOM_NORMAL "      << active_config.count_normal << "\n";
+    out << "ZOM_FAST "        << active_config.count_fast << "\n";
+    out << "ZOM_EXPLODING "   << active_config.count_exploding << "\n";
+    out << "ZOM_VAMPIRE "     << active_config.count_vampire << "\n";
+    out << "ZOM_SICK "        << active_config.count_sick << "\n";
+    out << "ZOM_CORRUPTOR "   << active_config.count_corruptor << "\n";
+    out << "SHIELD "          << (active_config.spawn_shield ? 1 : 0) << "\n";
+    out << "CUSTOM_MAP "      << (active_config.custom_map_mode ? 1 : 0) << "\n";
+    out << "ENABLE_ENV "      << (active_config.enable_environment ? 1 : 0) << "\n";
+    out << "FIXED_STAMINA "   << (active_config.fixed_stamina ? 1 : 0) << "\n";
+    out << "RATIO_WALL "      << active_config.ratio_wall << "\n";
+    out << "RATIO_WATER "     << active_config.ratio_water << "\n";
+    out << "RATIO_FOREST "    << active_config.ratio_forest << "\n";
+    out << "RATIO_DIRT "      << active_config.ratio_dirt << "\n";
+    out << "RATIO_ICE "       << active_config.ratio_ice << "\n";
+    out << "CUST_HUMAN_X "    << active_config.custom_human_pos.x << "\n";
+    out << "CUST_HUMAN_Y "    << active_config.custom_human_pos.y << "\n";
+    out << "CUST_HUMAN_SET "  << (active_config.custom_human_pos_set ? 1 : 0) << "\n";
+    out << "ENV_PROB_CLEAR "  << active_config.env_prob_clear << "\n";
+    out << "ENV_PROB_WIND "   << active_config.env_prob_wind << "\n";
+    out << "ENV_PROB_RAIN "   << active_config.env_prob_rain << "\n";
+    out << "ENV_PROB_CLOUDS " << active_config.env_prob_clouds << "\n";
+    out << "ENV_PROB_LIGHT "  << active_config.env_prob_lightning << "\n";
+    out << "ENV_PROB_HEAT "   << active_config.env_prob_heatwave << "\n";
+    out << "ENV_PROB_BLIZ "   << active_config.env_prob_blizzard << "\n";
     if (active_config.custom_map_mode) {
-        outFile << "GRID_DATA\n";
+        out << "GRID_DATA\n";
         for (int y = 0; y < active_config.map_height; ++y) {
-            for (int x = 0; x < active_config.map_width; ++x) {
-                outFile << static_cast<int>(active_config.custom_grid[x][y]) << " ";
-            }
-            outFile << "\n";
+            for (int x = 0; x < active_config.map_width; ++x)
+                out << static_cast<int>(active_config.custom_grid[x][y]) << " ";
+            out << "\n";
         }
-        outFile << "ZOMBIE_SPAWNS " << active_config.custom_zombie_spawns.size() << "\n";
-        for (const auto& zs : active_config.custom_zombie_spawns) {
-            outFile << zs.pos.x << " " << zs.pos.y << " " << static_cast<int>(zs.type) << "\n";
+        out << "ZOMBIE_SPAWNS " << active_config.custom_zombie_spawns.size() << "\n";
+        for (const auto& zs : active_config.custom_zombie_spawns)
+            out << zs.pos.x << " " << zs.pos.y << " " << static_cast<int>(zs.type) << "\n";
+    }
+    return out.str();
+}
+
+// Shared parse helper used by both analyze_from_string and deserialize_from_string
+static void parse_zom_stream(std::istream& in,
+    std::vector<std::string>& found_keys,
+    std::map<std::string, int>& kv,
+    std::string& version_str,
+    bool& has_version,
+    std::vector<std::vector<int>>& grid_data,
+    int& grid_w, int& grid_h,
+    std::vector<std::tuple<int,int,int>>& zombie_spawns)
+{
+    std::string key;
+    while (in >> key) {
+        if (key == "VERSION") {
+            in >> version_str;
+            has_version = true;
+            found_keys.push_back(key);
+            continue;
+        }
+        if (key == "GRID_DATA") {
+            found_keys.push_back(key);
+            // Read numeric rows until we hit a non-numeric token
+            std::streampos before; std::string peek;
+            std::vector<int> flat;
+            while (true) {
+                before = in.tellg();
+                if (!(in >> peek)) break;
+                bool is_num = !peek.empty() && (std::isdigit((unsigned char)peek[0]) || peek[0]=='-');
+                if (!is_num) { in.seekg(before); break; }
+                flat.push_back(std::stoi(peek));
+            }
+            // Reconstruct grid_data[x][y] later when we know map dims
+            // Store flat for now
+            if (grid_w > 0 && grid_h > 0) {
+                grid_data.assign(grid_w, std::vector<int>(grid_h, 0));
+                int idx = 0;
+                for (int y = 0; y < grid_h && idx < (int)flat.size(); ++y)
+                    for (int x = 0; x < grid_w && idx < (int)flat.size(); ++x)
+                        grid_data[x][y] = flat[idx++];
+            } else {
+                // dims not known yet — store flat[0] as sentinel
+                grid_data = {{}}; // non-empty sentinel
+            }
+            continue;
+        }
+        if (key == "ZOMBIE_SPAWNS") {
+            found_keys.push_back(key);
+            int count = 0; in >> count;
+            for (int i = 0; i < count; ++i) {
+                int a, b, c; in >> a >> b >> c;
+                zombie_spawns.emplace_back(a, b, c);
+            }
+            continue;
+        }
+        int v = 0; in >> v;
+        found_keys.push_back(key);
+        kv[key] = v;
+    }
+}
+
+GameState::ImportResult GameState::analyze_from_string(const std::string& content) {
+    ImportResult res;
+    if (content.empty()) return res;
+    res.file_opened = true;
+
+    std::istringstream in(content);
+    std::vector<std::string> found_keys;
+    std::map<std::string, int> kv;
+    std::string version_str; bool has_version = false;
+    std::vector<std::vector<int>> grid_data;
+    int grid_w = 0, grid_h = 0;
+    std::vector<std::tuple<int,int,int>> zombie_spawns;
+
+    // Pre-read map dims so GRID_DATA parsing works correctly
+    {
+        std::istringstream pre(content);
+        std::string k; int v;
+        while (pre >> k) {
+            if (k == "MAP_W") { pre >> grid_w; }
+            else if (k == "MAP_H") { pre >> grid_h; }
+            else if (k != "VERSION" && k != "GRID_DATA" && k != "ZOMBIE_SPAWNS") { pre >> v; }
+            else if (k == "VERSION") { std::string s; pre >> s; }
+            else break;
         }
     }
+
+    parse_zom_stream(in, found_keys, kv, version_str, has_version, grid_data, grid_w, grid_h, zombie_spawns);
+    res.has_version = has_version;
+    res.file_version = version_str;
+    res.version_match = has_version && (version_str == GameConstants::GAME_VERSION);
+
+    static const std::vector<std::string> STRUCTURAL = {"GRID_DATA","ZOMBIE_SPAWNS"};
+    for (const auto& expected : ALL_EXPECTED_ZOM_FIELDS_STR)
+        if (std::find(found_keys.begin(), found_keys.end(), expected) == found_keys.end())
+            res.missing_fields.push_back(expected);
+    for (const auto& found : found_keys) {
+        bool isExp = std::find(ALL_EXPECTED_ZOM_FIELDS_STR.begin(), ALL_EXPECTED_ZOM_FIELDS_STR.end(), found) != ALL_EXPECTED_ZOM_FIELDS_STR.end();
+        bool isStr = std::find(STRUCTURAL.begin(), STRUCTURAL.end(), found) != STRUCTURAL.end();
+        if (!isExp && !isStr) res.unknown_fields.push_back(found);
+    }
+    // (Sanity warnings omitted for brevity on WASM — the import will auto-clamp bad values)
+    return res;
+}
+
+bool GameState::deserialize_from_string(const std::string& content) {
+    if (content.empty()) return false;
+    std::istringstream in(content);
+
+    active_config = GameConfig{};
+    active_config.custom_zombie_spawns.clear();
+
+    // Two-pass: first collect map dims, then parse full content
+    {
+        std::istringstream pre(content);
+        std::string k; int v;
+        while (pre >> k) {
+            if (k == "MAP_W") { pre >> v; active_config.map_width = v; }
+            else if (k == "MAP_H") { pre >> v; active_config.map_height = v; }
+            else if (k == "VERSION") { std::string s; pre >> s; }
+            else if (k == "GRID_DATA" || k == "ZOMBIE_SPAWNS") break;
+            else { pre >> v; }
+        }
+    }
+
+    std::vector<std::string> found_keys;
+    std::map<std::string, int> kv;
+    std::string version_str; bool has_version = false;
+    std::vector<std::vector<int>> grid_data;
+    int grid_w = active_config.map_width;
+    int grid_h = active_config.map_height;
+    std::vector<std::tuple<int,int,int>> zombie_spawns;
+
+    parse_zom_stream(in, found_keys, kv, version_str, has_version, grid_data, grid_w, grid_h, zombie_spawns);
+
+    auto get = [&](const std::string& k, int def) -> int {
+        auto it = kv.find(k); return (it != kv.end()) ? it->second : def;
+    };
+    GameConfig D{};
+    active_config.map_width      = get("MAP_W",  D.map_width);
+    active_config.map_height     = get("MAP_H",  D.map_height);
+    active_config.human_hp       = get("HUMAN_HP", D.human_hp);
+    active_config.initial_stamina= get("INITIAL_STAMINA", D.initial_stamina);
+    active_config.pistol_ammo    = get("PISTOL_AMMO",  D.pistol_ammo);
+    active_config.shotgun_ammo   = get("SHOTGUN_AMMO", D.shotgun_ammo);
+    active_config.warp_charges   = get("WARP_AMMO",    D.warp_charges);
+    active_config.grenades       = get("GRENADES",  D.grenades);
+    active_config.mines          = get("MINES",     D.mines);
+    active_config.molotovs       = get("MOLOTOVS",  D.molotovs);
+    active_config.turn_limit     = get("TURN_LIMIT",D.turn_limit);
+    active_config.count_normal   = get("ZOM_NORMAL",    D.count_normal);
+    active_config.count_fast     = get("ZOM_FAST",      D.count_fast);
+    active_config.count_exploding= get("ZOM_EXPLODING", D.count_exploding);
+    active_config.count_vampire  = get("ZOM_VAMPIRE",   D.count_vampire);
+    active_config.count_sick     = get("ZOM_SICK",      D.count_sick);
+    active_config.count_corruptor= get("ZOM_CORRUPTOR", D.count_corruptor);
+    active_config.spawn_shield   = get("SHIELD",       0) == 1;
+    active_config.custom_map_mode= get("CUSTOM_MAP",   0) == 1;
+    active_config.enable_environment = get("ENABLE_ENV", 1) == 1;
+    active_config.fixed_stamina  = get("FIXED_STAMINA", 0) == 1;
+    active_config.ratio_wall     = get("RATIO_WALL",   D.ratio_wall);
+    active_config.ratio_water    = get("RATIO_WATER",  D.ratio_water);
+    active_config.ratio_forest   = get("RATIO_FOREST", D.ratio_forest);
+    active_config.ratio_dirt     = get("RATIO_DIRT",   D.ratio_dirt);
+    active_config.ratio_ice      = get("RATIO_ICE",    D.ratio_ice);
+    active_config.custom_human_pos.x   = get("CUST_HUMAN_X", D.custom_human_pos.x);
+    active_config.custom_human_pos.y   = get("CUST_HUMAN_Y", D.custom_human_pos.y);
+    active_config.custom_human_pos_set = get("CUST_HUMAN_SET", 0) == 1;
+    active_config.env_prob_clear     = get("ENV_PROB_CLEAR",  D.env_prob_clear);
+    active_config.env_prob_wind      = get("ENV_PROB_WIND",   D.env_prob_wind);
+    active_config.env_prob_rain      = get("ENV_PROB_RAIN",   D.env_prob_rain);
+    active_config.env_prob_clouds    = get("ENV_PROB_CLOUDS", D.env_prob_clouds);
+    active_config.env_prob_lightning = get("ENV_PROB_LIGHT",  D.env_prob_lightning);
+    active_config.env_prob_heatwave  = get("ENV_PROB_HEAT",   D.env_prob_heatwave);
+    active_config.env_prob_blizzard  = get("ENV_PROB_BLIZ",   D.env_prob_blizzard);
+
+    if (active_config.custom_map_mode && !grid_data.empty()) {
+        active_config.custom_grid = {};
+        for (int x = 0; x < active_config.map_width; ++x) {
+            active_config.custom_grid.push_back({});
+            for (int y = 0; y < active_config.map_height; ++y)
+                active_config.custom_grid[x].push_back(
+                    (x < (int)grid_data.size() && y < (int)grid_data[x].size())
+                    ? static_cast<Terrain>(grid_data[x][y]) : Terrain::Dirt);
+        }
+        active_config.custom_zombie_spawns.clear();
+        for (auto& [zx, zy, zt] : zombie_spawns)
+            active_config.custom_zombie_spawns.push_back({Position{zx,zy}, static_cast<ZombieType>(zt)});
+    }
+    return true;
+}
+
+// ── File-based wrappers (native only) ────────────────────────────────────────
+#ifndef __EMSCRIPTEN__
+
+bool GameState::export_challenge_file(const std::string& path) {
+    std::ofstream outFile(path);
+    outFile << serialize_to_string();
     outFile.close();
     return true;
 }
 
 GameState::ImportResult GameState::analyze_challenge_file(const std::string& path) {
-    ImportResult res;
     std::ifstream inFile(path);
-    if (!inFile.is_open()) return res;
-    res.file_opened = true;
-
-    // Structural block keys — handled with custom parsing, not as scalar KEY+value pairs.
-    static const std::vector<std::string> STRUCTURAL_KEYS = { "GRID_DATA", "ZOMBIE_SPAWNS" };
-
-    // ── Pass 1: collect all keys and values ──────────────────────────────────
-    std::vector<std::string> found_keys;
-    std::map<std::string, int> kv; // scalar int values keyed by name
-    std::string key;
-    while (inFile >> key) {
-        if (key == "VERSION") {
-            std::string ver; inFile >> ver;
-            res.has_version = true;
-            res.file_version = ver;
-            found_keys.push_back(key);
-            continue;
-        }
-        if (key == "GRID_DATA") {
-            found_keys.push_back(key);
-            std::streampos before; std::string peek;
-            while (true) {
-                before = inFile.tellg();
-                if (!(inFile >> peek)) break;
-                bool is_num = !peek.empty() && (std::isdigit((unsigned char)peek[0]) || peek[0]=='-');
-                if (!is_num) { inFile.seekg(before); break; }
-            }
-            continue;
-        }
-        if (key == "ZOMBIE_SPAWNS") {
-            found_keys.push_back(key);
-            int count = 0; inFile >> count;
-            for (int i = 0; i < count; ++i) { int a,b,c; inFile >> a >> b >> c; }
-            continue;
-        }
-        int v = 0; inFile >> v;
-        found_keys.push_back(key);
-        kv[key] = v;
-    }
+    std::string content((std::istreambuf_iterator<char>(inFile)),
+                         std::istreambuf_iterator<char>());
     inFile.close();
-
-    res.version_match = res.has_version && (res.file_version == GameConstants::GAME_VERSION);
-
-    // ── Pass 2: missing / unknown key checks ─────────────────────────────────
-    for (const auto& expected : ALL_EXPECTED_ZOM_FIELDS) {
-        if (std::find(found_keys.begin(), found_keys.end(), expected) == found_keys.end())
-            res.missing_fields.push_back(expected);
-    }
-    for (const auto& found : found_keys) {
-        bool isExpected   = std::find(ALL_EXPECTED_ZOM_FIELDS.begin(),  ALL_EXPECTED_ZOM_FIELDS.end(),  found) != ALL_EXPECTED_ZOM_FIELDS.end();
-        bool isStructural = std::find(STRUCTURAL_KEYS.begin(), STRUCTURAL_KEYS.end(), found) != STRUCTURAL_KEYS.end();
-        if (!isExpected && !isStructural)
-            res.unknown_fields.push_back(found);
-    }
-
-    // ── Pass 3: value sanity checks ──────────────────────────────────────────
-    // Helper: use default when key is absent (mirrors what import_challenge_file does)
-    GameConfig D{}; // default-constructed config = default values
-    auto get = [&](const std::string& k, int def) -> int {
-        auto it = kv.find(k); return (it != kv.end()) ? it->second : def;
-    };
-    auto has = [&](const std::string& k) { return kv.count(k) > 0; };
-
-    // Map dimensions
-    int mw = get("MAP_W",  D.map_width);
-    int mh = get("MAP_H",  D.map_height);
-    if (mw < GameConstants::MapGen::MAP_WIDTH_MIN  || mw > GameConstants::MapGen::MAP_WIDTH_MAX)
-        res.sanity_warnings.push_back("MAP_W=" + std::to_string(mw) +
-            " out of range [" + std::to_string(GameConstants::MapGen::MAP_WIDTH_MIN)  + "," +
-            std::to_string(GameConstants::MapGen::MAP_WIDTH_MAX)  + "] — default used");
-    if (mh < GameConstants::MapGen::MAP_HEIGHT_MIN || mh > GameConstants::MapGen::MAP_HEIGHT_MAX)
-        res.sanity_warnings.push_back("MAP_H=" + std::to_string(mh) +
-            " out of range [" + std::to_string(GameConstants::MapGen::MAP_HEIGHT_MIN) + "," +
-            std::to_string(GameConstants::MapGen::MAP_HEIGHT_MAX) + "] — default used");
-
-    // Clamp map dims to valid range for downstream checks that depend on them
-    int vmw = std::max(GameConstants::MapGen::MAP_WIDTH_MIN,  std::min(GameConstants::MapGen::MAP_WIDTH_MAX,  mw));
-    int vmh = std::max(GameConstants::MapGen::MAP_HEIGHT_MIN, std::min(GameConstants::MapGen::MAP_HEIGHT_MAX, mh));
-
-    // Human HP (>= 1)
-    int hp = get("HUMAN_HP", D.human_hp);
-    if (hp < GameConstants::Difficulty::SliderBounds::HUMAN_HP_MIN ||
-        hp > GameConstants::Difficulty::SliderBounds::HUMAN_HP_MAX)
-        res.sanity_warnings.push_back("HUMAN_HP=" + std::to_string(hp) +
-            " out of range [" + std::to_string(GameConstants::Difficulty::SliderBounds::HUMAN_HP_MIN) + "," +
-            std::to_string(GameConstants::Difficulty::SliderBounds::HUMAN_HP_MAX) + "] — default used");
-
-    // Initial Stamina (1–6)
-    int stamina = get("INITIAL_STAMINA", D.initial_stamina);
-    if (stamina < GameConstants::Difficulty::SliderBounds::INITIAL_STAMINA_MIN ||
-        stamina > GameConstants::Difficulty::SliderBounds::INITIAL_STAMINA_MAX)
-        res.sanity_warnings.push_back("INITIAL_STAMINA=" + std::to_string(stamina) +
-            " out of range [" + std::to_string(GameConstants::Difficulty::SliderBounds::INITIAL_STAMINA_MIN) + "," +
-            std::to_string(GameConstants::Difficulty::SliderBounds::INITIAL_STAMINA_MAX) + "] — default used");
-
-    // Turn limit (>= 1)
-    int tl = get("TURN_LIMIT", D.turn_limit);
-    if (tl < GameConstants::Difficulty::SliderBounds::TURN_LIMIT_MIN ||
-        tl > GameConstants::Difficulty::SliderBounds::TURN_LIMIT_MAX)
-        res.sanity_warnings.push_back("TURN_LIMIT=" + std::to_string(tl) +
-            " out of range [" + std::to_string(GameConstants::Difficulty::SliderBounds::TURN_LIMIT_MIN) + "," +
-            std::to_string(GameConstants::Difficulty::SliderBounds::TURN_LIMIT_MAX) + "] — default used");
-
-    // Weapon counts (>= 0)
-    auto checkWeapon = [&](const char* k, int def, int minV, int maxV) {
-        int v = get(k, def);
-        if (v < minV || v > maxV)
-            res.sanity_warnings.push_back(std::string(k) + "=" + std::to_string(v) +
-                " out of range [" + std::to_string(minV) + "," + std::to_string(maxV) + "] — default used");
-    };
-    checkWeapon("PISTOL_AMMO",  D.pistol_ammo,   GameConstants::Difficulty::SliderBounds::PISTOL_AMMO_MIN,  GameConstants::Difficulty::SliderBounds::PISTOL_AMMO_MAX);
-    checkWeapon("SHOTGUN_AMMO", D.shotgun_ammo,  GameConstants::Difficulty::SliderBounds::SHOTGUN_AMMO_MIN, GameConstants::Difficulty::SliderBounds::SHOTGUN_AMMO_MAX);
-    checkWeapon("WARP_AMMO",    D.warp_charges,  GameConstants::Difficulty::SliderBounds::WARP_CHARGES_MIN, GameConstants::Difficulty::SliderBounds::WARP_CHARGES_MAX);
-    checkWeapon("GRENADES",     D.grenades,      GameConstants::Difficulty::SliderBounds::GRENADES_MIN,     GameConstants::Difficulty::SliderBounds::GRENADES_MAX);
-    checkWeapon("MOLOTOVS",     D.molotovs,      GameConstants::Difficulty::SliderBounds::MOLOTOVS_MIN,     GameConstants::Difficulty::SliderBounds::MOLOTOVS_MAX);
-    checkWeapon("MINES",        D.mines,         GameConstants::Difficulty::SliderBounds::MINES_MIN,        GameConstants::Difficulty::SliderBounds::MINES_MAX);
-
-    // Zombie counts (>= 0)
-    auto checkZombie = [&](const char* k, int def, int maxV) {
-        int v = get(k, def);
-        if (v < 0 || v > maxV)
-            res.sanity_warnings.push_back(std::string(k) + "=" + std::to_string(v) +
-                " out of range [0," + std::to_string(maxV) + "] — default used");
-    };
-    checkZombie("ZOM_NORMAL",    D.count_normal,    GameConstants::Difficulty::SliderBounds::COUNT_CLEVER_MAX);
-    checkZombie("ZOM_FAST",      D.count_fast,      GameConstants::Difficulty::SliderBounds::COUNT_FAST_MAX);
-    checkZombie("ZOM_EXPLODING", D.count_exploding, GameConstants::Difficulty::SliderBounds::COUNT_EXPLODING_MAX);
-    checkZombie("ZOM_VAMPIRE",   D.count_vampire,   GameConstants::Difficulty::SliderBounds::COUNT_VAMPIRE_MAX);
-    checkZombie("ZOM_SICK",      D.count_sick,      GameConstants::Difficulty::SliderBounds::COUNT_SICK_MAX);
-    checkZombie("ZOM_CORRUPTOR", D.count_corruptor, GameConstants::Difficulty::SliderBounds::COUNT_CORRUPTOR_MAX);
-
-    // Terrain ratios: each must be 0–100, and their effective sum (present values +
-    // defaults for absent keys) must equal 100.
-    {
-        static const char* terrainKeys[] = {"RATIO_WALL","RATIO_WATER","RATIO_FOREST","RATIO_DIRT","RATIO_ICE"};
-        static const int   terrainDefs[] = {D.ratio_wall, D.ratio_water, D.ratio_forest, D.ratio_dirt, D.ratio_ice};
-        bool terrainBad = false;
-        for (int i = 0; i < 5; ++i) {
-            if (has(terrainKeys[i]) && (kv.at(terrainKeys[i]) < 0 || kv.at(terrainKeys[i]) > 100)) {
-                res.sanity_warnings.push_back(std::string(terrainKeys[i]) + "=" +
-                    std::to_string(kv.at(terrainKeys[i])) + " out of range [0,100] — all terrain ratios reset to defaults");
-                terrainBad = true; break;
-            }
-        }
-        if (!terrainBad) {
-            int sum = 0;
-            for (int i = 0; i < 5; ++i)
-                sum += get(terrainKeys[i], terrainDefs[i]);
-            if (sum != 100)
-                res.sanity_warnings.push_back("Terrain ratios (including defaults for missing keys) sum to " +
-                    std::to_string(sum) + " instead of 100 — all terrain ratios reset to defaults");
-        }
-    }
-
-    // Weather probabilities: same treatment.
-    {
-        static const char* weatherKeys[] = {"ENV_PROB_CLEAR","ENV_PROB_WIND","ENV_PROB_RAIN",
-                                            "ENV_PROB_CLOUDS","ENV_PROB_LIGHT","ENV_PROB_HEAT","ENV_PROB_BLIZ"};
-        static const int   weatherDefs[] = {D.env_prob_clear, D.env_prob_wind, D.env_prob_rain,
-                                            D.env_prob_clouds, D.env_prob_lightning, D.env_prob_heatwave, D.env_prob_blizzard};
-        bool weatherBad = false;
-        for (int i = 0; i < 7; ++i) {
-            if (has(weatherKeys[i]) && (kv.at(weatherKeys[i]) < 0 || kv.at(weatherKeys[i]) > 100)) {
-                res.sanity_warnings.push_back(std::string(weatherKeys[i]) + "=" +
-                    std::to_string(kv.at(weatherKeys[i])) + " out of range [0,100] — all weather probs reset to defaults");
-                weatherBad = true; break;
-            }
-        }
-        if (!weatherBad) {
-            int sum = 0;
-            for (int i = 0; i < 7; ++i)
-                sum += get(weatherKeys[i], weatherDefs[i]);
-            if (sum != 100)
-                res.sanity_warnings.push_back("Weather probabilities (including defaults for missing keys) sum to " +
-                    std::to_string(sum) + " instead of 100 — all weather probs reset to defaults");
-        }
-    }
-
-    // Human spawn position (only relevant when CUST_HUMAN_SET=1)
-    if (get("CUST_HUMAN_SET", 0) == 1) {
-        int hx = get("CUST_HUMAN_X", D.custom_human_pos.x);
-        int hy = get("CUST_HUMAN_Y", D.custom_human_pos.y);
-        if (hx < 0 || hx >= vmw || hy < 0 || hy >= vmh)
-            res.sanity_warnings.push_back("CUST_HUMAN_X/Y=(" + std::to_string(hx) + "," + std::to_string(hy) +
-                ") outside map bounds [0," + std::to_string(vmw-1) + "]x[0," + std::to_string(vmh-1) +
-                "] — falling back to random spawn");
-    }
-
+    auto res = analyze_from_string(content);
+    res.file_opened = true;
     return res;
 }
 
 bool GameState::import_challenge_file(const std::string& path) {
     std::ifstream inFile(path);
-    if (!inFile.is_open()) return false;
-
-    // Reset to defaults first — any field missing in the file will keep its
-    // GameConfig default value rather than a stale leftover from before.
-    active_config = GameConfig{};
-
-    std::string key; int val;
-    active_config.custom_zombie_spawns.clear();
-    while (inFile >> key) {
-        if (key == "VERSION") {
-            std::string ver;
-            inFile >> ver; // consumed, not used here (already checked via analyze_challenge_file)
-            continue;
-        }
-        if (key == "GRID_DATA") {
-            active_config.custom_grid.assign(active_config.map_width, std::vector<Terrain>(active_config.map_height, Terrain::Dirt));
-            for (int y = 0; y < active_config.map_height; ++y) {
-                for (int x = 0; x < active_config.map_width; ++x) {
-                    int t_val;
-                    if (inFile >> t_val) active_config.custom_grid[x][y] = static_cast<Terrain>(t_val);
-                }
-            }
-            continue;
-        }
-        if (key == "ZOMBIE_SPAWNS") {
-            int count;
-            inFile >> count;
-            active_config.custom_zombie_spawns.clear();
-            for (int i = 0; i < count; ++i) {
-                int zx, zy, zt;
-                inFile >> zx >> zy >> zt;
-                active_config.custom_zombie_spawns.push_back({Position{zx, zy}, static_cast<ZombieType>(zt)});
-            }
-            continue;
-        }
-        inFile >> val;
-        if (key == "MAP_W")            active_config.map_width = val;
-        else if (key == "MAP_H")       active_config.map_height = val;
-        else if (key == "HUMAN_HP")    active_config.human_hp = val;
-        else if (key == "INITIAL_STAMINA") active_config.initial_stamina = val;
-        else if (key == "PISTOL_AMMO")  active_config.pistol_ammo = val;
-        else if (key == "SHOTGUN_AMMO") active_config.shotgun_ammo = val;
-        else if (key == "WARP_AMMO")    active_config.warp_charges = val;
-        else if (key == "GRENADES")     active_config.grenades = val;
-        else if (key == "MINES")        active_config.mines = val;
-        else if (key == "MOLOTOVS")     active_config.molotovs = val;
-        else if (key == "TURN_LIMIT")   active_config.turn_limit = val;
-        else if (key == "ZOM_NORMAL")   active_config.count_normal = val;
-        else if (key == "ZOM_FAST")     active_config.count_fast = val;
-        else if (key == "ZOM_EXPLODING") active_config.count_exploding = val;
-        else if (key == "ZOM_VAMPIRE")  active_config.count_vampire = val;
-        else if (key == "ZOM_SICK")     active_config.count_sick = val;
-        else if (key == "ZOM_CORRUPTOR") active_config.count_corruptor = val;
-        else if (key == "SHIELD")       active_config.spawn_shield = (val == 1);
-        else if (key == "CUSTOM_MAP")   active_config.custom_map_mode = (val == 1);
-        else if (key == "ENABLE_ENV")   active_config.enable_environment = (val == 1);
-        else if (key == "FIXED_STAMINA") active_config.fixed_stamina = (val == 1);
-        else if (key == "CUST_HUMAN_X") active_config.custom_human_pos.x = val;
-        else if (key == "CUST_HUMAN_Y") active_config.custom_human_pos.y = val;
-        else if (key == "CUST_HUMAN_SET") active_config.custom_human_pos_set = (val == 1);
-        else if (key == "RATIO_WALL")   active_config.ratio_wall = val;
-        else if (key == "RATIO_WATER")  active_config.ratio_water = val;
-        else if (key == "RATIO_FOREST") active_config.ratio_forest = val;
-        else if (key == "RATIO_DIRT")   active_config.ratio_dirt = val;
-        else if (key == "RATIO_ICE")    active_config.ratio_ice = val;
-        else if (key == "ENV_PROB_CLEAR")  active_config.env_prob_clear = val;
-        else if (key == "ENV_PROB_WIND")   active_config.env_prob_wind = val;
-        else if (key == "ENV_PROB_RAIN")   active_config.env_prob_rain = val;
-        else if (key == "ENV_PROB_CLOUDS") active_config.env_prob_clouds = val;
-        else if (key == "ENV_PROB_LIGHT")  active_config.env_prob_lightning = val;
-        else if (key == "ENV_PROB_HEAT")   active_config.env_prob_heatwave = val;
-        else if (key == "ENV_PROB_BLIZ")   active_config.env_prob_blizzard = val;
-    }
+    std::string content((std::istreambuf_iterator<char>(inFile)),
+                         std::istreambuf_iterator<char>());
     inFile.close();
-
-    // ── Post-parse sanity: apply the same rules as analyze_challenge_file ────
-    // Any field that fails its check is reset to its default value.
-    GameConfig D{};
-
-    // Map dimensions
-    if (active_config.map_width  < GameConstants::MapGen::MAP_WIDTH_MIN  || active_config.map_width  > GameConstants::MapGen::MAP_WIDTH_MAX)
-        active_config.map_width  = D.map_width;
-    if (active_config.map_height < GameConstants::MapGen::MAP_HEIGHT_MIN || active_config.map_height > GameConstants::MapGen::MAP_HEIGHT_MAX)
-        active_config.map_height = D.map_height;
-
-    // Human HP
-    if (active_config.human_hp < GameConstants::Difficulty::SliderBounds::HUMAN_HP_MIN ||
-        active_config.human_hp > GameConstants::Difficulty::SliderBounds::HUMAN_HP_MAX)
-        active_config.human_hp = D.human_hp;
-
-    // Initial Stamina (1–6)
-    if (active_config.initial_stamina < GameConstants::Difficulty::SliderBounds::INITIAL_STAMINA_MIN ||
-        active_config.initial_stamina > GameConstants::Difficulty::SliderBounds::INITIAL_STAMINA_MAX)
-        active_config.initial_stamina = D.initial_stamina;
-
-    // Turn limit
-    if (active_config.turn_limit < GameConstants::Difficulty::SliderBounds::TURN_LIMIT_MIN ||
-        active_config.turn_limit > GameConstants::Difficulty::SliderBounds::TURN_LIMIT_MAX)
-        active_config.turn_limit = D.turn_limit;
-
-    // Weapon counts
-    auto clampWeapon = [](int& v, int minV, int maxV, int def) { if (v < minV || v > maxV) v = def; };
-    clampWeapon(active_config.pistol_ammo,   GameConstants::Difficulty::SliderBounds::PISTOL_AMMO_MIN,  GameConstants::Difficulty::SliderBounds::PISTOL_AMMO_MAX,  D.pistol_ammo);
-    clampWeapon(active_config.shotgun_ammo,  GameConstants::Difficulty::SliderBounds::SHOTGUN_AMMO_MIN, GameConstants::Difficulty::SliderBounds::SHOTGUN_AMMO_MAX, D.shotgun_ammo);
-    clampWeapon(active_config.warp_charges,  GameConstants::Difficulty::SliderBounds::WARP_CHARGES_MIN, GameConstants::Difficulty::SliderBounds::WARP_CHARGES_MAX, D.warp_charges);
-    clampWeapon(active_config.grenades,      GameConstants::Difficulty::SliderBounds::GRENADES_MIN,     GameConstants::Difficulty::SliderBounds::GRENADES_MAX,     D.grenades);
-    clampWeapon(active_config.molotovs,      GameConstants::Difficulty::SliderBounds::MOLOTOVS_MIN,     GameConstants::Difficulty::SliderBounds::MOLOTOVS_MAX,     D.molotovs);
-    clampWeapon(active_config.mines,         GameConstants::Difficulty::SliderBounds::MINES_MIN,        GameConstants::Difficulty::SliderBounds::MINES_MAX,        D.mines);
-
-    // Zombie counts
-    auto clampZombie = [](int& v, int maxV, int def) { if (v < 0 || v > maxV) v = def; };
-    clampZombie(active_config.count_normal,    GameConstants::Difficulty::SliderBounds::COUNT_CLEVER_MAX,   D.count_normal);
-    clampZombie(active_config.count_fast,      GameConstants::Difficulty::SliderBounds::COUNT_FAST_MAX,     D.count_fast);
-    clampZombie(active_config.count_exploding, GameConstants::Difficulty::SliderBounds::COUNT_EXPLODING_MAX,D.count_exploding);
-    clampZombie(active_config.count_vampire,   GameConstants::Difficulty::SliderBounds::COUNT_VAMPIRE_MAX,   D.count_vampire);
-    clampZombie(active_config.count_sick,      GameConstants::Difficulty::SliderBounds::COUNT_SICK_MAX,      D.count_sick);
-    clampZombie(active_config.count_corruptor, GameConstants::Difficulty::SliderBounds::COUNT_CORRUPTOR_MAX, D.count_corruptor);
-
-    // Terrain ratios: individual range check, then sum check (using actual post-parse values)
-    {
-        int* tv[5] = {&active_config.ratio_wall, &active_config.ratio_water,
-                      &active_config.ratio_forest, &active_config.ratio_dirt, &active_config.ratio_ice};
-        bool bad = false;
-        for (int i = 0; i < 5; ++i) if (*tv[i] < 0 || *tv[i] > 100) { bad = true; break; }
-        if (!bad) {
-            int sum = 0; for (int i = 0; i < 5; ++i) sum += *tv[i];
-            if (sum != 100) bad = true;
-        }
-        if (bad) {
-            active_config.ratio_wall   = D.ratio_wall;
-            active_config.ratio_water  = D.ratio_water;
-            active_config.ratio_forest = D.ratio_forest;
-            active_config.ratio_dirt   = D.ratio_dirt;
-            active_config.ratio_ice    = D.ratio_ice;
-        }
-    }
-
-    // Weather probabilities: same treatment
-    {
-        int* wv[7] = {&active_config.env_prob_clear, &active_config.env_prob_wind,
-                      &active_config.env_prob_rain,  &active_config.env_prob_clouds,
-                      &active_config.env_prob_lightning, &active_config.env_prob_heatwave,
-                      &active_config.env_prob_blizzard};
-        bool bad = false;
-        for (int i = 0; i < 7; ++i) if (*wv[i] < 0 || *wv[i] > 100) { bad = true; break; }
-        if (!bad) {
-            int sum = 0; for (int i = 0; i < 7; ++i) sum += *wv[i];
-            if (sum != 100) bad = true;
-        }
-        if (bad) {
-            active_config.env_prob_clear     = D.env_prob_clear;
-            active_config.env_prob_wind      = D.env_prob_wind;
-            active_config.env_prob_rain      = D.env_prob_rain;
-            active_config.env_prob_clouds    = D.env_prob_clouds;
-            active_config.env_prob_lightning = D.env_prob_lightning;
-            active_config.env_prob_heatwave  = D.env_prob_heatwave;
-            active_config.env_prob_blizzard  = D.env_prob_blizzard;
-        }
-    }
-
-    // Human spawn position: fall back to random if out of (now-validated) map bounds
-    if (active_config.custom_human_pos_set) {
-        if (active_config.custom_human_pos.x < 0 || active_config.custom_human_pos.x >= active_config.map_width ||
-            active_config.custom_human_pos.y < 0 || active_config.custom_human_pos.y >= active_config.map_height)
-            active_config.custom_human_pos_set = false;
-    }
-
-    return true;
+    return deserialize_from_string(content);
 }
 #endif // !__EMSCRIPTEN__
 

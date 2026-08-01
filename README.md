@@ -1,5 +1,6 @@
 # 🧟 ZomChess: A Light 2D Turn-Based Tactical Game
 
+![ZomChess Banner](assets/screenshots/Splashscreen.png)
 ---
 
 ## 📖 Language | Ngôn Ngữ
@@ -10,7 +11,11 @@
 
 # 🇬🇧 English Version
 
-![ZomChess Banner](assets/screenshots/Splashscreen.png)
+* **🏪 Play immediately on itch.io platform:** Nothing to install. Play directly at [itch.io](https://luanium.itch.io/zomchess).
+
+* **🌐 Download the web-based version [`ZomChess_web.zip`](https://github.com/Luanium/ZomChess/releases):** Run on all popular operating systems (Windows, Linux, MacOS), no internet required, only Python3 is needed.
+
+* **🐧 Download the Linux executable version [`ZomChess`](https://github.com/Luanium/ZomChess/releases):** For Linux only, self-contained, nothing else needed.
 
 ## 🌌 Battle Context
 
@@ -70,7 +75,7 @@ Six distinct enemy archetypes, each demanding a different approach. Some are fas
 
 * **🛡️ Smart Spawn Shield:** Optional safe zone around your starting position to prevent unfair early-game zombie clustering.
 
-* **🌐 Playable in Browser:** No installation required. Play directly on [itch.io](https://luanium.itch.io/zomchess) via WebAssembly. *(Note: `.zom` file import/export is unavailable in the browser build.)*
+* **🪖 Survival Mode:** Without any reinforcement or supply, how many waves of Zombies can you stand before falling?
 
 ---
 
@@ -81,59 +86,6 @@ Six distinct enemy archetypes, each demanding a different approach. Some are fas
 ![In-game](assets/screenshots/In-game.png)
 
 ---
-
-## 🚀 Building & Running
-
-### Quick Start (Linux / macOS)
-Pre-built executables are available in the [GitHub Releases](https://github.com/Luanium/ZomChess/releases). Simply download and run:
-```bash
-./ZomChess
-```
-
-### Build from Source
-
-**Requirements:**
-- CMake 3.10+
-- C++20 compatible compiler
-- Raylib 5.0+
-
-**Linux / macOS:**
-```bash
-mkdir build && cd build
-cmake ..
-make
-./ZomChess
-```
-
-**Windows (MSVC):**
-```bash
-mkdir build && cd build
-cmake .. -G "Visual Studio 16 2019"
-cmake --build . --config Release
-.\Release\ZomChess.exe
-```
-
-### Web Build (Emscripten)
-
-See [BUILD_WEB.md](BUILD_WEB.md) for full instructions.
-
-```bash
-mkdir -p build_web && cd build_web
-emcmake cmake .. -DCMAKE_BUILD_TYPE=Release
-cmake --build . -j$(nproc)
-# Output files appear in web_build/
-```
-
----
-
-## 🛠️ Technology Stack
-
-* **Language:** C++20
-* **Framework:** [Raylib](https://www.raylib.com/) — window management, 2D rendering, audio, and game loop
-* **Web Target:** Emscripten / WebAssembly — enables in-browser play on itch.io
-
----
-
 ## 🎵 Credits
 
 ### Soundtrack
@@ -146,11 +98,10 @@ All music by Kevin MacLeod ([Incompetech](https://incompetech.com/music/)), lice
 | Victory Theme | Discovery Hit |
 | Defeat Theme | The Ice Giants |
 
-### Origin
+### Inspiration
 The original idea traces back to my friend, Trần Thanh Sang, who played the on-paper version with me in our childhood. With the help of modern tools, I developed and digitalized the gameplay to recall part of those memories. That's the reason ZomChess exists.
 
 ---
-
 ## 📄 License
 
 This project is licensed under the AGPL-v3.0 — see the [LICENSE](LICENSE) file for details.
@@ -159,7 +110,11 @@ This project is licensed under the AGPL-v3.0 — see the [LICENSE](LICENSE) file
 
 # 🇻🇳 Phiên Bản Tiếng Việt
 
-![ZomChess Banner](assets/screenshots/Splashscreen.png)
+* **🏪 Chơi ngay trên nền tảng itch.io:** Không cần cài đặt. Chơi trực tiếp trên [itch.io](https://luanium.itch.io/zomchess).
+
+* **🌐 Tải bản chạy trên trình duyệt [`ZomChess_web.zip`](https://github.com/Luanium/ZomChess/releases):** Chạy được trên các hệ điều hành phổ biến (Windows, Linux, MacOS), không cần internet, chỉ cần có Python3.
+
+* **🐧 Tải bản Linux executable [`ZomChess`](https://github.com/Luanium/ZomChess/releases):** Thiết kế riêng cho Linux, không cần cài gì thêm.
 
 ## 🌌 Bối Cảnh Trận Đánh
 
@@ -217,9 +172,9 @@ Sáu loại kẻ địch với đặc điểm riêng biệt, mỗi loại đòi 
 
   ![Game guides](assets/screenshots/Game%20guides.png)
 
-* **🛡️ Vùng Bảo Hiểm Thông Minh:** Tùy chọn tạo vùng an toàn quanh vị trí xuất phát, ngăn Zombie sinh ra quá gần ngay từ đầu trận.
+* **🛡️ Vùng Bảo Hiểm:** Tùy chọn tạo vùng an toàn quanh vị trí xuất phát, ngăn Zombie sinh ra quá gần ngay từ đầu trận.
 
-* **🌐 Chơi Ngay Trên Trình Duyệt:** Không cần cài đặt. Chơi trực tiếp trên [itch.io](https://luanium.itch.io/zomchess) qua WebAssembly. *(Lưu ý: tính năng xuất/nhập file `.zom` không khả dụng trên bản web.)*
+* **🪖 Chế độ Sinh tồn:** Bạn sẽ trụ được bao nhiêu màn liên tục trước khi ngã xuống nếu không được tiếp chữa trị và tiếp tế đạn dược?
 
 ---
 
@@ -230,59 +185,6 @@ Sáu loại kẻ địch với đặc điểm riêng biệt, mỗi loại đòi 
 ![In-game](assets/screenshots/In-game.png)
 
 ---
-
-## 🚀 Cách Build & Chạy Game
-
-### Khởi Động Nhanh (Linux / macOS)
-File executable đã build sẵn có trong [GitHub Releases](https://github.com/Luanium/ZomChess/releases):
-```bash
-./ZomChess
-```
-
-### Build từ Source
-
-**Yêu cầu:**
-- CMake 3.10+
-- Trình biên dịch hỗ trợ C++20
-- Raylib 5.0+
-
-**Linux / macOS:**
-```bash
-mkdir build && cd build
-cmake ..
-make
-./ZomChess
-```
-
-**Windows (MSVC):**
-```bash
-mkdir build && cd build
-cmake .. -G "Visual Studio 16 2019"
-cmake --build . --config Release
-.\Release\ZomChess.exe
-```
-
-### Web Build (Emscripten)
-
-Xem [BUILD_WEB.md](BUILD_WEB.md) để biết hướng dẫn đầy đủ.
-
-```bash
-mkdir -p build_web && cd build_web
-emcmake cmake .. -DCMAKE_BUILD_TYPE=Release
-cmake --build . -j$(nproc)
-# Output xuất ra thư mục web_build/
-```
-
----
-
-## 🛠️ Công Nghệ Phát Triển
-
-* **Ngôn Ngữ:** C++20
-* **Framework:** [Raylib](https://www.raylib.com/) — quản lý cửa sổ, render 2D, âm thanh và game loop
-* **Nền tảng Web:** Emscripten / WebAssembly — cho phép chơi trực tiếp trên trình duyệt qua itch.io
-
----
-
 ## 🎵 Ghi Công
 
 ### Nhạc Nền

@@ -1,0 +1,5 @@
+/home/luan/Documents/GitHub/ZomChess/build_web_cmake/CMakeFiles/embed_font.dir
+/home/luan/Documents/GitHub/ZomChess/build_web_cmake/CMakeFiles/embed_guide.dir
+/home/luan/Documents/GitHub/ZomChess/build_web_cmake/CMakeFiles/ZomChess.dir
+/home/luan/Documents/GitHub/ZomChess/build_web_cmake/CMakeFiles/edit_cache.dir
+/home/luan/Documents/GitHub/ZomChess/build_web_cmake/CMakeFiles/rebuild_cache.dir

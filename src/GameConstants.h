@@ -3,7 +3,7 @@
 
 namespace GameConstants {
 
-    constexpr const char* GAME_VERSION = "v3.0.0";
+    constexpr const char* GAME_VERSION = "v3.0.1";
 
     // =========================================================================
     // SECTION 1: MAP GENERATION & BOUNDARIES
@@ -43,7 +43,7 @@ namespace GameConstants {
             constexpr int COUNT_VAMPIRE = 1;
             constexpr int COUNT_SICK = 1;
             constexpr int COUNT_CORRUPTOR = 0;
-            constexpr int TURN_LIMIT = 40;
+            constexpr int TURN_LIMIT = 50;
 
             // Terrain ratios (sum = 100)
             constexpr int RATIO_DIRT    = 60;
@@ -78,7 +78,7 @@ namespace GameConstants {
             constexpr int COUNT_VAMPIRE = 2;
             constexpr int COUNT_SICK = 2;
             constexpr int COUNT_CORRUPTOR = 1;
-            constexpr int TURN_LIMIT = 30;
+            constexpr int TURN_LIMIT = 40;
 
             // Terrain ratios (sum = 100)
             constexpr int RATIO_DIRT    = 52;
@@ -113,7 +113,7 @@ namespace GameConstants {
             constexpr int COUNT_VAMPIRE = 3;
             constexpr int COUNT_SICK = 2;
             constexpr int COUNT_CORRUPTOR = 2;
-            constexpr int TURN_LIMIT = 20;
+            constexpr int TURN_LIMIT = 30;
 
             // Terrain ratios (sum = 100)
             constexpr int RATIO_DIRT    = 42;
@@ -148,7 +148,7 @@ namespace GameConstants {
             constexpr int COUNT_VAMPIRE = 3;
             constexpr int COUNT_SICK = 3;
             constexpr int COUNT_CORRUPTOR = 3;
-            constexpr int TURN_LIMIT = 15;
+            constexpr int TURN_LIMIT = 20;
 
             // Terrain ratios (sum = 100)
             constexpr int RATIO_DIRT    = 32;

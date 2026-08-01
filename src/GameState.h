@@ -164,14 +164,19 @@ public:
     void setSfxEnabled(bool enabled);
 
     struct ImportResult {
-        bool file_opened = false;      // file có mở được không
-        bool has_version = false;      // file có field VERSION không
-        std::string file_version;      // version ghi trong file (rỗng nếu không có)
-        bool version_match = false;    // file_version == GameConstants::GAME_VERSION
-        std::vector<std::string> missing_fields;   // expected keys absent from the file
-        std::vector<std::string> unknown_fields;   // keys in the file the importer doesn't recognise
-        std::vector<std::string> sanity_warnings;  // value-level problems (bad sums etc.) — defaults will be used
+        bool file_opened = false;
+        bool has_version = false;
+        std::string file_version;
+        bool version_match = false;
+        std::vector<std::string> missing_fields;
+        std::vector<std::string> unknown_fields;
+        std::vector<std::string> sanity_warnings;
     };
+
+    // String-based serialize/deserialize — works on all platforms including WASM.
+    std::string serialize_to_string() const;
+    ImportResult analyze_from_string(const std::string& content);
+    bool deserialize_from_string(const std::string& content);
 
 #ifndef __EMSCRIPTEN__
     bool export_challenge_file(const std::string& path);

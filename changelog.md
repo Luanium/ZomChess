@@ -1,3 +1,7 @@
+# v3.0.1
+- Some bug fixes and improvements
+- Port to web-based version
+
 # v3.0.0: Big update
 - Move from ImGUI to Raylib for UI/UX
 - Rework on UI/UX

@@ -30,17 +30,19 @@ ar rcs libraylib.web.a rcore.o rshapes.o rtextures.o rtext.o rmodels.o raudio.o
 
 ## Building the Game
 
+> **Note:** After any code change, always rebuild before testing.
+
 ```bash
 cd /home/luan/Documents/GitHub/ZomChess
 
 # Activate Emscripten (if not in ~/.bashrc)
 source ~/emsdk/emsdk_env.sh
 
-# Configure
+# Configure (only needed once, or after CMakeLists.txt changes)
 mkdir -p build_web && cd build_web
 emcmake cmake .. -DCMAKE_BUILD_TYPE=Release
 
-# Build
+# Build (run this after every code change)
 cmake --build . -j$(nproc)
 
 # Output is copied to web_build/ automatically
@@ -49,12 +51,43 @@ ls web_build/
 # ZomChess.html  ZomChess.js  ZomChess.wasm  ZomChess.data
 ```
 
+## Testing Locally Before Uploading
+
+WebAssembly **cannot** be opened directly as a file (`file://`) — browsers block it
+for security reasons. You must serve it through a local HTTP server.
+
+```bash
+cd /home/luan/Documents/GitHub/ZomChess/web_build
+python3 -m http.server 8080
+```
+
+Then open your browser and go to:
+```
+http://localhost:8080/ZomChess.html
+```
+
+Press **Ctrl+C** in the terminal to stop the server when done.
+
+### Common issues
+
+**Black screen / console error "both async and sync fetching of the wasm failed"**
+→ You opened the `.html` directly via `file://`. Use the Python server above.
+
+**"RangeError: WebAssembly.Memory" or out-of-memory**
+→ The game needs ~64 MB initial WASM memory. Make sure your browser is not
+  in a restricted iframe. Running locally via the Python server avoids this.
+
+**Game is tiny / wrong size**
+→ The Emscripten shell uses a `<canvas>` that may not fill the browser window.
+  This is cosmetic for local testing; itch.io lets you set the iframe size to
+  1400×654 when you publish.
+
 ## Uploading to itch.io
 
 1. Zip the four output files:
 ```bash
-cd web_build
-zip ZomChess_web.zip ZomChess.html ZomChess.js ZomChess.wasm ZomChess.data
+cd /home/luan/Documents/GitHub/ZomChess/web_build
+zip ZomChess_itch.zip ZomChess.html ZomChess.js ZomChess.wasm ZomChess.data index.html
 ```
 
 2. On itch.io project page:
@@ -63,11 +96,3 @@ zip ZomChess_web.zip ZomChess.html ZomChess.js ZomChess.wasm ZomChess.data
    - Tick **"This file will be played in the browser"**
    - Set **Viewport dimensions**: 1400 × 654
    - Enable **"Mobile friendly"** only if you add touch controls later
-
-## What's disabled on the web build
-
-- **Export / Import .zom challenge files** — no filesystem on WASM
-- **Guide hot-reload** — always uses the embedded guide compiled into the binary
-- **Font loading from disk** — uses the embedded NotoSans-Bold.ttf
-
-Everything else works identically to the native build.

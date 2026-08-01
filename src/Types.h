@@ -17,7 +17,7 @@ enum class TurnPhase { HumanTurn, ZombieAnimating, EnvironmentAnimating };
 
 // Added Bite and Scratch FX
 enum class FXType { None, Knife, Pistol, Shotgun, Explosion, Molotov, Bite, Scratch, Wind, Rain, DarkCloud, Lightning, Electricity, GrenadeFly, Heatwave, Blizzard, WarpBolt };
-enum class GameScene { MainMenu, Playing, MapEditor };
+enum class GameScene { Splash, MainMenu, Playing, MapEditor };
 
 struct Position {
     int x;
