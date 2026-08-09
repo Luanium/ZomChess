@@ -15,4 +15,5 @@ assets/music/The Ice Giants.mp3
 build_web/
 build/
 /web_build
-/src/embedded
+/build_web_cmake
+*.o

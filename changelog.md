@@ -1,3 +1,6 @@
+# v3.0.2
+- Bug fixes related to when `Clever Zombie` uses weapons and tools, now there will be the same effects as when `Human` uses those weapons and tools
+
 # v3.0.1
 - Some bug fixes and improvements
 - Port to web-based version

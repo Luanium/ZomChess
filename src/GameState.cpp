@@ -4100,6 +4100,12 @@ bool GameState::clever_zombie_use_weapon(size_t idx) {
             int cy = zom->pos.y + vy * step;
             if (cx < 0 || cx >= width || cy < 0 || cy >= height) break;
             if (grid[cx][cy] == Terrain::Wall) { hit_pos = {cx, cy}; break; }
+            // Mine blocks bullet (same as human pistol)
+            if (mine_grid[cx][cy] && !mine_deactivated[cx][cy]) {
+                hit_pos = {cx, cy};
+                hit_something = true;
+                break;
+            }
             hit_pos = {cx, cy};
             // Hit human
             if (human.hp > 0 && human.pos == Position{cx, cy}) {
@@ -4146,12 +4152,18 @@ bool GameState::clever_zombie_use_weapon(size_t idx) {
             }
             if (hit_z) break;
         }
-        if (!hit_something) add_log("-> " + zom->name + " pistol shot hits no target.", ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
         active_fx.type = FXType::Pistol;
         active_fx.timer = GameConstants::Timing::FX_PISTOL_DURATION;
         active_fx.max_duration = GameConstants::Timing::FX_PISTOL_DURATION;
         active_fx.start_p = getCellCenter(zom->pos.x, zom->pos.y, 40.0f, 20.0f);
         active_fx.end_p   = getCellCenter(hit_pos.x,  hit_pos.y,  40.0f, 20.0f);
+        // Detonate mine if bullet stopped on one
+        if (mine_grid[hit_pos.x][hit_pos.y] && !mine_deactivated[hit_pos.x][hit_pos.y]) {
+            mine_grid[hit_pos.x][hit_pos.y] = false;
+            add_log("-> " + zom->name + " pistol round hit a mine! Detonation!", ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
+            queue_explosion(hit_pos.x, hit_pos.y);
+        }
+        if (!hit_something) add_log("-> " + zom->name + " pistol shot hits no target.", ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
         check_victory_conditions();
         return true;
     }
@@ -4166,11 +4178,43 @@ bool GameState::clever_zombie_use_weapon(size_t idx) {
         active_fx.blast_cells.clear();
         active_fx.start_p = getCellCenter(zom->pos.x, zom->pos.y, 40.0f, 20.0f);
 
-        // Build blast cells (same cone logic as human shotgun)
-        // Only the wall directly in front (first step) is included and destroyed.
-        // All other wall tiles are excluded and block the blast.
         int sg_first_x = zom->pos.x + vx;
         int sg_first_y = zom->pos.y + vy;
+
+        // First cell wall: recoil (zombie is knocked back, wall destroyed), blast cancelled
+        bool is_first_cell_wall = false;
+        if (sg_first_x >= 0 && sg_first_x < width && sg_first_y >= 0 && sg_first_y < height) {
+            if (grid[sg_first_x][sg_first_y] == Terrain::Wall) is_first_cell_wall = true;
+        }
+        if (is_first_cell_wall) {
+            grid[sg_first_x][sg_first_y] = Terrain::Dirt;
+            int rx = zom->pos.x - vx, ry = zom->pos.y - vy;
+            bool can_recoil = (rx >= 0 && rx < width && ry >= 0 && ry < height &&
+                               grid[rx][ry] != Terrain::Wall);
+            if (can_recoil) {
+                bool blocked_by_entity = (human.hp > 0 && human.pos == Position{rx, ry});
+                if (!blocked_by_entity) {
+                    for (const auto& z2 : zombies)
+                        if (z2->hp > 0 && z2->pos == Position{rx, ry}) { blocked_by_entity = true; break; }
+                }
+                if (!blocked_by_entity) {
+                    zom->pos = {rx, ry};
+                    add_log("-> " + zom->name + " shotgun recoil pushes it back 1 tile.", ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
+                } else {
+                    zom->hp = std::max(0, zom->hp - GameConstants::Logic::SHOTGUN_RECOIL_DAMAGE);
+                    floating_texts.push_back({zom->pos, -GameConstants::Logic::SHOTGUN_RECOIL_DAMAGE, 1.0f, 1.0f});
+                    add_log("-> " + zom->name + " recoil blocked! -1 HP and wall destroyed.", ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
+                }
+            } else {
+                zom->hp = std::max(0, zom->hp - GameConstants::Logic::SHOTGUN_RECOIL_DAMAGE);
+                floating_texts.push_back({zom->pos, -GameConstants::Logic::SHOTGUN_RECOIL_DAMAGE, 1.0f, 1.0f});
+                add_log("-> " + zom->name + " recoil blocked! -1 HP and wall destroyed.", ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
+            }
+            check_victory_conditions();
+            return true;
+        }
+
+        // Build blast cells (same cone logic as human shotgun)
         if (vx != 0 && vy != 0) {
             for (int dx_step = 0; dx_step <= 3; ++dx_step) {
                 for (int dy_step = 0; dy_step <= 3; ++dy_step) {
@@ -4236,13 +4280,24 @@ bool GameState::clever_zombie_use_weapon(size_t idx) {
                     for (const auto& z2 : zombies)
                         if (z2->hp > 0 && z2->pos == Position{rx, ry}) { blocked = true; break; }
                     if (!blocked) human.pos = {rx, ry};
+                    else {
+                        // Collision damage
+                        human.hp = std::max(0, human.hp - GameConstants::Logic::HUMAN_ZOMBIE_COLLISION_DAMAGE);
+                        floating_texts.push_back({human.pos, -GameConstants::Logic::HUMAN_ZOMBIE_COLLISION_DAMAGE, 1.0f, 1.0f});
+                        add_log("-> Human collision! -" + std::to_string(GameConstants::Logic::HUMAN_ZOMBIE_COLLISION_DAMAGE) + " HP.", ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
+                    }
+                } else if (rx >= 0 && rx < width && ry >= 0 && ry < height) {
+                    // Wall behind human
+                    human.hp = std::max(0, human.hp - GameConstants::Logic::HUMAN_RECOIL_BLOCKED_DAMAGE);
+                    floating_texts.push_back({human.pos, -GameConstants::Logic::HUMAN_RECOIL_BLOCKED_DAMAGE, 1.0f, 1.0f});
+                    add_log("-> Human knocked into wall! -" + std::to_string(GameConstants::Logic::HUMAN_RECOIL_BLOCKED_DAMAGE) + " HP.", ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
                 }
                 check_fire_interactions();
                 check_mine_interactions();
                 break;
             }
         }
-        // Hit other zombies in blast
+        // Hit other zombies in blast — with knockback
         for (size_t k = 0; k < zombies.size(); ++k) {
             if (k == idx || zombies[k]->hp <= 0) continue;
             for (const auto& cell : active_fx.blast_cells) {
@@ -4252,13 +4307,47 @@ bool GameState::clever_zombie_use_weapon(size_t idx) {
                     add_log("-> " + zom->name + " shotgun blast hits Zombie #" +
                             std::to_string(k + 1) + "! -1 HP.",
                             ImVec4(1.0f, 0.6f, 0.3f, 1.0f));
-                    if (zombies[k]->is_frozen) zombies[k]->is_frozen = false;
-                    if (zombies[k]->hp <= 0 && zombies[k]->type == ZombieType::Exploding)
+                    if (zombies[k]->is_frozen) {
+                        zombies[k]->is_frozen = false;
+                        add_log("-> Shotgun blast shattered ice! Zombie #" + std::to_string(k + 1) + " unfrozen.", ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+                    }
+                    if (zombies[k]->hp <= 0 && zombies[k]->type == ZombieType::Exploding) {
                         queue_explosion(zombies[k]->pos.x, zombies[k]->pos.y, true);
+                        break;
+                    }
+                    // Knockback the hit zombie
+                    int rx = zombies[k]->pos.x + vx, ry = zombies[k]->pos.y + vy;
+                    if (rx >= 0 && rx < width && ry >= 0 && ry < height && grid[rx][ry] != Terrain::Wall) {
+                        bool blocked_kb = false;
+                        if (human.hp > 0 && human.pos == Position{rx, ry}) blocked_kb = true;
+                        if (!blocked_kb) {
+                            for (size_t j = 0; j < zombies.size(); ++j) {
+                                if (j != k && zombies[j]->hp > 0 && zombies[j]->pos == Position{rx, ry}) { blocked_kb = true; break; }
+                            }
+                        }
+                        if (!blocked_kb) {
+                            zombies[k]->pos = {rx, ry};
+                            if (grid[rx][ry] == Terrain::Fire && !zombies[k]->is_burning)
+                                zombies[k]->is_burning = true;
+                        } else {
+                            zombies[k]->hp -= 1;
+                            floating_texts.push_back({zombies[k]->pos, -1, 1.0f, 1.0f});
+                            add_log("-> Zombie #" + std::to_string(k + 1) + " collision! -1 HP.", ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
+                            if (zombies[k]->hp <= 0 && zombies[k]->type == ZombieType::Exploding)
+                                queue_explosion(zombies[k]->pos.x, zombies[k]->pos.y, true);
+                        }
+                    } else if (rx >= 0 && rx < width && ry >= 0 && ry < height) {
+                        zombies[k]->hp -= 1;
+                        floating_texts.push_back({zombies[k]->pos, -1, 1.0f, 1.0f});
+                        add_log("-> Zombie #" + std::to_string(k + 1) + " knocked into wall! -1 HP.", ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
+                        if (zombies[k]->hp <= 0 && zombies[k]->type == ZombieType::Exploding)
+                            queue_explosion(zombies[k]->pos.x, zombies[k]->pos.y, true);
+                    }
                     break;
                 }
             }
         }
+        check_fire_interactions();
         check_victory_conditions();
         return true;
     }
@@ -4309,7 +4398,8 @@ bool GameState::clever_zombie_use_weapon(size_t idx) {
         int max_steps = dist_steps(rng);
         Position landing_pos = zom->pos;
         bool all_walls = true;
-        bool hit_entity = false;
+        // no_fire_spread: set true only when hitting a frozen entity (unfreeze-only, same as human)
+        bool no_fire_spread = false;
         for (int step = 1; step <= max_steps; ++step) {
             int cx = zom->pos.x + vx * step;
             int cy = zom->pos.y + vy * step;
@@ -4320,15 +4410,17 @@ bool GameState::clever_zombie_use_weapon(size_t idx) {
                 landing_pos = {cx, cy}; all_walls = false;
                 if (human.is_frozen) {
                     human.is_frozen = false;
+                    no_fire_spread = true;
                     add_log("-> " + zom->name + " molotov unfreezes Human! No fire spread.",
                             ImVec4(0.4f, 0.8f, 1.0f, 1.0f));
                 } else {
                     human.hp = std::max(0, human.hp - 1);
                     floating_texts.push_back({human.pos, -1, 1.0f, 1.0f});
-                    add_log("-> " + zom->name + " molotov hits Human directly! -1 HP + ignited.",
+                    add_log("-> " + zom->name + " molotov hits Human directly! -1 HP.",
                             ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
+                    // is_burning is intentionally NOT set here; check_fire_interactions() handles ignition
                 }
-                hit_entity = true; break;
+                break;
             }
             // Stop on zombie (friendly fire)
             bool stopped = false;
@@ -4336,7 +4428,13 @@ bool GameState::clever_zombie_use_weapon(size_t idx) {
                 if (k == idx || zombies[k]->hp <= 0) continue;
                 if (zombies[k]->pos == Position{cx, cy}) {
                     landing_pos = {cx, cy}; all_walls = false;
-                    if (!zombies[k]->is_frozen) {
+                    if (zombies[k]->is_frozen) {
+                        zombies[k]->is_frozen = false;
+                        no_fire_spread = true;
+                        add_log("-> " + zom->name + " molotov thaws Zombie #" +
+                                std::to_string(k + 1) + "! No fire spread.",
+                                ImVec4(0.4f, 0.8f, 1.0f, 1.0f));
+                    } else {
                         zombies[k]->hp -= 1;
                         floating_texts.push_back({zombies[k]->pos, -1, 1.0f, 1.0f});
                         add_log("-> " + zom->name + " molotov hits Zombie #" +
@@ -4344,13 +4442,9 @@ bool GameState::clever_zombie_use_weapon(size_t idx) {
                                 ImVec4(1.0f, 0.6f, 0.3f, 1.0f));
                         if (zombies[k]->hp <= 0 && zombies[k]->type == ZombieType::Exploding)
                             queue_explosion(zombies[k]->pos.x, zombies[k]->pos.y, true);
-                    } else {
-                        zombies[k]->is_frozen = false;
-                        add_log("-> " + zom->name + " molotov thaws Zombie #" +
-                                std::to_string(k + 1) + "! No fire spread.",
-                                ImVec4(0.4f, 0.8f, 1.0f, 1.0f));
+                        // is_burning intentionally NOT set; check_fire_interactions() handles ignition
                     }
-                    hit_entity = true; stopped = true; break;
+                    stopped = true; break;
                 }
             }
             if (stopped) break;
@@ -4361,8 +4455,8 @@ bool GameState::clever_zombie_use_weapon(size_t idx) {
         active_fx.start_p = getCellCenter(zom->pos.x,    zom->pos.y,    40.0f, 20.0f);
         active_fx.end_p   = getCellCenter(landing_pos.x, landing_pos.y, 40.0f, 20.0f);
 
-        if (!all_walls && !hit_entity) {
-            // Apply terrain fire effects same as human molotov
+        if (!all_walls && !no_fire_spread) {
+            // Apply terrain fire effects — identical to human molotov
             if (grid[landing_pos.x][landing_pos.y] == Terrain::Water) {
                 add_log("-> " + zom->name + " molotov lands in water. Fizzled!", ImVec4(0.4f, 0.6f, 1.0f, 1.0f));
             } else if (grid[landing_pos.x][landing_pos.y] == Terrain::Ice) {
@@ -4371,7 +4465,31 @@ bool GameState::clever_zombie_use_weapon(size_t idx) {
                 thaw_loot_and_grenades_at({landing_pos});
                 reactivate_mines_at({landing_pos});
                 melt_adjacent_ice(landing_pos.x, landing_pos.y);
-                add_log("-> " + zom->name + " molotov melts ice!", ImVec4(0.4f, 0.8f, 1.0f, 1.0f));
+                // Unfreeze any entity standing on the now-melted cell
+                if (human.hp > 0 && human.pos == landing_pos && human.is_frozen) {
+                    human.is_frozen = false;
+                    add_log("-> Molotov melted ice under Human! Unfrozen.", ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+                }
+                for (auto& z : zombies) {
+                    if (z->hp > 0 && z->pos == landing_pos && z->is_frozen) {
+                        z->is_frozen = false;
+                        add_log("-> Molotov melted ice under " + z->name + "! Unfrozen.", ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
+                    }
+                }
+                add_log("-> " + zom->name + " molotov melts ice at (" +
+                        std::to_string(landing_pos.x + 1) + ", " + std::to_string(landing_pos.y + 1) + ")!",
+                        ImVec4(0.4f, 0.8f, 1.0f, 1.0f));
+            } else if (grid[landing_pos.x][landing_pos.y] == Terrain::Fire) {
+                // Reset burn duration on existing fire tile
+                for (auto& fc : fire_cells) {
+                    if (fc.pos.x == landing_pos.x && fc.pos.y == landing_pos.y) {
+                        fc.duration = GameConstants::Weapons::MOLOTOV_FIRE_DURATION; break;
+                    }
+                }
+                melt_adjacent_ice(landing_pos.x, landing_pos.y);
+                add_log("-> " + zom->name + " molotov reignites fire at (" +
+                        std::to_string(landing_pos.x + 1) + ", " + std::to_string(landing_pos.y + 1) + ")!",
+                        ImVec4(1.0f, 0.45f, 0.1f, 1.0f));
             } else if (grid[landing_pos.x][landing_pos.y] == Terrain::Dirt ||
                        grid[landing_pos.x][landing_pos.y] == Terrain::Forest) {
                 set_cell_on_fire(landing_pos.x, landing_pos.y);
