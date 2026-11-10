@@ -1,3 +1,8 @@
+# v3.1.1
+
+## Logic:
+- Fix: Grenades now detonate at the start of the thrower's next turn, whether thrown by Human or a `Clever Zombie`.
+
 # v3.1.0
 
 ## Logic:

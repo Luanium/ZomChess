@@ -50,6 +50,7 @@ static const char* EMBEDDED_GUIDE_TXT = R"~~(
 - If the bolt lands on the Human-standing tile, it causes immediate death to Human.
 ## Grenade
 - Thrown randomly 1-6 tiles with a 1-turn fuse.
+- Explodes at the start of the thrower's next turn.
 - Throwing may be blocked by Wall tiles.
 - May land on Human's tile and explode immediately if blocked by Wall.
 - Costs 1 Stamina. -1 ammo each time.

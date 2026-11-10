@@ -46,6 +46,7 @@
 - If the bolt lands on the Human-standing tile, it causes immediate death to Human.
 ## Grenade
 - Thrown randomly 1-6 tiles with a 1-turn fuse.
+- Explodes at the start of the thrower's next turn.
 - Throwing may be blocked by Wall tiles.
 - May land on Human's tile and explode immediately if blocked by Wall.
 - Costs 1 Stamina. -1 ammo each time.
@@ -60,13 +61,12 @@
 - May land on Human's tile if blocked by Wall.
 - Costs 1 Stamina. -1 ammo each time.
 ## Mine
-- Place on current or adjacent tile (Human and `Clever Zombie`).
+- Place on current or adjacent tiles.
 - Cannot place on `Wall`, `Ice`, occupied tiles or existing mines.
-- Human selects a highlighted tile; `Clever Zombie` picks randomly.
 - Mine on `Fire` detonates immediately.
 - 1-tile blast radius. -1 ammo each time.
 - Triggered by: entity steps on it, Lightning, explosion, Fire, Pistol, Shotgun.
-- Same effects as Grenade.
+- Same damaging effects as Grenade.
 
 # ZOMBIES
 - Square icons with different colors (see the legends).

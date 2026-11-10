@@ -3302,19 +3302,7 @@ void GameState::update_zombie_logic(float dt) {
             // Fire spreads once after ALL zombies have finished their turns
             propagate_gradual_forest_fire();
 
-            if (!active_config.enable_environment) {
-                // When environment is disabled, still detonate owner grenades at turn end (fallback)
-                bool triggered = false;
-                active_grenades.erase(std::remove_if(active_grenades.begin(), active_grenades.end(),
-                    [&](GrenadeTimer& g) {
-                        if (!g.active || g.frozen_under_ice) return false;
-                        add_log("[RADIO] Grenade timer expires. Detonation!", ImVec4(1.0f, 0.45f, 0.1f, 1.0f));
-                        queue_explosion(g.pos.x, g.pos.y);
-                        triggered = true;
-                        return true;
-                    }), active_grenades.end());
-            }
-            
+            // Zombie grenades are detonated only at the start of their owner's next turn.
             if (active_fx.type != FXType::None || !attack_animations.empty()) {
                 active_zombie_substep = 1; // Wait for the detonated explosion / fire animations to finish
                 return;
