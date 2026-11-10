@@ -3,7 +3,7 @@
 
 namespace GameConstants {
 
-    constexpr const char* GAME_VERSION = "v3.1.2";
+    constexpr const char* GAME_VERSION = "v3.1.0";
 
     // =========================================================================
     // SECTION 1: MAP GENERATION & BOUNDARIES

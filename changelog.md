@@ -1,4 +1,4 @@
-# v3.1.2
+# v3.1.0
 
 ## Logic:
 - Change: `Human` (and `Clever Zombie` carrying mines) can now place a mine not only on their own tile but also on any of the 8 surrounding tiles, subject to the following rules:
