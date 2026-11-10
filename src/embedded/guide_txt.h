@@ -64,10 +64,12 @@ static const char* EMBEDDED_GUIDE_TXT = R"~~(
 - May land on Human's tile if blocked by Wall.
 - Costs 1 Stamina. -1 ammo each time.
 ## Mine
-- Placed on the current tile.
+- Place on current or adjacent tiles.
+- Cannot place on `Wall`, `Ice`, occupied tiles or existing mines.
+- Mine on `Fire` detonates immediately.
 - 1-tile blast radius. -1 ammo each time.
 - Triggered by: entity steps on it, Lightning, explosion, Fire, Pistol, Shotgun.
-- Once exploding, the effects are the same as Grenade.
+- Same damaging effects as Grenade.
 
 # ZOMBIES
 - Square icons with different colors (see the legends).

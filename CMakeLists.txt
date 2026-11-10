@@ -46,8 +46,8 @@ add_custom_target(embed_guide ALL DEPENDS "${GUIDE_OUTPUT}")
 
 # Fixed paths to a locally-built raylib (quick path for now; will be made
 # portable via FetchContent later).
-set(RAYLIB_NATIVE_INCLUDE "/usr/local/include")
-set(RAYLIB_NATIVE_LIB     "/usr/local/lib/libraylib.a")
+set(RAYLIB_NATIVE_INCLUDE "$ENV{HOME}/raylib/src")
+set(RAYLIB_NATIVE_LIB     "$ENV{HOME}/raylib/src/libraylib.a")
 set(RAYLIB_WEB_INCLUDE    "$ENV{HOME}/raylib/src")
 set(RAYLIB_WEB_LIB        "$ENV{HOME}/raylib/src/libraylib.web.a")
 

@@ -137,6 +137,10 @@ public:
     // Reactivate mines that were deactivated by ice freeze
     void reactivate_mines_at(const std::vector<Position>& cells);
 
+    // Returns all valid cells where a mine can be placed from the given position
+    // (the cell itself + 8 neighbors, excluding Wall/Ice, occupied cells, already-mined cells)
+    std::vector<Position> get_valid_mine_cells(Position from) const;
+
     // Loot drop system
     void spawn_loot_at(Position pos);
     void check_loot_pickup();

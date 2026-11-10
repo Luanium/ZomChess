@@ -1,3 +1,19 @@
+# v3.1.2
+
+## Logic:
+- Change: `Human` (and `Clever Zombie` carrying mines) can now place a mine not only on their own tile but also on any of the 8 surrounding tiles, subject to the following rules:
+  - Target tile must not be `Wall` or `Ice`
+  - Target tile must not be occupied by another entity
+  - Target tile must not already have a mine
+- If a mine is placed on a `Fire` tile it detonates immediately (same as before)
+- `Clever Zombie` selects a random valid tile from all available options when planting a mine
+
+## UI:
+- Change: When `Human` selects the `Mine` weapon, instead of immediately planting at the current tile, the game now enters a placement-targeting mode
+- Added pulsing amber/orange highlight overlay and border on all valid mine-placement tiles to guide the player's click
+- The `Mine` button now lights up orange (active) while in targeting mode, consistent with other weapons
+- The `Mine` button is disabled when no valid placement tile is available (e.g., all adjacent tiles are Wall/Ice or occupied)
+
 # v3.0.2
 - Bug fixes related to when `Clever Zombie` uses weapons and tools, now there will be the same effects as when `Human` uses those weapons and tools
 

@@ -2953,19 +2953,9 @@ int main() {
             } else if (CheckCollisionPointRec(mouse, warpBoltBtn) && !disabled_base && state.human.warp_ammo > 0) {
                 state.input_mode = InputMode::TargetWarpBolt;
             } else if (CheckCollisionPointRec(mouse, mineBtn) && !disabled_base && state.human.mines > 0 &&
-                       state.grid[state.human.pos.x][state.human.pos.y] != Terrain::Ice &&
-                       !state.mine_grid[state.human.pos.x][state.human.pos.y]) {
-                state.input_mode = InputMode::MoveMode;
-                state.kills_this_turn = 0;
-                state.pending_multikill_banner.clear();
-                for (auto& z : state.zombies) if (z->hp > 0) z->kill_counted = false;
-                state.mine_grid[state.human.pos.x][state.human.pos.y] = true;
-                state.human.mines--; state.human.stamina--;
-                AudioManager::getInstance().playSound("mine_plant");
-                if (state.grid[state.human.pos.x][state.human.pos.y] == Terrain::Fire) {
-                    state.mine_grid[state.human.pos.x][state.human.pos.y] = false;
-                    state.queue_explosion(state.human.pos.x, state.human.pos.y);
-                }
+                       !state.get_valid_mine_cells(state.human.pos).empty()) {
+                // Enter mine-placement mode — player must click a valid tile
+                state.input_mode = InputMode::TargetMine;
             } else if (CheckCollisionPointRec(mouse, icePickBtn)) {
                 int cost = state.human.is_frozen
                     ? GameConstants::Weapons::ICE_PICK_STAMINA_COST_FROZEN
@@ -3047,6 +3037,26 @@ int main() {
                         int vy = (ty > state.human.pos.y) - (ty < state.human.pos.y);
                         state.handle_warp_bolt(vx, vy);
                     }
+                } else if (state.input_mode == InputMode::TargetMine) {
+                    // Check if clicked tile is a valid mine-placement cell
+                    auto valid_cells = state.get_valid_mine_cells(state.human.pos);
+                    bool valid_target = false;
+                    for (const auto& vc : valid_cells) {
+                        if (vc.x == tx && vc.y == ty) { valid_target = true; break; }
+                    }
+                    if (valid_target) {
+                        state.input_mode = InputMode::MoveMode;
+                        state.kills_this_turn = 0;
+                        state.pending_multikill_banner.clear();
+                        for (auto& z : state.zombies) if (z->hp > 0) z->kill_counted = false;
+                        state.mine_grid[tx][ty] = true;
+                        state.human.mines--; state.human.stamina--;
+                        AudioManager::getInstance().playSound("mine_plant");
+                        if (state.grid[tx][ty] == Terrain::Fire) {
+                            state.mine_grid[tx][ty] = false;
+                            state.queue_explosion(tx, ty);
+                        }
+                    }
                 } else {
                     // Pistol, Shotgun, Grenade, Molotov: only accept clicks within the
                     // 8 adjacent tiles around Human (matches main.cpp's directional arrows)
@@ -3072,7 +3082,7 @@ int main() {
                     state.turn_banner_fx.banner_text = "";
                 }
             }
-            if (state.active_fx.type != FXType::None) {
+        if (state.active_fx.type != FXType::None) {
                 state.active_fx.timer -= dtSeconds;
                 if (state.active_fx.timer <= 0.0f) {
                     FXType expired = state.active_fx.type;
@@ -3463,6 +3473,30 @@ int main() {
             }
         }
 
+
+        // ── Mine placement highlights — shown when player selects Mine weapon ──
+        if (state.phase == TurnPhase::HumanTurn && !state.human.is_paralyzed &&
+            state.input_mode == InputMode::TargetMine) {
+            auto valid_mine_cells = state.get_valid_mine_cells(state.human.pos);
+            float pulse = 0.55f + 0.45f * sinf((float)GetTime() * 6.0f);
+            unsigned char highlight_alpha = (unsigned char)(pulse * 180.0f);
+            for (const auto& vc : valid_mine_cells) {
+                int ovx = vc.x - viewX, ovy = vc.y - viewY;
+                if (ovx < 0 || ovx >= VIEW_CELLS || ovy < 0 || ovy >= VIEW_CELLS) continue;
+                float rx = ovx * cellSize + boardOffset;
+                float ry = ovy * cellSize + boardOffset;
+                // Pulsing amber/orange tile overlay
+                DrawRectangle((int)rx, (int)ry, (int)(cellSize - 2), (int)(cellSize - 2),
+                              (Color){255, 180, 30, highlight_alpha});
+                // Bright border
+                DrawRectangleLinesEx({rx, ry, cellSize - 2.0f, cellSize - 2.0f}, 2.0f,
+                                     (Color){255, 220, 60, 220});
+                // Small mine icon indicator (crosshair dot)
+                float cx = rx + (cellSize - 2.0f) * 0.5f;
+                float cy = ry + (cellSize - 2.0f) * 0.5f;
+                DrawCircle((int)cx, (int)cy, 4.0f, (Color){200, 100, 20, 230});
+            }
+        }
 
         if (state.active_fx.type != FXType::None) {
             float progress = state.active_fx.timer / state.active_fx.max_duration;
@@ -3960,8 +3994,7 @@ int main() {
         bool grenadeDisabled = !humanTurnNow || staminaZero || state.human.grenades <= 0;
         bool molotovDisabled = !humanTurnNow || staminaZero || state.human.molotovs <= 0;
         bool mineDisabled    = !humanTurnNow || staminaZero || state.human.mines <= 0 ||
-                                state.grid[state.human.pos.x][state.human.pos.y] == Terrain::Ice ||
-                                state.mine_grid[state.human.pos.x][state.human.pos.y];
+                                state.get_valid_mine_cells(state.human.pos).empty();
 
         DrawRectangleRec(moveBtn, weaponBtnColor(state.input_mode == InputMode::MoveMode, moveDisabled));
         drawCenteredText("Move", moveBtn, 17, WHITE);
@@ -3987,7 +4020,7 @@ int main() {
         DrawRectangleRec(molotovBtn, weaponBtnColor(state.input_mode == InputMode::TargetMolotov, molotovDisabled));
         drawCenteredText(TextFormat("Molotov (%d)", state.human.molotovs), molotovBtn, 16, WHITE);
 
-        DrawRectangleRec(mineBtn, weaponBtnColor(false, mineDisabled));
+        DrawRectangleRec(mineBtn, weaponBtnColor(state.input_mode == InputMode::TargetMine, mineDisabled));
         drawCenteredText(TextFormat("Mine (%d)", state.human.mines), mineBtn, 17, WHITE);
 
         DrawLine((int)panelX, (int)(boardOffset + 255), (int)(panelX + panelW), (int)(boardOffset + 255), (Color){70,70,70,255});

@@ -1229,6 +1229,33 @@ void GameState::reactivate_mines_at(const std::vector<Position>& cells) {
     }
 }
 
+std::vector<Position> GameState::get_valid_mine_cells(Position from) const {
+    std::vector<Position> result;
+    for (int ddx = -1; ddx <= 1; ++ddx) {
+        for (int ddy = -1; ddy <= 1; ++ddy) {
+            int nx = from.x + ddx, ny = from.y + ddy;
+            if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+            Terrain t = grid[nx][ny];
+            if (t == Terrain::Wall || t == Terrain::Ice) continue;
+            if (mine_grid[nx][ny]) continue; // already mined
+            // No living entity at that cell (other than the placer itself)
+            bool occupied = false;
+            if (!(nx == from.x && ny == from.y)) {
+                // Check human
+                if (human.hp > 0 && human.pos == Position{nx, ny}) occupied = true;
+                // Check zombies
+                if (!occupied) {
+                    for (const auto& z : zombies) {
+                        if (z->hp > 0 && z->pos == Position{nx, ny}) { occupied = true; break; }
+                    }
+                }
+            }
+            if (!occupied) result.push_back({nx, ny});
+        }
+    }
+    return result;
+}
+
 void GameState::apply_windstorm(int dx, int dy) {
     last_environment_event = "Windstorm";
     sfx("wind");
@@ -4063,8 +4090,7 @@ bool GameState::clever_zombie_use_weapon(size_t idx) {
     if (zom->grenades     > 0) weapon_opts.push_back(3);
     if (zom->molotovs     > 0) weapon_opts.push_back(4);
     if (zom->mines > 0) {
-        bool on_ice = (grid[zom->pos.x][zom->pos.y] == Terrain::Ice);
-        if (!zom->is_frozen || !on_ice) weapon_opts.push_back(5);
+        if (!get_valid_mine_cells(zom->pos).empty()) weapon_opts.push_back(5);
     }
 
     double weapon_share = weapon_opts.empty() ? 0.0 : 0.40 / weapon_opts.size();
@@ -4504,27 +4530,29 @@ bool GameState::clever_zombie_use_weapon(size_t idx) {
         return true;
     }
 
-    case 5: { // Mine — plant on current tile
+    case 5: { // Mine — plant on a randomly chosen valid adjacent cell
+        std::vector<Position> mine_cells = get_valid_mine_cells(zom->pos);
+        if (mine_cells.empty()) {
+            zom->mines++; // refund — no valid cell available
+            return false;
+        }
+        std::uniform_int_distribution<size_t> pick_cell(0, mine_cells.size() - 1);
+        Position plant_pos = mine_cells[pick_cell(rng)];
         zom->mines--;
-        // Don't plant on tile already having a mine, or on Ice when frozen (already checked above)
-        if (!mine_grid[zom->pos.x][zom->pos.y]) {
-            mine_grid[zom->pos.x][zom->pos.y] = true;
-            bool on_ice = (grid[zom->pos.x][zom->pos.y] == Terrain::Ice);
-            bool on_fire = (grid[zom->pos.x][zom->pos.y] == Terrain::Fire);
-            if (on_ice) mine_deactivated[zom->pos.x][zom->pos.y] = true;
-            add_log("-> " + zom->name + " plants a mine at (" +
-                    std::to_string(zom->pos.x + 1) + ", " + std::to_string(zom->pos.y + 1) + ")!" +
-                    (on_ice ? " (deactivated by ice)" : ""),
-                    ImVec4(0.9f, 0.9f, 0.2f, 1.0f));
-            sfx("mine_plant");
-            if (on_fire) {
-                // Thermal trigger: mine explodes immediately on fire tile
-                mine_grid[zom->pos.x][zom->pos.y] = false;
-                add_log("[RADIO] Mine planted on fire — thermal trigger! Detonation!", ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
-                queue_explosion(zom->pos.x, zom->pos.y);
-            }
-        } else {
-            zom->mines++; // refund — tile already mined
+        mine_grid[plant_pos.x][plant_pos.y] = true;
+        bool on_ice  = (grid[plant_pos.x][plant_pos.y] == Terrain::Ice);
+        bool on_fire = (grid[plant_pos.x][plant_pos.y] == Terrain::Fire);
+        if (on_ice) mine_deactivated[plant_pos.x][plant_pos.y] = true;
+        add_log("-> " + zom->name + " plants a mine at (" +
+                std::to_string(plant_pos.x + 1) + ", " + std::to_string(plant_pos.y + 1) + ")!" +
+                (on_ice ? " (deactivated by ice)" : ""),
+                ImVec4(0.9f, 0.9f, 0.2f, 1.0f));
+        sfx("mine_plant");
+        if (on_fire) {
+            // Thermal trigger: mine explodes immediately on fire tile
+            mine_grid[plant_pos.x][plant_pos.y] = false;
+            add_log("[RADIO] Mine planted on fire — thermal trigger! Detonation!", ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
+            queue_explosion(plant_pos.x, plant_pos.y);
         }
         return true;
     }

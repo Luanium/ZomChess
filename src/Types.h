@@ -11,7 +11,7 @@
 #include "GameConstants.h"
 
 enum class Terrain { Dirt, Water, Wall, Fire, Forest, Ice };
-enum class InputMode { MoveMode, TargetKnife, TargetPistol, TargetShotgun, TargetGrenade, TargetMolotov, TargetWarpBolt, UseIcePick };
+enum class InputMode { MoveMode, TargetKnife, TargetPistol, TargetShotgun, TargetGrenade, TargetMolotov, TargetWarpBolt, UseIcePick, TargetMine };
 enum class ZombieType { Clever, Fast, Exploding, Vampire, Sick, Corruptor };
 enum class TurnPhase { HumanTurn, ZombieAnimating, EnvironmentAnimating };
 
